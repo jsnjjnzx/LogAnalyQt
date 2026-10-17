@@ -13,11 +13,11 @@ def module(directory, name, source):
     for file in sorted(source.glob("*.qml")):
         if file.stem == "Main":
             continue
-        (directory / file.name).symlink_to(file)
+        shutil.copy2(file, directory / file.name)
         singleton = "singleton " if file.stem in {"Icons", "PlatformFonts"} else ""
         declarations.append(f"{singleton}{file.stem} 1.0 {file.name}")
     if (source / "SmartFraming").is_dir():
-        (directory / "SmartFraming").symlink_to(source / "SmartFraming", target_is_directory=True)
+        shutil.copytree(source / "SmartFraming", directory / "SmartFraming")
         for file in sorted((source / "SmartFraming").glob("*.qml")):
             declarations.append(f"{file.stem} 1.0 SmartFraming/{file.name}")
     (directory / "qmldir").write_text("\n".join(declarations) + "\n")
@@ -42,7 +42,7 @@ def main():
         test_log = imports / "qml-tests.txt"
         result = subprocess.run([
             runner, "-input", str(source / "tests/qml-next"),
-            "-import", str(imports), "-platform", "offscreen", "-o", f"{test_log},txt",
+            "-import", str(imports), "-platform", environment.get("QT_QPA_PLATFORM", "offscreen"), "-o", f"{test_log},txt",
         ], env=environment, cwd=source, timeout=90, check=False, capture_output=True, text=True)
         output = (test_log.read_text(encoding="utf-8") if test_log.exists() else "") + result.stdout + result.stderr
         print(output, end="")

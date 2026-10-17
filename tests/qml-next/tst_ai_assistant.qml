@@ -44,6 +44,7 @@ Item {
             control.succeed(); wait(20); verify(page.resultValid)
             verify(item("ai-result-target").text.indexOf("010203040506") >= 0)
             verify(item("ai-result-target").text.indexOf("AAAAAAAAAAAA") < 0)
+            verify(waitForRendering(page))
             mouseClick(item("ai-copy-result")); compare(fakeBackend.copied,control.result.frameHex)
             mouseClick(item("ai-return-result")); compare(resultSignal.count,1); compare(resultSignal.signalArguments[0][0],control.result.frameHex); compare(resultSignal.signalArguments[0][1],1)
             control.result = {requestId:"old",terminal:control.lastTerminal,frameHex:"GG",apduHex:"05"}; verify(!page.resultValid)
