@@ -9,9 +9,13 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHONUTF8: '1'
+
 jobs:
   windows:
     name: Windows x64
+    if: github.event_name != 'workflow_dispatch'
     runs-on: windows-2022
     timeout-minutes: 180
     env:
@@ -71,6 +75,30 @@ jobs:
           $Imports = & "$env:MINGW_DIR/bin/objdump.exe" -p $Package.FullName | Out-String
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Windows imports' }
           if ($Imports -match 'DLL Name:\s+(Qt6|libgcc|libstdc|libwinpthread)') { throw 'Package still depends on Qt or MinGW DLLs' }
+      - name: Run packaged EXE without Qt or MinGW on PATH
+        shell: pwsh
+        run: |
+          $Python = (Get-Command python).Source
+          $Package = Get-ChildItem release_package/*_Windows_x64.exe | Select-Object -First 1
+          foreach ($PluginVariable in @('QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'QML_IMPORT_PATH', 'QML2_IMPORT_PATH')) {
+            Remove-Item "Env:$PluginVariable" -ErrorAction SilentlyContinue
+          }
+          $env:PATH = "$env:SystemRoot/system32;$env:SystemRoot"
+          $HiddenQt = @{}
+          try {
+            foreach ($QtDirectory in @($env:QT_STATIC_DIR, $env:QT_ROOT_DIR)) {
+              $HiddenDirectory = "$QtDirectory-ci-hidden"
+              Move-Item -LiteralPath $QtDirectory -Destination $HiddenDirectory
+              $HiddenQt[$QtDirectory] = $HiddenDirectory
+            }
+            & $Python tests/test_ui_migration_runtime.py $Package.FullName
+            if ($LASTEXITCODE -ne 0) { throw 'Standalone Windows package failed to run' }
+          }
+          finally {
+            foreach ($QtDirectory in $HiddenQt.Keys) {
+              Move-Item -LiteralPath $HiddenQt[$QtDirectory] -Destination $QtDirectory
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: LogAnalyQt-Windows-x64
@@ -107,6 +135,11 @@ jobs:
           RUN_TESTS=1 scripts/package_macos.sh
           python3 scripts/ci/check_build.py --packages release_package --platform macos
           hdiutil verify release_package/*.dmg
+      - name: Run deployed app without Qt environment overrides
+        run: |
+          test "$(lipo -archs build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt)" = arm64
+          env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
+            python3 tests/test_ui_migration_runtime.py build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt
       - uses: actions/upload-artifact@v4
         with:
           name: LogAnalyQt-macOS-arm64

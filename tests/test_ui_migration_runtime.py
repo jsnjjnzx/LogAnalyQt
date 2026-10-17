@@ -12,7 +12,7 @@ def main():
         runtime = pathlib.Path(directory)
         if binary.parent.name == "MacOS":
             bundle = binary.parents[2]
-            shutil.copytree(bundle, runtime / bundle.name)
+            shutil.copytree(bundle, runtime / bundle.name, symlinks=True)
             executable = runtime / bundle.name / "Contents" / "MacOS" / binary.name
         else:
             executable = runtime / binary.name
@@ -25,7 +25,7 @@ def main():
                 [str(executable), "-platform", "offscreen", "--ui-smoke", *arguments],
                 cwd=runtime, capture_output=True, text=True, timeout=90,
             )
-            log = log_path.read_text() if log_path.exists() else ""
+            log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
             errors = [line for line in log.splitlines()
                       if (" WARN " in line or " CRIT " in line or " FATAL " in line)
                       and "Populating font family aliases" not in line]
