@@ -96,9 +96,11 @@ inline QString checkParseWorkspace(QQuickWindow *window, const QString &phase) {
       const QString path = QDir(AppPaths::writableDataRoot()).filePath("LogAnalyQt.ini");
       QFile::remove(path);
       require(QDir().mkdir(path), "cannot create unwritable settings fixture");
+      window->setProperty("installingUpdate", true);
       window->close();
       require(window->isVisible() && !window->property("parseWorkspaceError").toString().isEmpty(),
               "save failure allowed closing and losing edits");
+      window->setProperty("installingUpdate", false);
       require(QDir().rmdir(path), "cannot remove settings fixture");
     } else {
       throw QString("unknown workspace test phase");

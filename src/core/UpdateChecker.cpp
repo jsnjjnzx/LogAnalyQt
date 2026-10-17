@@ -1,6 +1,7 @@
 #include "UpdateChecker.h"
 #include <QDebug>
 #include <QSysInfo>
+#include <QVersionNumber>
 
 namespace {
 
@@ -47,15 +48,6 @@ int platformPackageScore(const QString &fileName) {
   Q_UNUSED(lower);
   return -1;
 #endif
-}
-
-bool isCompanionHash(const QString &hashName, const QString &packageName) {
-  const QString lowerHash = hashName.toLower();
-  const QString exactName = packageName.toLower() + QStringLiteral(".sha256");
-  const QString baseName =
-      QFileInfo(packageName).completeBaseName().toLower() +
-      QStringLiteral(".sha256");
-  return lowerHash == exactName || lowerHash == baseName;
 }
 
 QString currentUpdateTarget() {
@@ -117,7 +109,7 @@ bool UpdateChecker::isVerifySuccess() const { return m_verifySuccess; }
 // ============================================================
 
 void UpdateChecker::checkForUpdate() {
-  if (m_checking)
+  if (m_checking || m_downloading)
     return;
 
   m_checking = true;
@@ -128,16 +120,19 @@ void UpdateChecker::checkForUpdate() {
   m_downloadErrorMsg.clear();
   m_verifying = false;
   m_verifySuccess = false;
-  m_sha256Url.clear();
+  m_updateAvailable = false;
+  m_downloadUrl.clear();
+  m_latestVersion.clear();
   m_expectedSha256.clear();
   m_downloadedFilePath.clear();
   m_downloadFileName.clear();
   emit checkingChanged();
 
-  // Gitee API 获取最新 Release
-  QUrl url(
-      "https://gitee.com/api/v5/repos/jsnjjnzx/LogAnalyQt/releases/latest");
-  QNetworkRequest request(url);
+  QNetworkRequest request(m_manifestUrl);
+  request.setTransferTimeout(15000);
+  request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                       QNetworkRequest::NoLessSafeRedirectPolicy);
+  request.setHeader(QNetworkRequest::UserAgentHeader, "LogAnalyQt/" + m_currentVersion);
 
   QNetworkReply *reply = m_networkManager->get(request);
   connect(reply, &QNetworkReply::finished, this,
@@ -155,17 +150,22 @@ void UpdateChecker::onReplyFinished(QNetworkReply *reply) {
   emit checkingChanged();
 
   if (reply->error() != QNetworkReply::NoError) {
-    emit checkError(QString("网络请求失败: %1").arg(reply->errorString()));
+    emit checkError(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 404
+                        ? QStringLiteral("GitHub 尚无可用的正式发布版本")
+                        : QString("检查 GitHub 更新失败: %1").arg(reply->errorString()));
     reply->deleteLater();
     return;
   }
 
-  QByteArray data = reply->readAll();
-  QJsonDocument doc = QJsonDocument::fromJson(data);
+  QByteArray data = reply->read(1024 * 1024 + 1);
+  QJsonParseError parseError;
+  QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
   QJsonObject obj = doc.object();
   reply->deleteLater();
 
-  if (obj.isEmpty() || !obj.contains("tag_name")) {
+  if (data.size() > 1024 * 1024 || parseError.error != QJsonParseError::NoError ||
+      !QRegularExpression(QStringLiteral("^v[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}$"))
+           .match(obj["tag_name"].toString()).hasMatch() || !obj["assets"].isArray()) {
     emit checkError("获取版本信息失败: 无效的服务器响应");
     return;
   }
@@ -180,64 +180,36 @@ void UpdateChecker::onReplyFinished(QNetworkReply *reply) {
 
   // 查找下载链接
   m_downloadUrl = "";
-  m_sha256Url = "";
   m_expectedSha256 = "";
   m_downloadFileName = "";
 
+  const QString releaseBase = QStringLiteral("https://github.com/jsnjjnzx/LogAnalyQt/releases/download/v%1/").arg(m_latestVersion);
+#ifdef Q_OS_WIN
+  const QString expectedName = QStringLiteral("LogAnalyQt_v%1_Windows_x64.exe").arg(m_latestVersion);
+#else
+  const QString expectedName = QStringLiteral("LogAnalyQt_v%1_macOS_arm64_update.zip").arg(m_latestVersion);
+#endif
+  int matches = 0;
   if (obj.contains("assets") && obj["assets"].isArray()) {
     const QJsonArray assets = obj["assets"].toArray();
-    int bestScore = -1;
     for (const auto &assetVal : assets) {
       const QJsonObject asset = assetVal.toObject();
       const QString name = asset["name"].toString();
-      const int score = platformPackageScore(name);
-      if (score > bestScore) {
-        bestScore = score;
+      if (name == expectedName && platformPackageScore(name) >= 0) {
+        ++matches;
         m_downloadUrl = asset["browser_download_url"].toString();
         m_downloadFileName = name;
+        m_expectedSha256 = asset["sha256"].toString().toLower();
       }
     }
 
-    if (!m_downloadFileName.isEmpty()) {
-      for (const auto &assetVal : assets) {
-        const QJsonObject asset = assetVal.toObject();
-        const QString name = asset["name"].toString();
-        if (isCompanionHash(name, m_downloadFileName)) {
-          m_sha256Url = asset["browser_download_url"].toString();
-          break;
-        }
-      }
-
-      const QString escapedName =
-          QRegularExpression::escape(m_downloadFileName);
-      QRegularExpression namedHash(
-          QStringLiteral("SHA256\\s*\\(\\s*%1\\s*\\)\\s*[:=]\\s*"
-                         "([0-9a-fA-F]{64})")
-              .arg(escapedName),
-          QRegularExpression::CaseInsensitiveOption);
-      const QRegularExpressionMatch namedMatch =
-          namedHash.match(m_releaseNotes);
-      if (namedMatch.hasMatch())
-        m_expectedSha256 = namedMatch.captured(1).toLower();
-
-#ifdef Q_OS_WIN
-      // 兼容旧版 Windows Release 中只有一行 "SHA256: <hash>" 的格式。
-      if (m_expectedSha256.isEmpty() && m_sha256Url.isEmpty()) {
-        QRegularExpression legacyHash(
-            QStringLiteral("SHA256\\s*[:=]\\s*([0-9a-fA-F]{64})"),
-            QRegularExpression::CaseInsensitiveOption);
-        const QRegularExpressionMatch legacyMatch =
-            legacyHash.match(m_releaseNotes);
-        if (legacyMatch.hasMatch())
-          m_expectedSha256 = legacyMatch.captured(1).toLower();
-      }
-#endif
-    }
   }
-
-  if (m_downloadUrl.isEmpty()) {
-    // 回退到 Release 页面
-    m_downloadUrl = obj["html_url"].toString();
+  if (matches != 1 || m_downloadUrl != releaseBase + expectedName ||
+      !QRegularExpression(QStringLiteral("^[0-9a-f]{64}$")).match(m_expectedSha256).hasMatch()) {
+    m_downloadUrl.clear();
+    m_downloadFileName.clear();
+    emit checkError(QStringLiteral("GitHub 更新信息缺少本平台的有效更新包或 SHA256 校验值"));
+    return;
   }
 
   m_updateAvailable = isNewerVersion(m_latestVersion, m_currentVersion);
@@ -249,17 +221,11 @@ void UpdateChecker::onReplyFinished(QNetworkReply *reply) {
 // ============================================================
 
 QString UpdateChecker::updateTempDir() const {
-  const QString tempRoot =
-      QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-  QString tempDir = QDir(tempRoot).filePath(QStringLiteral("LogAnalyQt/update"));
-  QDir dir(tempDir);
-  if (!dir.exists())
-    dir.mkpath(QStringLiteral("."));
-  return tempDir;
+  return m_tempDirectory.path();
 }
 
 void UpdateChecker::downloadUpdate() {
-  if (m_downloading || m_downloadUrl.isEmpty())
+  if (m_downloading || !m_updateAvailable || m_downloadUrl.isEmpty())
     return;
 
   // 当前平台没有可自动安装的资产时，降级为浏览器打开 Release 页面。
@@ -280,6 +246,12 @@ void UpdateChecker::downloadUpdate() {
 
   // 确定下载保存路径
   QString downloadDir = updateTempDir();
+  if (downloadDir.isEmpty()) {
+    m_downloading = false;
+    emit downloadingChanged();
+    emit downloadErrorOccurred(QStringLiteral("无法创建安全的更新临时目录"));
+    return;
+  }
   QString savePath = downloadDir + "/" + m_downloadFileName;
 
   // 检查 download 目录中是否有无法删除的旧文件
@@ -321,7 +293,7 @@ void UpdateChecker::downloadUpdate() {
   qDebug() << "[UpdateChecker] 保存路径:" << savePath;
 
   QNetworkRequest request{QUrl(m_downloadUrl)};
-  // 允许重定向（Gitee 下载链接通常会重定向）
+  // GitHub 附件会重定向到下载服务器。
   request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                        QNetworkRequest::NoLessSafeRedirectPolicy);
   // 设置 User-Agent，部分 CDN 会拒绝无 UA 的请求或限速
@@ -404,7 +376,7 @@ void UpdateChecker::downloadUpdate() {
   });
 
   // 连接下载进度信号
-  // 注意：Gitee CDN 重定向后可能不返回 Content-Length，需要特殊处理
+  // 重定向后可能不返回 Content-Length。
   connect(m_downloadReply, &QNetworkReply::downloadProgress, this,
           [this](qint64 received, qint64 total) {
             // 只要有数据传输，就重置超时计时器
@@ -446,8 +418,10 @@ void UpdateChecker::downloadUpdate() {
       QByteArray chunk = m_downloadReply->readAll();
       qDebug() << "[UpdateChecker] readyRead: 收到" << chunk.size() << "字节,"
                << "已写入文件:" << m_downloadFile->size();
-      m_downloadFile->write(chunk);
-      m_downloadFile->flush();
+      if (m_downloadFile->write(chunk) != chunk.size() || !m_downloadFile->flush()) {
+        m_downloadReply->abort();
+        emit downloadErrorOccurred(QStringLiteral("写入更新包失败，请检查磁盘空间和权限"));
+      }
     }
   });
 
@@ -494,10 +468,20 @@ void UpdateChecker::downloadUpdate() {
 
     // 写入剩余数据并关闭文件
     if (m_downloadFile) {
-      m_downloadFile->write(m_downloadReply->readAll());
+      const QByteArray remaining = m_downloadReply->readAll();
+      const bool written = m_downloadFile->write(remaining) == remaining.size() && m_downloadFile->flush();
       m_downloadFile->close();
       delete m_downloadFile;
       m_downloadFile = nullptr;
+      if (!written) {
+        m_downloading = false;
+        m_downloadReply->deleteLater();
+        m_downloadReply = nullptr;
+        QFile::remove(savePath);
+        emit downloadingChanged();
+        emit downloadErrorOccurred(QStringLiteral("写入更新包失败，请检查磁盘空间和权限"));
+        return;
+      }
     }
 
     m_downloadedFilePath = savePath;
@@ -518,9 +502,10 @@ void UpdateChecker::cancelDownload() {
   }
 
   if (m_downloadReply) {
-    m_downloadReply->abort();
-    m_downloadReply->deleteLater();
+    QNetworkReply *reply = m_downloadReply;
     m_downloadReply = nullptr;
+    reply->abort();
+    reply->deleteLater();
   }
   if (m_downloadFile) {
     m_downloadFile->close();
@@ -549,12 +534,7 @@ void UpdateChecker::downloadSha256AndVerify() {
   m_verifying = true;
   emit verifyingChanged();
 
-  if (!m_expectedSha256.isEmpty()) {
-    finishVerification(m_expectedSha256);
-    return;
-  }
-
-  if (m_sha256Url.isEmpty()) {
+  if (m_expectedSha256.isEmpty()) {
     m_verifying = false;
     m_verifySuccess = false;
     m_downloadComplete = false;
@@ -566,46 +546,7 @@ void UpdateChecker::downloadSha256AndVerify() {
     return;
   }
 
-  QNetworkRequest request{QUrl(m_sha256Url)};
-  request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                       QNetworkRequest::NoLessSafeRedirectPolicy);
-  request.setHeader(QNetworkRequest::UserAgentHeader,
-                    "LogAnalyQt/" + m_currentVersion);
-
-  QNetworkReply *reply = m_networkManager->get(request);
-  connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-    if (reply->error() != QNetworkReply::NoError) {
-      m_verifying = false;
-      m_verifySuccess = false;
-      m_downloadComplete = false;
-      m_downloadErrorMsg =
-          QString("下载 SHA256 校验文件失败: %1").arg(reply->errorString());
-      reply->deleteLater();
-      emit verifyingChanged();
-      emit verifyFinished(false);
-      emit downloadErrorOccurred(m_downloadErrorMsg);
-      return;
-    }
-
-    const QString content = QString::fromUtf8(reply->readAll());
-    reply->deleteLater();
-    QRegularExpression hashPattern(
-        QStringLiteral("^\\s*([0-9a-fA-F]{64})(?:\\s|$)"));
-    const QRegularExpressionMatch match = hashPattern.match(content);
-    if (!match.hasMatch()) {
-      m_verifying = false;
-      m_verifySuccess = false;
-      m_downloadComplete = false;
-      m_downloadErrorMsg = "SHA256 校验文件格式无效，已拒绝自动安装";
-      emit verifyingChanged();
-      emit verifyFinished(false);
-      emit downloadErrorOccurred(m_downloadErrorMsg);
-      return;
-    }
-
-    m_expectedSha256 = match.captured(1).toLower();
-    finishVerification(m_expectedSha256);
-  });
+  finishVerification(m_expectedSha256);
 }
 
 void UpdateChecker::finishVerification(const QString &expectedHash) {
@@ -636,11 +577,8 @@ bool UpdateChecker::verifySha256(const QString &filePath,
   }
 
   QCryptographicHash hash(QCryptographicHash::Sha256);
-  // 分块读取以减少内存占用
-  const qint64 blockSize = 8192;
-  while (!file.atEnd()) {
-    hash.addData(file.read(blockSize));
-  }
+  if (!hash.addData(&file))
+    return false;
   file.close();
 
   QString actualHash = hash.result().toHex().toLower();
@@ -659,30 +597,18 @@ extern const size_t updater_exe_size;
 
 QString UpdateChecker::findUpdaterPath() const {
 #ifdef Q_OS_WIN
-  // 优先查找主程序同级目录（开发/调试模式）
-  QString appDir = QCoreApplication::applicationDirPath();
-  QString updaterPath = appDir + "/updater.exe";
-  if (QFile::exists(updaterPath)) {
-    return updaterPath;
-  }
-
   // 从嵌入资源释放到临时目录
   QString tempDir = updateTempDir();
   QString extractedPath = tempDir + "/updater.exe";
-
-  // 如果临时目录已有 updater 且大小匹配，直接使用
-  QFileInfo fi(extractedPath);
-  if (fi.exists() && fi.size() == static_cast<qint64>(updater_exe_size)) {
-    return extractedPath;
-  }
 
   // 释放嵌入的 updater.exe
   QFile file(extractedPath);
   if (!file.open(QIODevice::WriteOnly)) {
     return QString();
   }
-  file.write(reinterpret_cast<const char *>(updater_exe_data),
-             static_cast<qint64>(updater_exe_size));
+  if (file.write(reinterpret_cast<const char *>(updater_exe_data),
+                 static_cast<qint64>(updater_exe_size)) != static_cast<qint64>(updater_exe_size) || !file.flush())
+    return {};
   file.close();
 
   return extractedPath;
@@ -700,11 +626,12 @@ QString UpdateChecker::findUpdaterPath() const {
 #endif
 }
 
-void UpdateChecker::installUpdate() {
-  if (m_downloadedFilePath.isEmpty() || !m_downloadComplete) {
+bool UpdateChecker::installUpdate() {
+  if (m_downloadedFilePath.isEmpty() || !m_downloadComplete || !m_verifySuccess ||
+      !verifySha256(m_downloadedFilePath, m_expectedSha256)) {
     m_downloadErrorMsg = "尚未完成下载或校验，无法安装";
     emit downloadErrorOccurred(m_downloadErrorMsg);
-    return;
+    return false;
   }
 
   QString updaterPath = findUpdaterPath();
@@ -718,7 +645,7 @@ void UpdateChecker::installUpdate() {
     // 打开临时目录让用户手动替换
     QDesktopServices::openUrl(
         QUrl::fromLocalFile(QFileInfo(m_downloadedFilePath).absolutePath()));
-    return;
+    return false;
   }
 
   // 构造 updater 命令行参数
@@ -730,7 +657,7 @@ void UpdateChecker::installUpdate() {
   if (targetPath.isEmpty()) {
     m_downloadErrorMsg = "无法确定当前程序的安装位置，已取消自动更新";
     emit downloadErrorOccurred(m_downloadErrorMsg);
-    return;
+    return false;
   }
   args << "--target" << QDir::toNativeSeparators(targetPath);
   args << "--launch";
@@ -740,11 +667,11 @@ void UpdateChecker::installUpdate() {
   if (!started) {
     m_downloadErrorMsg = "启动自动更新器失败";
     emit downloadErrorOccurred(m_downloadErrorMsg);
-    return;
+    return false;
   }
 
-  // 退出主程序，让 updater 完成替换
-  QCoreApplication::quit();
+  m_tempDirectory.setAutoRemove(false);
+  return true;
 }
 
 // ============================================================
@@ -753,20 +680,6 @@ void UpdateChecker::installUpdate() {
 
 bool UpdateChecker::isNewerVersion(const QString &remote,
                                    const QString &local) {
-  QStringList remoteParts = remote.split('.');
-  QStringList localParts = local.split('.');
-
-  int length = std::max(remoteParts.length(), localParts.length());
-
-  for (int i = 0; i < length; ++i) {
-    int r = (i < remoteParts.length()) ? remoteParts[i].toInt() : 0;
-    int l = (i < localParts.length()) ? localParts[i].toInt() : 0;
-
-    if (r > l)
-      return true;
-    if (r < l)
-      return false;
-  }
-
-  return false;
+  return QVersionNumber::compare(QVersionNumber::fromString(remote),
+                                 QVersionNumber::fromString(local)) > 0;
 }

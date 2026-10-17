@@ -15,6 +15,7 @@
 #include <QQuickWindow>
 #include <QTimer>
 #include <QTextStream>
+#include <QSaveFile>
 #ifdef LOGANALYQT_UI_TESTING
 #include "../../tests/MigrationUiChecks.h"
 #include "../../tests/ParseWorkspaceChecks.h"
@@ -82,12 +83,18 @@ static void qtMessageToFile(QtMsgType type, const QMessageLogContext &context,
   }
 }
 
+#ifdef LOGANALYQT_UI_TESTING
+#include "../../tests/UpdateIntegration.h"
+#endif
+
 int main(int argc, char *argv[]) {
   QGuiApplication app(argc, argv);
   QCoreApplication::setApplicationName(QStringLiteral("LogAnalyQt"));
   const bool legacyUi = app.arguments().contains(QStringLiteral("--legacy-ui"));
 #ifdef LOGANALYQT_UI_TESTING
-  const bool uiSmokeMode = app.arguments().contains(QStringLiteral("--ui-smoke"));
+  const bool updateTest = app.arguments().contains(QStringLiteral("--update-test"));
+  const bool updateRestart = qEnvironmentVariableIsSet("LOGANALYQT_UPDATE_TEST_RESULT") && !updateTest;
+  const bool uiSmokeMode = app.arguments().contains(QStringLiteral("--ui-smoke")) || updateRestart;
 #else
   const bool uiSmokeMode = false;
 #endif
@@ -112,8 +119,23 @@ int main(int argc, char *argv[]) {
   engine.loadFromModule(legacyUi ? "LogAnalyQt" : "LogAnalyQt.Next", "Main");
 
 #ifdef LOGANALYQT_UI_TESTING
+  if (!engine.rootObjects().isEmpty() && updateRestart) {
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+    QObject::connect(window, &QQuickWindow::frameSwapped, &app, [] {
+      QSaveFile marker(qEnvironmentVariable("LOGANALYQT_UPDATE_TEST_RESULT"));
+      if (!marker.open(QIODevice::WriteOnly)) { QCoreApplication::exit(7); return; }
+      marker.write(QJsonDocument(QJsonObject{{"version", QStringLiteral(APP_VERSION)},
+          {"executable", QCoreApplication::applicationFilePath()}}).toJson());
+      if (!marker.commit()) QCoreApplication::exit(7);
+    }, Qt::SingleShotConnection);
+  }
+  if (updateTest && !engine.rootObjects().isEmpty()) {
+    QTimer::singleShot(0, &app, [&engine] {
+      UpdateCheckerTest::start(qobject_cast<QQuickWindow *>(engine.rootObjects().first()));
+    });
+  }
   // Smoke captures use an isolated build directory and never check for updates.
-  if (uiSmokeMode && !app.arguments().contains(QStringLiteral("--interactive")) && !engine.rootObjects().isEmpty()) {
+  if (uiSmokeMode && !updateTest && !app.arguments().contains(QStringLiteral("--interactive")) && !engine.rootObjects().isEmpty()) {
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     const QStringList args = app.arguments();
     const int sizeArg = args.indexOf(QStringLiteral("--size"));

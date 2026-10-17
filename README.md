@@ -1,6 +1,6 @@
 # MultiProtocolParser (Log Analyzer)
 
-**当前项目版本：** v3.1.0 — see `CHANGELOG.md`
+**当前项目版本：** v3.1.1 — see `CHANGELOG.md`
 
 一个功能强大的多协议报文分析与日志查看工具，专为分析 16 进制数据和调试通讯协议而设计。
 
@@ -36,11 +36,12 @@ macOS 原生窗口已完成真实 DeepSeek 的读取时间、设置时间、多�
 
 Mac 的 SSH 实时监控增加首次指纹确认、目标绑定的系统密码保存及后台凭据操作；协议同步在应用输入 SMB 地址后交由 macOS/Finder 认证，继续使用 `.app` 同级便携目录。操作和迁移说明见 [Mac 使用说明](docs/macos-stage10/user-guide.md)，本地测试、公司 SMB 只读验证及实际 SSH 待验收边界见 [验收记录](docs/macos-stage10/acceptance.md)。本阶段仅 Mac，Windows 保留原行为，未作实机通过声明。
 
-## 🚀 最新特性 (v3.1.0)
+## 🚀 最新特性 (v3.1.1)
 
 ### ✨ 新增功能 (New Features)
 - **南网计量上行规约**：新增南网计量自动化终端上行通信规约解析，支持 XML 数据字典、AFN/DI 组合解析及任务、测量、告警等数据项。
 - **双平台构建**：提供 Windows 与 macOS Release 构建、测试及打包流程；当前云端入口为 GitHub Actions。
+- **GitHub 发布与更新**：版本标签触发正式发布，程序从 GitHub 获取并校验更新；Gitee 旧版需手动安装迁移版一次。
 
 ### 🛠️ 系统优化 (System Improvements)
 - **便携配置与协议同步**：完善应用同路径数据目录、协议配置校验与同步流程。
@@ -170,14 +171,14 @@ Mac 的 SSH 实时监控增加首次指纹确认、目标绑定的系统密码�
 ## 📦 构建与打包
 
 本项目包含 Windows 和 macOS 一键打包脚本。自动更新要求将主程序包和
-同名 `.sha256` 文件一起上传到同一个 Gitee Release。
+同名 `.sha256` 文件和 `update.json` 一起上传到同一个 GitHub Release。
 
 ### Windows
 
 运行环境：Qt 6.11.1 静态版（MinGW 64-bit）、CMake、PowerShell。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/package_single.ps1 -Version 3.1.0
+powershell -ExecutionPolicy Bypass -File ./scripts/package_single.ps1 -Version 3.1.1
 ```
 
 脚本生成：
@@ -209,8 +210,9 @@ cmake --build --preset macos-debug
 - `release_package/LogAnalyQt_v<版本>_macOS_<架构>_update.zip`
 - `release_package/LogAnalyQt_v<版本>_macOS_<架构>_update.zip.sha256`
 
-DMG 用于用户首次安装，`_update.zip` 专供程序内自动更新。正式对外发布必须
-设置 Developer ID 和已保存的 `notarytool` 钥匙串配置名称：
+DMG 用于用户首次安装，`_update.zip` 专供程序内自动更新。当前 GitHub 发布使用
+ad-hoc 签名，不需要额外 Secrets；尚未完成 Apple 公证或首次下载的 Gatekeeper 验收。
+以后启用 Developer ID 签名及公证时，可使用：
 
 ```zsh
 MACOS_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
@@ -226,7 +228,8 @@ macOS 更新包内必须只包含一个 `LogAnalyQt.app`。应用会按当前系
 
 推送到 GitHub 仓库 `main` 或推送 `vX.Y.Z` 标签，自动运行
 `.github/workflows/build.yml`；也可在 Actions 页面手动运行。
-标签必须与 CMake 项目版本一致。当前阶段只构建和保存产物，不自动创建正式 Release。
+标签必须与 CMake 项目版本一致。`main` 推送和手动运行只构建、测试、保存产物；
+只有推送版本标签才会在双平台验证全部通过后发布正式 Release。
 
 - Windows：`windows-2022` x64，Qt 6.11.1 静态版 + MinGW 13.1，生成单文件 EXE 和 SHA256。
 - macOS：`macos-15` arm64，Qt 6.11.1，生成 DMG、更新 ZIP 和各自的 SHA256。
@@ -238,4 +241,14 @@ macOS 更新包内必须只包含一个 `LogAnalyQt.app`。应用会按当前系
 
 构建目录、安装包、日志、个人配置和本地 Git 恢复备份不纳入版本控制。
 现有 `.workflow/` 与 Gitee 发布脚本属于历史参考，GitHub Actions 不执行它们。
-程序内检查更新目前仍使用 Gitee；迁移 GitHub Releases 时需另行迁移更新来源。
+程序内更新通过 `https://github.com/jsnjjnzx/LogAnalyQt/releases/latest/download/update.json`
+获取版本、平台包地址和 SHA256，不使用客户端 Token。缺少对应平台包、校验值或版本信息异常时拒绝自动安装。
+
+发布时只给发布任务授予 `contents: write`，使用 Actions 自带的 `GITHUB_TOKEN`，无需个人 Token。
+流程先创建草稿，上传三个包、三个校验文件和 `update.json`，核对 GitHub 返回的全部附件大小与 SHA256 后再公开。
+失败时保留草稿供重试；已经公开的同版本 Release 禁止覆盖，应提升版本号再发布。
+正式发布后，Windows 和 Mac 会分别从该 Release 执行一次隔离更新演练：模拟旧版检查、下载、校验、
+保存工作区、替换、重启，并核对便携数据。演练使用临时安装目录，不替换开发者或用户的现有安装。
+
+发布新版本的操作顺序：修改 CMake 项目版本和 CHANGELOG，推送 main 并确认构建通过，再推送对应 `vX.Y.Z` 标签。
+首个 GitHub 迁移版为 `v3.1.1`。已经分发的 Gitee 旧版需要手动安装本版一次，此后从 GitHub 更新。

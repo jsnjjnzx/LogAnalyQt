@@ -293,6 +293,7 @@ ApplicationWindow {
     onWidthChanged: requestSaveWindowGeometry()
     onHeightChanged: requestSaveWindowGeometry()
     onMinimumWidthChanged: ensureMinimumWindowWidth()
+    property bool installingUpdate: false
     onClosing: close => {
         if (!saveParseWorkspace()) {
             close.accepted = false;
@@ -301,6 +302,13 @@ ApplicationWindow {
         }
         saveWindowGeometry();
         liveLogDialog.closing();
+        if (installingUpdate) {
+            if (!updateChecker.installUpdate()) {
+                close.accepted = false;
+                return;
+            }
+            Qt.callLater(Qt.quit);
+        }
     }
     onCurrentPageChanged: scheduleParseWorkspaceSave()
 
@@ -3478,7 +3486,9 @@ ApplicationWindow {
                     text: "立即更新 🚀"
                     visible: updateWindow.updateState === "ready"
                     onClicked: {
-                        updateChecker.installUpdate();
+                        mainWindow.installingUpdate = true;
+                        mainWindow.close();
+                        mainWindow.installingUpdate = false;
                     }
                 }
             }

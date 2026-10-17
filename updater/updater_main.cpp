@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string>
 #include <sstream>
+#include <cstdlib>
 
 // 简单的宽字符字符串比较辅助
 static bool streq(const wchar_t *a, const wchar_t *b) {
@@ -39,7 +40,11 @@ static bool streq(const wchar_t *a, const wchar_t *b) {
 
 // 显示错误消息框
 static void showError(const std::wstring &msg) {
+#ifdef LOGANALYQT_UPDATER_TESTING
+    fwprintf(stderr, L"%ls\n", msg.c_str());
+#else
     MessageBoxW(NULL, msg.c_str(), L"LogAnalyQt 更新器", MB_OK | MB_ICONERROR);
+#endif
 }
 
 // 显示信息消息框
@@ -53,8 +58,7 @@ static bool waitForProcessExit(DWORD pid, DWORD timeoutMs) {
     HANDLE hProcess =
         OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (hProcess == NULL) {
-        // 进程已不存在或无权访问，视为已退出
-        return true;
+        return GetLastError() == ERROR_INVALID_PARAMETER;
     }
 
     DWORD result = WaitForSingleObject(hProcess, timeoutMs);
@@ -119,9 +123,28 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/,
         return 1;
     }
 
+    if (source == target || GetFileAttributesW(target.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        showError(L"更新目标不存在或与更新包路径相同");
+        return 1;
+    }
+    const std::wstring staging = target + L".update-" + std::to_wstring(GetCurrentProcessId());
+    const std::wstring backup = target + L".backup-" + std::to_wstring(GetCurrentProcessId());
+    if (!CopyFileW(source.c_str(), staging.c_str(), TRUE)) {
+        const DWORD stagingError = GetLastError();
+        DeleteFileW(staging.c_str());
+#ifndef LOGANALYQT_UPDATER_TESTING
+        if (stagingError == ERROR_ACCESS_DENIED && !elevated &&
+            relaunchAsAdmin((std::wstring(lpCmdLine) + L" --elevated").c_str()))
+            return 0;
+#endif
+        showError(L"无法在安装目录暂存新版本，旧程序保持不变。请检查空间和写入权限。");
+        return 1;
+    }
+
     // 1. 等待主程序退出
     if (pid > 0) {
         if (!waitForProcessExit(pid, timeoutMs)) {
+            DeleteFileW(staging.c_str());
             showError(L"等待主程序退出超时，更新取消。");
             return 1;
         }
@@ -130,16 +153,14 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/,
     }
 
     // 2. 备份旧文件
-    std::wstring backup = target + L".bak";
-    // 如果已有旧备份，先删除
-    DeleteFileW(backup.c_str());
-
     BOOL backupOk = MoveFileW(target.c_str(), backup.c_str());
     if (!backupOk) {
         DWORD err = GetLastError();
+        DeleteFileW(staging.c_str());
 
         // 如果是权限不足且尚未提升，尝试 UAC 提升
         if ((err == ERROR_ACCESS_DENIED) && !elevated) {
+#ifndef LOGANALYQT_UPDATER_TESTING
             // 重新构造完整命令行，附加 --elevated 标记
             std::wstring newCmd = std::wstring(lpCmdLine) + L" --elevated";
             if (relaunchAsAdmin(newCmd.c_str())) {
@@ -148,22 +169,29 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/,
                 showError(L"需要管理员权限来更新程序，但用户拒绝了提升请求。");
                 return 1;
             }
+#else
+            showError(L"备份旧程序失败，旧程序保持不变");
+            return 1;
+#endif
         }
 
-        // 其他错误：目标文件可能不存在（首次安装），尝试直接复制
-        if (err != ERROR_FILE_NOT_FOUND) {
-            std::wstringstream ss;
-            ss << L"备份旧文件失败 (错误代码 " << err << L")。\n"
-               << L"目标: " << target << L"\n"
-               << L"请确保程序已关闭并且您有写入权限。";
-            showError(ss.str());
-            return 1;
-        }
-        // ERROR_FILE_NOT_FOUND: 目标不存在，可以直接复制
+        std::wstringstream ss;
+        ss << L"备份旧文件失败 (错误代码 " << err << L")。\n"
+           << L"目标: " << target << L"\n"
+           << L"请确保程序已关闭并且您有写入权限。";
+        showError(ss.str());
+        return 1;
     }
 
     // 3. 复制新文件到目标位置
-    BOOL copyOk = CopyFileW(source.c_str(), target.c_str(), FALSE);
+    BOOL copyOk;
+#ifdef LOGANALYQT_UPDATER_TESTING
+    if (std::getenv("LOGANALYQT_TEST_REPLACE_FAIL")) {
+        SetLastError(ERROR_DISK_FULL);
+        copyOk = FALSE;
+    } else
+#endif
+    copyOk = MoveFileExW(staging.c_str(), target.c_str(), MOVEFILE_WRITE_THROUGH);
     if (!copyOk) {
         DWORD err = GetLastError();
         std::wstringstream ss;
@@ -172,18 +200,15 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/,
 
         // 恢复备份
         if (backupOk) {
-            MoveFileW(backup.c_str(), target.c_str());
-            ss << L"\n备份已恢复，程序未被修改。";
+            if (MoveFileW(backup.c_str(), target.c_str()))
+                ss << L"\n备份已恢复，程序未被修改。";
+            else
+                ss << L"\n自动恢复失败，请保留并手动恢复备份: " << backup;
         }
+        DeleteFileW(staging.c_str());
         showError(ss.str());
         return 1;
     }
-
-    // 4. 替换成功，清理
-    // 删除备份文件
-    DeleteFileW(backup.c_str());
-    // 删除临时下载文件
-    DeleteFileW(source.c_str());
 
     // 5. 启动新程序
     if (launch) {
@@ -207,10 +232,13 @@ int WINAPI wWinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/,
             // 启动失败，提示用户手动启动
             std::wstringstream ss;
             ss << L"更新成功，但启动新程序失败。\n"
-               << L"请手动运行: " << target;
+               << L"请手动运行: " << target << L"\n旧程序备份: " << backup;
             showInfo(ss.str());
+            return 1;
         }
     }
 
+    DeleteFileW(backup.c_str());
+    DeleteFileW(source.c_str());
     return 0;
 }

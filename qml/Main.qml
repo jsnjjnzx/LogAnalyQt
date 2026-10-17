@@ -208,7 +208,17 @@ Window {
     onWidthChanged: requestSaveWindowGeometry()
     onHeightChanged: requestSaveWindowGeometry()
     onMinimumWidthChanged: ensureMinimumWindowWidth()
-    onClosing: saveWindowGeometry()
+    property bool installingUpdate: false
+    onClosing: close => {
+        saveWindowGeometry();
+        if (installingUpdate) {
+            if (!updateChecker.installUpdate()) {
+                close.accepted = false;
+                return;
+            }
+            Qt.callLater(Qt.quit);
+        }
+    }
 
     // 智能选择十六进制字节串函数 - 基于行的智能提取
     function selectHexString(textArea) {
@@ -4009,7 +4019,9 @@ Window {
                     text: "立即更新 🚀"
                     visible: updateWindow.updateState === "ready"
                     onClicked: {
-                        updateChecker.installUpdate();
+                        mainWindow.installingUpdate = true;
+                        mainWindow.close();
+                        mainWindow.installingUpdate = false;
                     }
                 }
             }

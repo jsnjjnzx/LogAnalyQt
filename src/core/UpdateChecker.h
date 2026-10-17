@@ -17,6 +17,7 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QTemporaryDir>
 #include <QUrl>
 
 class UpdateChecker : public QObject {
@@ -71,7 +72,7 @@ public:
   // --- 新增可调用方法 ---
   Q_INVOKABLE void downloadUpdate();    // 开始下载更新文件
   Q_INVOKABLE void cancelDownload();    // 取消下载
-  Q_INVOKABLE void installUpdate();     // 启动 updater 并退出主程序
+  Q_INVOKABLE bool installUpdate();
 
 signals:
   // --- 原有信号 ---
@@ -91,6 +92,9 @@ private slots:
   void onReplyFinished(QNetworkReply *reply);
 
 private:
+  friend class UpdateCheckerTest;
+  QUrl m_manifestUrl{QStringLiteral("https://github.com/jsnjjnzx/LogAnalyQt/releases/latest/download/update.json")};
+  QTemporaryDir m_tempDirectory;
   QNetworkAccessManager *m_networkManager;
 
   // --- 原有成员 ---
@@ -108,7 +112,6 @@ private:
   QString m_downloadErrorMsg;
   bool m_verifying;
   bool m_verifySuccess;
-  QString m_sha256Url;              // 当前平台更新包对应的 .sha256 下载地址
   QString m_expectedSha256;         // 当前平台更新包的 SHA256 哈希
   QString m_downloadedFilePath;     // 已下载的更新文件路径
   QString m_downloadFileName;       // 下载文件名（如 LogAnalyQt_v1.7.0.exe）

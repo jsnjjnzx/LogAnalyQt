@@ -75,7 +75,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 3.1.0 LANGUAGES CXX)
+project(LogAnalyQt VERSION 3.1.1 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -222,6 +222,11 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     enable_testing()
     target_compile_definitions(appLogAnalyQt PRIVATE LOGANALYQT_UI_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(update_checker_tests tests/update_checker_tests.cpp
+        src/core/UpdateChecker.h src/core/UpdateChecker.cpp)
+    target_include_directories(update_checker_tests PRIVATE src)
+    target_link_libraries(update_checker_tests PRIVATE Qt6::Core Qt6::Network Qt6::Gui)
+    add_test(NAME update_checker_tests COMMAND update_checker_tests)
     add_test(NAME ui_migration_runtime
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_migration_runtime.py
                 $<TARGET_FILE:appLogAnalyQt>)
@@ -693,7 +698,7 @@ endif()
 set_target_properties(appLogAnalyQt PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER com.loganalyqt.LogAnalyQt
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
-    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     MACOSX_BUNDLE_ICON_FILE "logo.icns"
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
@@ -793,6 +798,9 @@ add_custom_command(
     VERBATIM
 )
 target_sources(appLogAnalyQt PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/updater_resource.cpp")
+if(TARGET update_checker_tests)
+    target_sources(update_checker_tests PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/updater_resource.cpp")
+endif()
 endif()
 
 if(APPLE)
@@ -815,6 +823,24 @@ if(APPLE)
         COMMENT "Bundling macOS updater helper"
         VERBATIM
     )
+endif()
+
+if(LOGANALYQT_BUILD_PROTOCOL_TESTS AND (WIN32 OR APPLE))
+    if(WIN32)
+        add_executable(updater_test_helper WIN32 updater/updater_main.cpp)
+        target_link_libraries(updater_test_helper PRIVATE shell32 user32 advapi32)
+        if(MINGW)
+            target_link_options(updater_test_helper PRIVATE "-municode")
+        endif()
+    else()
+        add_executable(updater_test_helper updater/updater_main_macos.cpp)
+    endif()
+    set_target_properties(updater_test_helper PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    target_compile_definitions(updater_test_helper PRIVATE LOGANALYQT_UPDATER_TESTING)
+    add_executable(updater_restart_fixture tests/updater_restart_fixture.cpp)
+    add_test(NAME updater_replacement_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_updater.py
+            $<TARGET_FILE:updater_test_helper> $<TARGET_FILE:updater_restart_fixture>)
 endif()
 
 include(GNUInstallDirs)

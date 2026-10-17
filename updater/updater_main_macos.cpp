@@ -59,12 +59,14 @@ int runCommand(const std::vector<std::string> &arguments) {
 
 void showError(const std::string &message) {
   std::cerr << "LogAnalyQt updater: " << message << '\n';
+#ifndef LOGANALYQT_UPDATER_TESTING
   const std::string script =
       "on run argv\n"
       "display alert \"LogAnalyQt 更新失败\" message (item 1 of argv) "
       "as critical buttons {\"确定\"} default button \"确定\"\n"
       "end run";
   runCommand({"/usr/bin/osascript", "-e", script, message});
+#endif
 }
 
 bool parseArguments(int argc, char *argv[], Options &options,
@@ -157,13 +159,8 @@ void copyLegacyItemIfNeeded(const fs::path &source,
 }
 
 void migrateLegacyData(const fs::path &oldApp) {
-  const char *home = std::getenv("HOME");
-  if (!home || home[0] == '\0')
-    return;
-
   const fs::path oldData = oldApp / "Contents/MacOS";
-  const fs::path newData =
-      fs::path(home) / "Library/Application Support/LogAnalyQt";
+  const fs::path newData = oldApp.parent_path();
   copyLegacyItemIfNeeded(oldData / "LogAnalyQt.ini",
                          newData / "LogAnalyQt.ini");
   copyLegacyItemIfNeeded(oldData / "protocol_xml",
@@ -200,7 +197,7 @@ int main(int argc, char *argv[]) {
   const fs::path staging =
       parent / (".LogAnalyQt-update-" + std::to_string(getpid()));
   const fs::path backup =
-      parent / (options.target.filename().string() + ".backup");
+      parent / (options.target.filename().string() + ".backup-" + std::to_string(getpid()));
 
   fs::remove_all(staging, error);
   error.clear();
@@ -246,10 +243,13 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (renamex_np(options.target.c_str(), newApp.c_str(), RENAME_SWAP) != 0) {
+  bool swapped = false;
+#ifdef LOGANALYQT_UPDATER_TESTING
+  if (!std::getenv("LOGANALYQT_TEST_REPLACE_FAIL"))
+#endif
+    swapped = renamex_np(options.target.c_str(), newApp.c_str(), RENAME_SWAP) == 0;
+  if (!swapped) {
     // 非 APFS/HFS+ 卷可能不支持原子交换；回退到备份和恢复流程。
-    fs::remove_all(backup, error);
-    error.clear();
     fs::rename(options.target, backup, error);
     if (error) {
       fs::remove_all(staging, error);
@@ -257,26 +257,32 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    fs::rename(newApp, options.target, error);
+#ifdef LOGANALYQT_UPDATER_TESTING
+    if (std::getenv("LOGANALYQT_TEST_REPLACE_FAIL"))
+      error = std::make_error_code(std::errc::io_error);
+    else
+#endif
+      fs::rename(newApp, options.target, error);
     if (error) {
       std::error_code restoreError;
       fs::rename(backup, options.target, restoreError);
-      fs::remove_all(staging, restoreError);
+      fs::remove_all(staging, error);
       showError(restoreError ? "安装新版本失败，且旧版本恢复失败"
                              : "安装新版本失败，已恢复旧版本");
       return 1;
     }
-    fs::remove_all(backup, error);
   }
-
-  fs::remove_all(staging, error);
-  fs::remove(options.source, error);
 
   if (options.launch &&
       runCommand({"/usr/bin/open", options.target.string()}) != 0) {
-    showError("更新成功，但无法自动启动新版本，请手动打开应用");
+    showError("更新成功，但无法自动启动新版本，请手动打开应用。旧程序保留于: " +
+              (swapped ? newApp.string() : backup.string()));
     return 1;
   }
+
+  fs::remove_all(staging, error);
+  fs::remove_all(backup, error);
+  fs::remove(options.source, error);
 
   return 0;
 }
