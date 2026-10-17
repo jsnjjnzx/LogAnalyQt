@@ -142,44 +142,11 @@ jobs:
         run: python scripts/release/github_release.py --directory release_package --tag "$GITHUB_REF_NAME"
 
   verify-update:
-    name: Verify published update (${{ matrix.platform }})
+    name: Verify published update
     needs: release
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: Windows x64
-            runner: windows-2022
-            artifact: LogAnalyQt-Windows-x64
-          - platform: macOS arm64
-            runner: macos-15
-            artifact: LogAnalyQt-macOS-arm64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: packages
-      - name: Exercise Windows app update from GitHub
-        if: runner.os == 'Windows'
-        env:
-          QT_QPA_PLATFORM: windows
-        run: |
-          $Package = Get-ChildItem packages/*_Windows_x64.exe | Select-Object -First 1
-          python tests/test_github_update.py $Package.FullName $env:GITHUB_REF_NAME
-          if ($LASTEXITCODE -ne 0) { throw 'Published Windows update failed' }
-      - name: Exercise macOS app update from GitHub
-        if: runner.os == 'macOS'
-        env:
-          QT_QPA_PLATFORM: cocoa
-        run: |
-          ditto -x -k packages/*_macOS_arm64_update.zip runtime
-          python3 tests/test_github_update.py runtime/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt "$GITHUB_REF_NAME"
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      tag: ${{ github.ref_name }}
 
   macos:
     name: macOS arm64

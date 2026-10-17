@@ -40,7 +40,7 @@ def main():
         workspace_environment.pop("LOGANALYQT_UPDATE_TEST_RESULT")
         if not probe:
             subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "write"],
-                           cwd=root, env=workspace_environment, capture_output=True, check=True, timeout=90)
+                           cwd=root, env=workspace_environment, check=True, timeout=90)
         process = subprocess.Popen([str(executable), "--ui-smoke", "--update-probe" if probe else "--update-test"],
                                    cwd=root, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
@@ -65,8 +65,8 @@ def main():
                 assert hashlib.sha256(executable.read_bytes()).digest() == hashlib.sha256(binary.read_bytes()).digest()
             time.sleep(3)
             subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "read"],
-                           cwd=root, env=workspace_environment, capture_output=True, check=True, timeout=90)
-            print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, saved, replaced, restarted {version} and preserved the 11-tab workspace and portable data")
+                           cwd=root, env=workspace_environment, check=True, timeout=90)
+            print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, saved, replaced, restarted {version} and preserved the workspace drafts and portable data")
         finally:
             if process.poll() is None:
                 process.terminate()

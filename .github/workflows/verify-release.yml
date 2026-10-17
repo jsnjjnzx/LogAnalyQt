@@ -1,0 +1,64 @@
+name: Verify published release update
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published version tag to verify
+        required: true
+        default: v3.1.1
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Update from public Release (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows x64
+            runner: windows-2022
+          - platform: macOS arm64
+            runner: macos-15
+    env:
+      PYTHONUTF8: '1'
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate requested version
+        run: python -c "import os; from scripts.release.release_metadata import normalize_tag; print(normalize_tag(os.environ['RELEASE_TAG']))"
+      - name: Verify Windows update from published files
+        if: runner.os == 'Windows'
+        env:
+          QT_QPA_PLATFORM: windows
+        run: |
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern '*_Windows_x64.exe*' --dir packages
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot download published Windows package' }
+          $Package = Get-ChildItem packages/*_Windows_x64.exe | Select-Object -First 1
+          $Expected = ((Get-Content "$($Package.FullName).sha256" -Raw) -split '\s+')[0]
+          if ((Get-FileHash $Package.FullName -Algorithm SHA256).Hash.ToLower() -ne $Expected) { throw 'Published Windows SHA256 mismatch' }
+          python tests/test_github_update.py $Package.FullName $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { throw 'Published Windows update failed' }
+      - name: Verify macOS update from published files
+        if: runner.os == 'macOS'
+        env:
+          QT_QPA_PLATFORM: cocoa
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*_macOS_arm64_update.zip*' --dir packages
+          (cd packages && shasum -a 256 -c *.sha256)
+          ditto -x -k packages/*_macOS_arm64_update.zip runtime
+          python3 tests/test_github_update.py runtime/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt "$RELEASE_TAG"
