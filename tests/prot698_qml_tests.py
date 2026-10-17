@@ -39,11 +39,12 @@ def main():
         module(imports / "LogAnalyQt" / "Next", "LogAnalyQt.Next", source / "qml" / "Next")
         environment = os.environ.copy()
         environment["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+        test_log = imports / "qml-tests.txt"
         result = subprocess.run([
             runner, "-input", str(source / "tests/qml-next"),
-            "-import", str(imports), "-platform", "offscreen", "-o", "-,txt",
+            "-import", str(imports), "-platform", "offscreen", "-o", f"{test_log},txt",
         ], env=environment, cwd=source, timeout=90, check=False, capture_output=True, text=True)
-        output = result.stdout + result.stderr
+        output = (test_log.read_text(encoding="utf-8") if test_log.exists() else "") + result.stdout + result.stderr
         print(output, end="")
         if result.returncode:
             print(f"qmltestrunner exited with code 0x{result.returncode & 0xffffffff:08x}")
