@@ -1,4 +1,5 @@
 """Run UI/backend checks from a disposable portable app root, never the user's data."""
+import os
 import pathlib
 import shutil
 import subprocess
@@ -22,7 +23,7 @@ def main():
         def run(*arguments):
             log_path.unlink(missing_ok=True)
             result = subprocess.run(
-                [str(executable), "-platform", "offscreen", "--ui-smoke", *arguments],
+                [str(executable), "-platform", os.environ.get("QT_QPA_PLATFORM", "offscreen"), "--ui-smoke", *arguments],
                 cwd=runtime, capture_output=True, text=True, timeout=90,
             )
             log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""

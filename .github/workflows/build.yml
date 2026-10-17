@@ -28,6 +28,7 @@ jobs:
           python-version: '3.12'
       - name: Check version and release tooling
         run: |
+          Write-Host "Available logical CPUs: $([Environment]::ProcessorCount)"
           python scripts/ci/check_build.py
           if ($LASTEXITCODE -ne 0) { throw 'Version validation failed' }
           python -m unittest tests.test_release_automation tests.test_ci_packages -v
@@ -136,6 +137,8 @@ jobs:
           python3 scripts/ci/check_build.py --packages release_package --platform macos
           hdiutil verify release_package/*.dmg
       - name: Run deployed app without Qt environment overrides
+        env:
+          QT_QPA_PLATFORM: cocoa
         run: |
           test "$(lipo -archs build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt)" = arm64
           env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
