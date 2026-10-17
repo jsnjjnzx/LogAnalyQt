@@ -58,7 +58,10 @@ Item {
             mouseClick(item("settings-test")); compare(control.tests,1); compare(control.saves,1); verify(control.connectionBusy)
             verify(!item("settings-save").enabled); verify(!item("settings-test").enabled); verify(!item("settings-clear-key").enabled)
             verify(item("settings-connection-status").text.indexOf("正在") >= 0)
-            wait(30); mouseClick(item("settings-cancel-test")); compare(control.connectionStatus,"cancelled"); verify(item("settings-save").enabled)
+            tryCompare(control,"settingsBusy",false)
+            const cancel = item("settings-cancel-test")
+            tryCompare(cancel,"visible",true); verify(waitForPolish(cancel.parent))
+            mouseClick(cancel); tryCompare(control,"connectionStatus","cancelled"); verify(item("settings-save").enabled)
         }
         function test_missingControllerAndUnavailableCredentials() {
             showModel(); control.credentialAvailable = false; verify(!item("settings-save").enabled); verify(!item("settings-test").enabled)

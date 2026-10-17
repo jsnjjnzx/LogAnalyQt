@@ -291,10 +291,10 @@ void testStructuredProxyAndRows(Ai698Tools &tools, const AiFrameContext &ctx) {
   auto missingRows = record; missingRows.remove("rows");
   const auto missingRowsResult = data(tools.invoke("validate_draft", draft("GET_RESPONSE_RECORD", {{"recordResult", missingRows}}), ctx), "record missing rows");
   expect(missingRowsResult["valid"] == false && missingRowsResult["errors"].toArray().first().toObject()["path"] == "$.treeValue.recordResult.rows", "choice1 missing rows must not ask for the unrelated DAR branch");
-  auto missingCell = record; missingCell["rows"] = QJsonArray{QJsonArray{1}};
+  auto missingCell = record; missingCell["rows"] = QJsonArray{QJsonValue(QJsonArray{1})};
   const auto missing = data(tools.invoke("validate_draft", draft("GET_RESPONSE_RECORD", {{"recordResult", missingCell}}), ctx), "record missing cell");
   expect(missing["valid"] == false && missing["errors"].toArray().first().toObject()["path"] == "$.treeValue.recordResult.rows[0]", "row width mismatch reports real row path");
-  auto wrongUnit = record; wrongUnit["rows"] = QJsonArray{QJsonArray{1, QJsonObject{{"representation", "raw"}, {"value", 2}, {"unit", "V"}}}};
+  auto wrongUnit = record; wrongUnit["rows"] = QJsonArray{QJsonValue(QJsonArray{1, QJsonObject{{"representation", "raw"}, {"value", 2}, {"unit", "V"}}})};
   rejects(tools.invoke("build_frame", draft("GET_RESPONSE_RECORD", {{"recordResult", wrongUnit}}), ctx), "invalid_arguments", "record cell obeys actual column unit");
   auto tooManyRows = record; QJsonArray excessive;
   for (int i = 0; i < 256; ++i) excessive.append(QJsonArray{1, QJsonObject{{"representation", "raw"}, {"value", 1}, {"unit", "A"}}});
@@ -306,7 +306,7 @@ void testStructuredProxyAndRows(Ai698Tools &tools, const AiFrameContext &ctx) {
   auto empty = record; empty["rows"] = QJsonArray{};
   result = data(tools.invoke("build_frame", draft("GET_RESPONSE_RECORD", {{"recordResult", empty}}), ctx), "explicit empty record data"); checkFrame(result, ctx, true);
   const QJsonObject roadColumns{{"items", QJsonArray{QJsonObject{{"choice", 1}, {"oad", oad("A108")}, {"roadOads", QJsonArray{oad("A101"), oad("A104")}}}}}};
-  auto road = record; road["rcsd"] = roadColumns; road["rows"] = QJsonArray{QJsonArray{QJsonArray{1, 2}}};
+  auto road = record; road["rcsd"] = roadColumns; road["rows"] = QJsonArray{QJsonValue(QJsonArray{QJsonValue(QJsonArray{1, 2})})};
   rejects(tools.invoke("build_frame", draft("GET_RESPONSE_RECORD", {{"recordResult", road}}), ctx), "unsupported_definition", "uncertain ROAD cell container is never guessed");
   auto manualRoad = road; manualRoad.remove("rows"); manualRoad["rowCount"] = 1; manualRoad["rowsHex"] = "02021101120002";
   manual = {{"piid", QVariantMap{{"seqNo", ctx.piidSequence}}}, {"recordResult", manualRoad.toVariantMap()}};
@@ -316,7 +316,7 @@ void testStructuredProxyAndRows(Ai698Tools &tools, const AiFrameContext &ctx) {
   road["rows"] = QJsonArray{};
   result = data(tools.invoke("build_frame", draft("GET_RESPONSE_RECORD", {{"recordResult", road}}), ctx), "ROAD empty rows need no container guess"); checkFrame(result, ctx, true);
   const QJsonObject structColumns{{"items", QJsonArray{QJsonObject{{"choice", 0}, {"oad", oad("A102")}}}}};
-  record["rcsd"] = structColumns; record["rows"] = QJsonArray{QJsonArray{QJsonArray{"18446744073709551615", QJsonArray{1, 2}, false}}};
+  record["rcsd"] = structColumns; record["rows"] = QJsonArray{QJsonValue(QJsonArray{QJsonValue(QJsonArray{"18446744073709551615", QJsonArray{1, 2}, false})})};
   result = data(tools.invoke("build_frame", draft("GET_RESPONSE_RECORD", {{"recordResult", record}}), ctx), "record cell can itself be XML structure with array and uint64"); checkFrame(result, ctx, true);
   expect(result["normalizedTreeText"].toString().contains("18446744073709551615"), "record uint64 remains exact review text");
 }
@@ -370,7 +370,7 @@ void testPublishedSchemas(Ai698Tools &tools, const AiFrameContext &ctx) {
   add("proxy-tree", QJsonObject{{"totalTimeout", 10}, {"servers", QJsonArray{proxyServer}}}, true);
   proxyServer.remove("tsa"); proxyServer["tsaHex"] = "95665544332211";
   add("proxy-tree", QJsonObject{{"totalTimeout", 10}, {"servers", QJsonArray{proxyServer}}}, false);
-  QJsonObject rowResult{{"oad", oad("A108")}, {"rcsd", QJsonObject{{"items", QJsonArray{QJsonObject{{"choice", 0}, {"oad", oad("A101")}}}}}}, {"choice", 1}, {"rows", QJsonArray{QJsonArray{1}}}};
+  QJsonObject rowResult{{"oad", oad("A108")}, {"rcsd", QJsonObject{{"items", QJsonArray{QJsonObject{{"choice", 0}, {"oad", oad("A101")}}}}}}, {"choice", 1}, {"rows", QJsonArray{QJsonValue(QJsonArray{1})}}};
   add("record-response", QJsonObject{{"recordResult", rowResult}}, true);
   auto malformedRow = rowResult; malformedRow["rows"] = QJsonArray{true};
   add("record-response", QJsonObject{{"recordResult", malformedRow}}, false);

@@ -150,8 +150,8 @@ void testDatesStringsAndContainers() {
   rejectRaw(structure,QVariantList{1},"raw structure missing value must not fill zero");
   reject(structure,QJsonObject{{"value",1}},"container object is not ordered array");
   auto array=leaf("array"); array.children={structure};
-  expect(encoded(array,QJsonArray{QJsonArray{1,true}}).toHex()=="0101020211010301","array of structures");
-  reject(array,QJsonArray{QJsonArray{true,1}},"nested type mismatch");
+  expect(encoded(array,QJsonArray{QJsonValue(QJsonArray{1,true})}).toHex()=="0101020211010301","array of structures");
+  reject(array,QJsonArray{QJsonValue(QJsonArray{true,1})},"nested type mismatch");
   auto simpleArray=leaf("array"); simpleArray.children={leaf("unsigned")}; QJsonArray tooMany;
   for(int i=0;i<10001;++i)tooMany.append(1);
   reject(simpleArray,tooMany,"container node/count budget");

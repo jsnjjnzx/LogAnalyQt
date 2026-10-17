@@ -72,6 +72,11 @@ CMakeLists.txt.user*
 # Binaries
 # --------
 *.dll
+*.dylib
+*.lib
+*.exe
+*.dmg
+*.dSYM/
 
 # Directories with generated files
 .moc/
@@ -119,6 +124,9 @@ Terminal3.log
 !.env.example
 *.p12
 *.pfx
+*.pem
+*.key
+*.p8
 *.keychain-db
 __pycache__/
 
