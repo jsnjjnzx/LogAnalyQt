@@ -23,7 +23,9 @@ bool ensure(const QString &path, QString *error) {
   }
   temporary.close();
   // Rename refuses an existing destination, including a concurrent user save.
-  if (!QFile::rename(temporary.fileName(), path) && !QFileInfo::exists(path)) {
+  if (temporary.rename(path)) {
+    temporary.setAutoRemove(false);
+  } else if (!QFileInfo::exists(path)) {
     if (error) *error = QStringLiteral("无法创建默认提示词文件：") + path;
     return false;
   }

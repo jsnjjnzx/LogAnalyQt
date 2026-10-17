@@ -5,7 +5,10 @@
 #include "csg_upstream_test_support.h"
 #include <QFile>
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include <QMouseEvent>
+#include <QQmlEngine>
+#include <QQmlIncubationController>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QTemporaryDir>
@@ -20,6 +23,16 @@ inline QString checkMigratedUi(QQuickWindow *window) {
   try {
     auto *backend = window->findChild<LogBackend *>("analysisBackend");
     require(backend != nullptr, "real LogBackend is missing");
+    auto settle = [&] {
+      auto *controller = qmlEngine(window)->incubationController();
+      QElapsedTimer elapsed;
+      elapsed.start();
+      do {
+        QCoreApplication::processEvents();
+        if (controller) controller->incubateFor(10);
+      } while (controller && controller->incubatingObjectCount() && elapsed.elapsed() < 2000);
+      require(!controller || controller->incubatingObjectCount() == 0, "UI delegates did not finish creation");
+    };
     std::function<QQuickItem *(QQuickItem *, const QString &)> findItem =
         [&](QQuickItem *parent, const QString &name) -> QQuickItem * {
       if (parent->objectName() == name) return parent;
@@ -30,7 +43,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     auto uiItem = [&](const QString &name) { return findItem(window->contentItem(), name); };
     auto navigate = [&](int page) {
       require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, page)), "navigation invocation failed");
-      QCoreApplication::processEvents();
+      settle();
       require(window->property("currentPage").toInt() == page, "navigation did not reach requested page");
     };
     navigate(1);
@@ -48,7 +61,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       QMouseEvent release(QEvent::MouseButtonRelease, click, window->mapToGlobal(click.toPoint()), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
       QCoreApplication::sendEvent(window, &press);
       QCoreApplication::sendEvent(window, &release);
-      QCoreApplication::processEvents();
+      settle();
     };
     clickParse();
     require(backend->resultModel()->rowCount() > 2, "clicking manual parse did not produce fields");
@@ -132,7 +145,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
         require(QMetaObject::invokeMethod(window, "addParseTab"), "adding parse tab failed");
       else
         tabs->setProperty("currentIndex", tab);
-      QCoreApplication::processEvents();
+      settle();
       require(tabs->property("currentIndex").toInt() == tab, "new tab was not selected");
       const int modelId = tab + 4;
       auto *pane = uiItem(QString("session-pane-%1").arg(modelId));
@@ -166,7 +179,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     navigate(3);
     for (int tab = 10; tab >= 0; --tab) {
       tabs->setProperty("currentIndex", tab);
-      QCoreApplication::processEvents();
+      settle();
       for (int other = 0; other < 11; ++other) {
         auto *pane = uiItem(QString("session-pane-%1").arg(other + 4));
         require(pane && pane->isVisible() == (other == tab), "tab switch must show exactly one pane");
@@ -257,7 +270,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     auto *framing = window->findChild<QObject *>("page-4");
     framing->setProperty("frameHex", frame);
     require(QMetaObject::invokeMethod(framing, "verifyCurrent"), "verification popup invocation failed");
-    QCoreApplication::processEvents();
+    settle();
     require(!framing->property("verifyFields").toList().isEmpty(), "verification popup has no rows");
     require(QMetaObject::invokeMethod(framing, "framingResult", Q_ARG(QString, frame), Q_ARG(int, 1)), "framing result signal failed");
     require(window->property("currentPage").toInt() == 1 && backend->resultModel()->rowCount() > 5, "framing result did not return to manual page");

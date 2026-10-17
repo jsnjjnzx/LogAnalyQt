@@ -48,6 +48,10 @@ jobs:
           $Mingw = Get-ChildItem "$env:IQTA_TOOLS" -Directory -Filter 'mingw1310*' | Select-Object -First 1
           if (-not $Mingw) { throw 'MinGW 13.1 not installed' }
           "MINGW_DIR=$($Mingw.FullName)" >> $env:GITHUB_ENV
+      - name: Check QML test tools
+        run: |
+          python tests/prot698_qml_tests.py
+          if ($LASTEXITCODE -ne 0) { throw 'QML test tools failed' }
       - name: Restore static Qt
         id: qt-cache
         uses: actions/cache/restore@v4

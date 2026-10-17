@@ -32,6 +32,7 @@ def main():
             runner = str(fallback)
     if not runner:
         raise SystemExit("qmltestrunner unavailable; provide its path as the first argument")
+    print(f"QML test runner: {runner}", flush=True)
     with tempfile.TemporaryDirectory(prefix="prot698-qml-imports-") as temporary:
         imports = Path(temporary)
         module(imports / "LogAnalyQt", "LogAnalyQt", source / "qml")
@@ -40,10 +41,12 @@ def main():
         environment["QT_QUICK_CONTROLS_STYLE"] = "Basic"
         result = subprocess.run([
             runner, "-input", str(source / "tests/qml-next"),
-            "-import", str(imports), "-platform", "offscreen",
+            "-import", str(imports), "-platform", "offscreen", "-o", "-,txt",
         ], env=environment, cwd=source, timeout=90, check=False, capture_output=True, text=True)
         output = result.stdout + result.stderr
         print(output, end="")
+        if result.returncode:
+            print(f"qmltestrunner exited with code 0x{result.returncode & 0xffffffff:08x}")
         warnings = [line for line in output.splitlines()
                     if any(level in line for level in ("QWARN", "QFATAL", "QCRITICAL"))
                     and "Populating font family aliases" not in line]

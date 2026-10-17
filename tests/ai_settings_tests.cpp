@@ -98,6 +98,7 @@ void testStorageAndBinding() {
   QFile ini(path);
   expect(ini.open(QIODevice::ReadOnly), QStringLiteral("读取隔离配置"));
   const QByteArray iniBytes = ini.readAll();
+  ini.close();
   expect(!iniBytes.contains("fake-key-one") && !iniBytes.contains("apiKey"),
          QStringLiteral("INI 只写地址和模型，无 Key"));
   expect(settings.baseUrl() == QStringLiteral("https://api.deepseek.com"),
