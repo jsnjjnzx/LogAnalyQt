@@ -73,6 +73,11 @@ while lsof -c macdeploy 2>/dev/null | grep -F "$ROOT_DIR" >/dev/null; do
   sleep 1
 done
 
+# 应用不使用这些数据库驱动，它们依赖构建机上未随包部署的数据库库。
+rm -f "$APP_BUNDLE/Contents/PlugIns/sqldrivers/libqsqlodbc.dylib" \
+  "$APP_BUNDLE/Contents/PlugIns/sqldrivers/libqsqlpsql.dylib" \
+  "$APP_BUNDLE/Contents/PlugIns/sqldrivers/libqsqlmimer.dylib"
+
 if [[ "$IDENTITY" == "-" ]]; then
   codesign --force --deep --sign - "$APP_BUNDLE"
 else

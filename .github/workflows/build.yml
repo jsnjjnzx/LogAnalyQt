@@ -133,6 +133,7 @@ jobs:
         run: |
           test "$(uname -m)" = arm64
           RUN_TESTS=1 scripts/package_macos.sh
+          python3 scripts/ci/check_build.py --macos-bundle build/macos-release/package/LogAnalyQt.app
           python3 scripts/ci/check_build.py --packages release_package --platform macos
           hdiutil verify release_package/*.dmg
       - name: Run deployed app without Qt environment overrides

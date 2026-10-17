@@ -75,26 +75,7 @@ cmake -S "$RootDir" -B $BuildDir -G "MinGW Makefiles" `
 if ($LASTEXITCODE -ne 0) { Write-Error "Configuration failed"; exit 1 }
 
 # Build
-Write-Host "Building project (phase 1: autogen)..."
-# First build only the autogen targets to ensure JSON files are generated
-cmake --build $BuildDir --target appLogAnalyQt_autogen appLogAnalyQt_automoc_json_extraction
-if ($LASTEXITCODE -ne 0) { Write-Error "Build phase 1 failed"; exit 1 }
-
-# Manually run moc --collect-json to ensure metatypes.json is generated correctly
-# This is a workaround for a race condition in Qt's CMake scripts
-Write-Host "Generating metatypes JSON..."
-$MocExe = "$QtDir/bin/moc.exe"
-$JsonListFile = "$BuildDir/meta_types/appLogAnalyQt_json_file_list.txt"
-$MetaTypesGen = "$BuildDir/meta_types/qt6apploganalyqt_release_metatypes.json.gen"
-$MetaTypesJson = "$BuildDir/meta_types/qt6apploganalyqt_release_metatypes.json"
-
-& $MocExe -o $MetaTypesGen --collect-json "@$JsonListFile"
-if ($LASTEXITCODE -ne 0) { Write-Error "Failed to generate metatypes"; exit 1 }
-
-Copy-Item -Path $MetaTypesGen -Destination $MetaTypesJson -Force
-
-Write-Host "Building project (phase 2: full build) with $MaxThreads threads..."
-# Then build the rest with multiple threads
+Write-Host "Building project with $MaxThreads threads..."
 cmake --build $BuildDir --parallel $MaxThreads
 
 if ($LASTEXITCODE -ne 0) { Write-Error "Build failed"; exit 1 }
