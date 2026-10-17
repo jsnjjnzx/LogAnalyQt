@@ -1,0 +1,3417 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- App协议接口定义配置文件 (XML版本) -->
+<!-- 支持字段级类型指定和结构化解析指导 -->
+<app_msg_protocol version="v1.0.1" date="2026-02-11">
+    <!-- =============================================== -->
+    <!-- IID=0000H 通用消息接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0000" name="通用消息接口定义" description="所有模块都支持的通用消息接口">
+        <!-- 0x0002 系统停电 (事件广播) -->
+        <interface iop="0x0002" name="系统停电" type="event">
+            <description>系统失电事件通知 (广播事件报文)</description>
+            <event format="NULL">
+                <!-- 无事件载荷 -->
+            </event>
+        </interface>
+        <!-- 0x0003 系统复位 (事件广播) -->
+        <interface iop="0x0003" name="系统复位" type="event">
+            <description>系统复位事件通知 (广播事件报文)</description>
+            <event format="NULL"/>
+        </interface>
+        <!-- 0x0004 系统上电 (事件广播) -->
+        <interface iop="0x0004" name="系统上电" type="event">
+            <description>系统上电事件通知 (广播事件报文)</description>
+            <event format="NULL"/>
+        </interface>
+        <!-- 0x0005 系统校时 (事件广播) -->
+        <interface iop="0x0005" name="系统校时" type="event">
+            <description>系统时钟校准事件通知 (广播事件报文)</description>
+            <event format="NULL"/>
+        </interface>
+        <!-- 0x000A 最后一次主站通讯时间 (事件广播) -->
+        <interface iop="0x000A" name="最后一次主站通讯时间" type="event">
+            <description>由puAmr或stAmr发送此消息，建议每分钟广播一次 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="最后一次通讯时间" type="date_time_s"/>
+            </event>
+        </interface>
+        <!-- 0x0010 心跳检测 -->
+        <interface iop="0x0010" name="心跳检测">
+            <description>线程状态监控，按bit位标识线程状态，bit0表示线程ID为1，依次类推，bit位值为0表示正常，1表示异常</description>
+            <request format="NULL"/>
+            <response name="线程状态" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x0011 执行维护命令 -->
+        <interface iop="0x0011" name="执行维护命令">
+            <description>发送维护命令并返回执行结果</description>
+            <request format="sequence_of">
+                <element type="visible-string"/>
+            </request>
+            <response name="执行结果" type="visible-string"/>
+        </interface>
+        <!-- 0x0012 透明转输 -->
+        <interface iop="0x0012" name="透明转输">
+            <description>透传任意二进制数据</description>
+            <request name="请求" type="octet-string"/>
+            <response name="响应" type="octet-string"/>
+        </interface>
+        <!-- 0x0013 版本信息 -->
+        <interface iop="0x0013" name="版本信息">
+            <description>获取系统版本号和版本日期信息</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="版本号" type="visible-string"/>
+                <field name="版本日期" type="date_time_s"/>
+            </response>
+        </interface>
+        <!-- 0x0014 错误信息 -->
+        <interface iop="0x0014" name="错误信息">
+            <description>当无法响应客户机请求时，使用错误信息应答</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="请求的消息ID" type="double-long-unsigned"/>
+                <field name="错误码" type="long"/>
+            </response>
+        </interface>
+        <!-- 0x0015 恢复出厂 -->
+        <interface iop="0x0015" name="恢复出厂">
+            <description>查询快速复归状态</description>
+            <request format="NULL"/>
+            <response name="应答" type="bool"/>
+        </interface>
+        <!-- 0x0016 APP-ID -->
+        <interface iop="0x0016" name="APP-ID">
+            <description>获取应用程序标识符</description>
+            <request format="NULL"/>
+            <response name="应用ID" type="octet-string"/>
+        </interface>
+        <!-- 0x0017 数据发送 -->
+        <interface iop="0x0017" name="数据发送">
+            <description>发送和接收APDU数据</description>
+            <request name="APDU数据" type="octet-string"/>
+            <response name="APDU响应" type="octet-string"/>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0001H 系统管理器接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0001" name="系统管理器接口定义" description="系统管理器模块专用接口">
+        <!-- 0x0001 以太网插拔 (事件广播) -->
+        <interface iop="0x0001" name="以太网插拔" type="event">
+            <description>以太网设备插拔事件通知 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="设备名" type="visible-string"/>
+                <field name="插拔类型" type="enum">
+                    <enum_value value="0" name="上线"/>
+                    <enum_value value="1" name="离线"/>
+                </field>
+            </event>
+        </interface>
+        <!-- 0x0002 IP地址变更 (事件广播) -->
+        <interface iop="0x0002" name="IP地址变更" type="event">
+            <description>IP地址变更事件通知 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="设备名" type="visible-string"/>
+                <field name="IP 地址" type="octet-string" format="ip"/>
+                <field name="子网掩码" type="octet-string" format="ip"/>
+                <field name="网关" type="octet-string" format="ip"/>
+            </event>
+        </interface>
+        <!-- 0x0003 APP上线/离线 (事件广播) -->
+        <interface iop="0x0003" name="APP上线/离线" type="event">
+            <description>APP上线/离线事件通知 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <!-- APP信息 (MQT_PLUGIN结构体展开) -->
+                <field name="组件名称" type="visible-string"/>
+                <field name="订阅事件" type="sequence_of">
+                    <element type="double-long-unsigned"/>
+                </field>
+                <field name="版本信息" type="visible-string"/>
+                <field name="发布日期" type="date_time_s"/>
+                <field name="APP-ID" type="octet-string"/>
+                <!-- 事件类别 -->
+                <field name="事件类别" type="enum">
+                    <enum_value value="0" name="上线"/>
+                    <enum_value value="1" name="离线"/>
+                </field>
+            </event>
+        </interface>
+        <!-- 0x0010 APP请求注册 -->
+        <interface iop="0x0010" name="APP请求注册">
+            <description>APP向系统管理器请求注册，包含进程号和组件信息</description>
+            <request format="SEQUENCE">
+                <field name="进程号" type="double-long"/>
+                <!-- 组件信息 (MQT_PLUGIN结构体展开) -->
+                <field name="组件名称" type="visible-string"/>
+                <field name="订阅事件" type="sequence_of">
+                    <element type="double-long-unsigned"/>
+                </field>
+                <field name="版本信息" type="visible-string"/>
+                <field name="发布日期" type="date_time_s"/>
+                <field name="APP-ID" type="octet-string"/>
+            </request>
+            <response name="注册结果" type="bool"/>
+        </interface>
+        <!-- 0x0011 APP取消注册 -->
+        <interface iop="0x0011" name="APP取消注册">
+            <description>APP向系统管理器请求取消注册</description>
+            <request format="NULL"/>
+            <response name="取消注册结果" type="bool"/>
+        </interface>
+        <!-- 0x0012 查询已注册APP -->
+        <interface iop="0x0012" name="查询已注册APP">
+            <description>查询当前已注册的所有APP信息</description>
+            <request format="NULL"/>
+            <response format="sequence_of">
+                <!-- SEQUENCE OF MQT_PLUGIN -->
+                <element type="sequence">
+                    <field name="组件名称" type="visible-string"/>
+                    <field name="订阅事件" type="sequence_of">
+                        <element type="double-long-unsigned"/>
+                    </field>
+                    <field name="版本信息" type="visible-string"/>
+                    <field name="发布日期" type="date_time_s"/>
+                    <field name="APP-ID" type="octet-string"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0013 查询指定APP信息 -->
+        <interface iop="0x0013" name="查询指定APP信息">
+            <description>根据组件名称查询指定APP的详细信息</description>
+            <request name="组件名称" type="visible-string"/>
+            <response format="SEQUENCE">
+                <!-- MQT_PLUGIN结构体展开 -->
+                <field name="组件名称" type="visible-string"/>
+                <field name="订阅事件" type="sequence_of">
+                    <element type="double-long-unsigned"/>
+                </field>
+                <field name="版本信息" type="visible-string"/>
+                <field name="发布日期" type="date_time_s"/>
+                <field name="APP-ID" type="octet-string"/>
+            </response>
+        </interface>
+        <!-- 0x0020 事件订阅 -->
+        <interface iop="0x0020" name="事件订阅">
+            <description>订阅指定的事件，事件掩码定义：bit0~bit15按bit位顺序标识事件，bit16~bit31标识事件所属IID</description>
+            <request format="sequence_of">
+                <!-- SEQUENCE OF double-long-unsigned -->
+                <element type="double-long-unsigned"/>
+            </request>
+            <response name="订阅结果" type="bool"/>
+        </interface>
+        <!-- 0x0021 事件取消订阅 -->
+        <interface iop="0x0021" name="事件取消订阅">
+            <description>取消订阅指定的事件</description>
+            <request format="sequence_of">
+                <!-- SEQUENCE OF double-long-unsigned -->
+                <element type="double-long-unsigned"/>
+            </request>
+            <response name="取消订阅结果" type="bool"/>
+        </interface>
+        <!-- 0x0022 查询订阅的事件信息 -->
+        <interface iop="0x0022" name="查询订阅的事件信息">
+            <description>查询指定APP订阅的事件信息</description>
+            <request name="组件名称" type="visible-string"/>
+            <response format="sequence_of">
+                <!-- SEQUENCE OF double-long-unsigned -->
+                <element type="double-long-unsigned"/>
+            </response>
+        </interface>
+        <!-- 0x0030 请求系统重启 -->
+        <interface iop="0x0030" name="请求系统重启">
+            <description>请求系统重启，可指定重启延时</description>
+            <request name="重启延时" type="unsigned"/>
+            <response name="重启请求结果" type="bool"/>
+        </interface>
+        <!-- 0x0031 查询电源状态 -->
+        <interface iop="0x0031" name="查询电源状态">
+            <description>查询当前电源状态，0-掉电，1-上电</description>
+            <request format="NULL"/>
+            <response name="电源状态" type="double-long"/>
+        </interface>
+        <!-- 0x0032 查询以太网插拔状态 -->
+        <interface iop="0x0032" name="查询以太网插拔状态">
+            <description>查询指定设备的以太网插拔状态，0-未插入，1-正常插入，255-异常</description>
+            <request name="设备名" type="visible-string"/>
+            <response name="以太网插拔状态" type="double-long"/>
+        </interface>
+        <!-- 0x0035 配置本机IP地址 -->
+        <interface iop="0x0035" name="配置本机IP地址">
+            <description>配置本机IP地址，支持DHCP和静态配置两种方式</description>
+            <request format="SEQUENCE">
+                <field name="设备节点名" type="visible-string"/>
+                <field name="配置方式" type="choice">
+                    <choice value="0" name="DHCP"/>
+                    <choice value="1" name="静态" type="sequence">
+                        <field name="IP地址" type="octet-string" format="ip"/>
+                        <field name="子网掩码" type="octet-string" format="ip"/>
+                        <field name="网关" type="octet-string" format="ip"/>
+                    </choice>
+                </field>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0036 添加路由表 -->
+        <interface iop="0x0036" name="添加路由表">
+            <description>为指定设备添加路由表项</description>
+            <request format="SEQUENCE">
+                <field name="设备节点名" type="visible-string"/>
+                <field name="路由表" type="sequence_of">
+                    <!-- SEQUENCE OF 路由 -->
+                    <element type="sequence">
+                        <field name="目的地址" type="octet-string" format="ip"/>
+                        <field name="掩码地址" type="octet-string" format="ip"/>
+                        <field name="网关地址" type="octet-string" format="ip"/>
+                    </element>
+                </field>
+            </request>
+            <response name="添加路由结果" type="bool"/>
+        </interface>
+        <!-- 0x0037 删除路由表 -->
+        <interface iop="0x0037" name="删除路由表">
+            <description>删除指定设备的路由表项，当路由表为空时表示清空路由表</description>
+            <request format="SEQUENCE">
+                <field name="设备节点名" type="visible-string"/>
+                <field name="路由表" type="sequence_of">
+                    <!-- SEQUENCE OF 路由 -->
+                    <element type="sequence">
+                        <field name="目的地址" type="octet-string" format="ip"/>
+                        <field name="掩码地址" type="octet-string" format="ip"/>
+                        <field name="网关地址" type="octet-string" format="ip"/>
+                    </element>
+                </field>
+            </request>
+            <response name="删除路由结果" type="bool"/>
+        </interface>
+        <!-- 0x0038 时钟同步 -->
+        <interface iop="0x0038" name="时钟同步">
+            <description>系统时钟同步</description>
+            <request format="SEQUENCE">
+                <field name="时钟" type="date_time"/>
+                <field name="请求时间" type="date_time"/>
+            </request>
+            <response name="同步结果" type="bool"/>
+        </interface>
+        <!-- 0x0039 启用SNTP对时 -->
+        <interface iop="0x0039" name="启用SNTP对时">
+            <description>启用SNTP网络对时功能，当执行间隔为0时表示仅执行1次</description>
+            <request format="SEQUENCE">
+                <field name="时钟源" type="visible-string"/>
+                <field name="执行间隔" type="double-long-unsigned"/>
+            </request>
+            <response name="启用结果" type="bool"/>
+        </interface>
+        <!-- 0x003A 获取设备信息 -->
+        <interface iop="0x003A" name="获取设备信息">
+            <description>获取设备的硬件和软件基本信息</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="硬件序列号1" type="octet-string"/>
+                <field name="硬件序列号2" type="octet-string"/>
+                <field name="硬件序列号3" type="octet-string"/>
+                <field name="硬件序列号4" type="octet-string"/>
+                <field name="设备类型" type="double-long-unsigned"/>
+                <field name="设备供应商" type="octet-string"/>
+                <field name="硬件版本号" type="octet-string"/>
+                <field name="软件版本号" type="octet-string"/>
+                <field name="设备生产日期" type="octet-string"/>
+                <field name="设备描述符" type="octet-string"/>
+                <field name="设备MAC" type="octet-string"/>
+                <field name="设备内存容量" type="double-long-unsigned"/>
+                <field name="设备存储容量" type="double-long-unsigned"/>
+                <field name="处理器主频" type="double-long-unsigned"/>
+                <field name="CPU核数" type="unsigned"/>
+                <field name="CPU缓存" type="long-unsigned"/>
+                <field name="CPU架构" type="visible-string"/>
+            </response>
+        </interface>
+        <!-- 0x003B 执行system命令 -->
+        <interface iop="0x003B" name="执行system命令">
+            <description>执行系统命令</description>
+            <request format="sequence_of">
+                <!-- SEQUENCE OF visible-string -->
+                <element type="visible-string"/>
+            </request>
+            <response format="sequence_of">
+                <!-- SEQUENCE OF double-long -->
+                <element type="double-long"/>
+            </response>
+        </interface>
+        <!-- 0x003E 获取设备当前运行信息 -->
+        <interface iop="0x003E" name="获取设备当前运行信息">
+            <description>获取设备当前的运行状态信息</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="虚拟内存" type="double-long-unsigned"/>
+                <field name="内存使用率" type="long-unsigned"/>
+                <field name="硬盘使用率" type="long-unsigned"/>
+                <field name="CPU使用率" type="long-unsigned"/>
+                <field name="操作系统名称" type="visible-string"/>
+                <field name="操作系统版本" type="visible-string"/>
+                <field name="操作系统内核" type="visible-string"/>
+                <field name="系统启动时间" type="date_time_s"/>
+            </response>
+        </interface>
+        <!-- 0x003F 查询路由 -->
+        <interface iop="0x003F" name="查询路由">
+            <description>查询指定设备的路由表信息</description>
+            <request name="设备节点名" type="visible-string"/>
+            <response format="sequence_of">
+                <!-- SEQUENCE OF 路由 -->
+                <element type="sequence">
+                    <field name="目的地址" type="octet-string" format="ip"/>
+                    <field name="掩码地址" type="octet-string" format="ip"/>
+                    <field name="网关地址" type="octet-string" format="ip"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0040 启动服务 -->
+        <interface iop="0x0040" name="启动服务">
+            <description>启动指定的系统服务，如SSH、SFTP等</description>
+            <request format="sequence_of">
+                <!-- SEQUENCE OF 服务操作 -->
+                <element type="sequence">
+                    <field name="服务类型" type="enum">
+                        <enum_value value="1" name="SSH服务"/>
+                        <enum_value value="2" name="SFTP服务"/>
+                    </field>
+                    <field name="授权时长" type="double-long-unsigned"/>
+                </element>
+            </request>
+            <response name="启动结果" type="bool"/>
+        </interface>
+        <!-- 0x0041 关闭服务 -->
+        <interface iop="0x0041" name="关闭服务">
+            <description>关闭指定的系统服务，服务类型：SSH服务(1)、SFTP服务(2)</description>
+            <request name="服务类型" type="enum">
+                <enum_value value="1" name="SSH服务"/>
+                <enum_value value="2" name="SFTP服务"/>
+            </request>
+            <response name="关闭结果" type="bool"/>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0002H 无线远程拨号管理接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0002" name="无线远程拨号管理接口定义" description="无线远程拨号管理模块专用接口">
+        <!-- 0x0001 拨号状态变化事件 (事件广播) -->
+        <interface iop="0x0001" name="拨号状态变化事件" type="event">
+            <description>拨号状态变化事件通知 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="设备号" type="unsigned"/>
+                <field name="拨号状态" type="enum">
+                    <enum_value value="0" name="拨号成功"/>
+                    <enum_value value="1" name="异常掉线"/>
+                </field>
+            </event>
+        </interface>
+        <!-- 0x0010 查询模块信息 -->
+        <interface iop="0x0010" name="查询模块信息">
+            <description>查询指定设备的无线模块详细信息</description>
+            <request name="设备号" type="unsigned"/>
+            <response format="SEQUENCE">
+                <!-- 模块信息结构体展开 -->
+                <field name="插入状态" type="bool"/>
+                <!-- COMM_MYGMR版本信息结构体展开 -->
+                <field name="厂商代号" type="visible-string" size="4"/>
+                <field name="模块型号" type="visible-string" size="8"/>
+                <field name="软件版本号" type="visible-string" size="4"/>
+                <field name="软件发布日期" type="visible-string" size="6"/>
+                <field name="硬件版本号" type="visible-string" size="4"/>
+                <field name="硬件发布日期" type="visible-string" size="6"/>
+                <!-- 其他模块信息 -->
+                <field name="模块类型信息" type="visible-string"/>
+                <field name="模块识别码IMEI" type="visible-string"/>
+            </response>
+        </interface>
+        <!-- 0x0011 查询模块拨号状态 -->
+        <interface iop="0x0011" name="查询模块拨号状态">
+            <description>查询指定设备的拨号状态和网络信息</description>
+            <request name="设备号" type="unsigned"/>
+            <response format="SEQUENCE">
+                <!-- DIAL_INFO结构体展开 -->
+                <field name="SIM卡状态" type="enum">
+                    <enum_value value="0" name="未检测到卡"/>
+                    <enum_value value="1" name="正常"/>
+                </field>
+                <field name="拨号状态" type="unsigned">
+                    <enum_value value="0" name="拨号成功"/>
+                    <enum_value value="1" name="异常掉线"/>
+                </field>
+                <field name="SIM卡CCID" type="visible-string"/>
+                <field name="SIM卡IMSI" type="visible-string"/>
+                <field name="手机号" type="visible-string"/>
+                <field name="信号强度" type="unsigned"/>
+                <field name="运营商" type="enum">
+                    <enum_value value="0" name="中国移动"/>
+                    <enum_value value="1" name="中国联通"/>
+                    <enum_value value="2" name="中国电信"/>
+                    <enum_value value="3" name="无线专网"/>
+                </field>
+                <field name="网络制式" type="unsigned">
+                    <enum_value value="0" name="2G"/>
+                    <enum_value value="1" name="3G"/>
+                    <enum_value value="2" name="4G"/>
+                    <enum_value value="3" name="5G"/>
+                    <enum_value value="255" name="未知"/>
+                </field>
+                <field name="IP地址" type="octet-string" size="4" format="ip"/>
+                <field name="子网掩码" type="octet-string" size="4" format="ip"/>
+                <field name="网关" type="octet-string" size="4" format="ip"/>
+                <field name="拨号所选APN" type="visible-string"/>
+            </response>
+        </interface>
+        <!-- 0x0012 发送短信 -->
+        <interface iop="0x0012" name="发送短信">
+            <description>通过指定设备发送短信</description>
+            <request format="SEQUENCE">
+                <field name="设备号" type="unsigned"/>
+                <field name="主站号码" type="visible-string"/>
+                <field name="短信帧" type="octet-string"/>
+            </request>
+            <response name="发送结果" type="bool"/>
+        </interface>
+        <!-- 0x0013 接收短信 -->
+        <interface iop="0x0013" name="接收短信">
+            <description>从指定设备接收短信</description>
+            <request name="设备号" type="unsigned"/>
+            <response format="SEQUENCE" optional="true">
+                <field name="主站号码" type="visible-string"/>
+                <field name="短信帧" type="octet-string"/>
+            </response>
+        </interface>
+        <!-- 0x0014 设置拨号参数 -->
+        <interface iop="0x0014" name="设置拨号参数">
+            <description>设置指定设备的拨号参数</description>
+            <request format="SEQUENCE">
+                <field name="设备号" type="unsigned"/>
+                <field name="拨号参数" type="sequence_of">
+                    <!-- SEQUENCE OF运营商参数 -->
+                    <element type="sequence">
+                        <field name="运营商" type="enum"/>
+                        <enum_value value="0" name="中国移动"/>
+                        <enum_value value="1" name="中国联通"/>
+                        <enum_value value="2" name="中国电信"/>
+                        <enum_value value="3" name="无线专网"/>
+                        <enum_value value="4" name="未知"/>
+                        <field name="APN" type="visible-string"/>
+                        <field name="用户名" type="visible-string"/>
+                        <field name="密码" type="visible-string"/>
+                    </element>
+                </field>
+                <field name="锁定网络" type="enum"/>
+                <enum_value value="0" name="自动选择"/>
+                <enum_value value="1" name="锁定2G网络"/>
+                <enum_value value="2" name="锁定3G网络"/>
+                <enum_value value="3" name="锁定4G网络"/>
+                <enum_value value="4" name="锁定5G网络"/>
+                <field name="鉴权方式" type="enum"/>
+                <enum_value value="0" name="null"/>
+                <enum_value value="1" name="CHAP鉴权"/>
+                <enum_value value="2" name="PAP鉴权"/>
+                <enum_value value="3" name="PAP CHAP鉴权"/>
+                <enum_value value="255" name="自适应"/>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+        <!-- 0x0015 重新拨号 -->
+        <interface iop="0x0015" name="重新拨号">
+            <description>重新拨号连接网络</description>
+            <request name="设备号" type="unsigned"/>
+            <response name="重拨结果" type="bool"/>
+        </interface>
+        <!-- 0x0016 获取定位信息 -->
+        <interface iop="0x0016" name="获取定位信息">
+            <description>获取设备的GPS定位信息</description>
+            <request name="设备号" type="unsigned"/>
+            <response format="SEQUENCE">
+                <field name="UTC时间" type="date_time"/>
+                <field name="经度方位" type="enum"/>
+                <enum_value value="0" name="东经"/>
+                <enum_value value="1" name="西经"/>
+                <field name="经度度" type="long-unsigned"/>
+                <field name="经度分" type="float32"/>
+                <field name="纬度方位" type="enum"/>
+                <enum_value value="0" name="南纬"/>
+                <enum_value value="1" name="北纬"/>
+                <field name="纬度度" type="long-unsigned"/>
+                <field name="纬度分" type="float32"/>
+                <field name="状态指示" type="enum"/>
+                <enum_value value="0" name="未定位"/>
+                <enum_value value="1" name="有效定位"/>
+                <enum_value value="2" name="无效定位"/>
+                <enum_value value="3" name="正在估算"/>
+                <field name="高度" type="double-long"/>
+                <field name="模式指示" type="enum"/>
+                <enum_value value="0" name="自主定位"/>
+                <enum_value value="1" name="差分"/>
+                <enum_value value="2" name="估算"/>
+                <enum_value value="4" name="无效"/>
+            </response>
+        </interface>
+        <!-- 0x0018 设置短信参数 -->
+        <interface iop="0x0018" name="设置短信参数">
+            <description>设置短信格式和短信中心号码</description>
+            <request format="SEQUENCE">
+                <field name="设备号" type="unsigned"/>
+                <field name="短信格式" type="enum"/>
+                <enum_value value="0" name="PDU格式"/>
+                <enum_value value="1" name="文本格式"/>
+                <field name="短信中心号码" type="visible-string"/>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+        <!-- 0x0019 拨号统计 -->
+        <interface iop="0x0019" name="拨号统计">
+            <description>查询设备拨号统计信息</description>
+            <request name="设备号" type="unsigned"/>
+            <response format="SEQUENCE">
+                <!-- DIAL_CALC_DATA结构体展开 -->
+                <field name="当日拨号次数" type="long-unsigned"/>
+                <field name="当日失败次数" type="long-unsigned"/>
+                <field name="最后一次拨号成功时间" type="double-long-unsigned" format="utc_seconds"/>
+            </response>
+        </interface>
+        <!-- 0x0020 透明AT指令 -->
+        <interface iop="0x0020" name="透明AT指令">
+            <description>透明传输AT指令到无线模块</description>
+            <request format="SEQUENCE">
+                <field name="设备号" type="unsigned"/>
+                <field name="AT指令" type="visible-string"/>
+            </request>
+            <response format="SEQUENCE">
+                <field name="设备号" type="unsigned"/>
+                <field name="AT指令回码" type="visible-string"/>
+            </response>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0003H 本地通信管理接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0003" name="本地通信管理接口定义" description="本地通信管理模块专用接口，负责载波通信和电表档案管理">
+        <!-- 0x0001 上报事件数据 (事件广播) -->
+        <interface iop="0x0001" name="上报事件数据" type="event">
+            <description>上报载波通信事件数据 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="设备类型" type="unsigned"/>
+                <field name="协议类型" type="unsigned"/>
+                <field name="数据帧" type="octet-string"/>
+                <!-- PLC_READING_INFO结构体展开 (OPTIONAL) -->
+                <field name="抄读信息" type="sequence" optional="true">
+                    <field name="中继路由级数" type="unsigned"/>
+                    <field name="信道标识" type="unsigned"/>
+                    <field name="载波抄读相位" type="unsigned"/>
+                    <field name="载波信号品质" type="unsigned"/>
+                    <field name="载波标志" type="unsigned"/>
+                    <field name="保留" type="octet-string"/>
+                </field>
+            </event>
+        </interface>
+        <!-- 0x0002 上报离网事件 (事件广播) -->
+        <interface iop="0x0002" name="上报离网事件" type="event">
+            <description>上报载波节点离网事件 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="离网信息" type="sequence_of">
+                    <!-- SEQUENCE OF 离网节点 -->
+                    <element type="sequence">
+                        <field name="从节点地址" type="octet-string" size="6"/>
+                        <field name="状态变化" type="unsigned"/>
+                        <field name="离线时长" type="double-long-unsigned"/>
+                        <field name="离线原因" type="unsigned"/>
+                    </element>
+                </field>
+                <!-- PLC_READING_INFO结构体展开 (OPTIONAL) -->
+                <field name="抄读信息" type="sequence" optional="true">
+                    <field name="中继路由级数" type="unsigned"/>
+                    <field name="信道标识" type="unsigned"/>
+                    <field name="载波抄读相位" type="unsigned"/>
+                    <field name="载波信号品质" type="unsigned"/>
+                    <field name="载波标志" type="unsigned"/>
+                    <field name="保留" type="octet-string"/>
+                </field>
+            </event>
+        </interface>
+        <!-- 0x0010 抄表端口配置 -->
+        <interface iop="0x0010" name="抄表端口配置">
+            <description>配置抄表端口，支持添加和删除操作</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="端口配置" type="enum"/>
+                <enum_value value="0" name="删除端口"/>
+                <enum_value value="1" name="添加端口"/>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0020 添加表档案 -->
+        <interface iop="0x0020" name="添加表档案">
+            <description>添加电表档案信息</description>
+            <!-- 与协议定义一致：REQ ::= SEQUENCE OF { 端口号, AMR_METER } -->
+            <request format="sequence_of">
+                <element type="sequence" name="档案">
+                    <field name="端口号" type="double-long-unsigned" format="hex" padding="8"/>
+                    <!-- AMR_METER 结构体展开 -->
+                    <field name="档案地址" type="octet-string" size="6"/>
+                    <field name="档案MAC" type="octet-string" size="6"/>
+                    <field name="协议类型" type="unsigned"/>
+                </element>
+            </request>
+            <response name="添加结果" type="bool"/>
+        </interface>
+        <!-- 0x0021 删除表档案 -->
+        <interface iop="0x0021" name="删除表档案">
+            <description>删除指定的电表档案</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="档案列表" type="sequence_of">
+                    <element type="octet-string" size="6"/>
+                </field>
+            </request>
+            <response name="删除结果" type="bool"/>
+        </interface>
+        <!-- 0x0022 清除表档案 -->
+        <interface iop="0x0022" name="清除表档案">
+            <description>清除指定端口的所有表档案</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="清除结果" type="bool"/>
+        </interface>
+        <!-- 0x0031 上报抄表数据 -->
+        <interface iop="0x0031" name="上报抄表数据">
+            <description>上报载波抄表数据</description>
+            <response format="NULL"/>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned" format="hex" padding="8"/>
+                <field name="载波从节点地址" type="octet-string" size="6"/>
+                <field name="协议类型" type="unsigned"/>
+                <field name="数据帧" type="octet-string"/>
+                <!-- PLC_READING_INFO 可选结构体 -->
+                <field name="抄读信息" type="sequence" optional="true">
+                    <field name="中继路由级数" type="unsigned"/>
+                    <field name="信道标识" type="unsigned"/>
+                    <field name="载波抄读相位" type="unsigned"/>
+                    <field name="载波信号品质" type="unsigned"/>
+                    <field name="载波标志" type="unsigned"/>
+                    <field name="保留" type="octet-string" size="3"/>
+                </field>
+            </request>
+        </interface>
+        <!-- 0x0033 数据透传 -->
+        <interface iop="0x0033" name="数据透传">
+            <description>透明传输数据到指定端口</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通讯控制字" type="com_dcb"/>
+                <field name="帧超时时间" type="long-unsigned"/>
+                <field name="字符超时时间" type="long-unsigned"/>
+                <field name="发送数据内容" type="octet-string"/>
+            </request>
+            <response name="接收报文" type="octet-string"/>
+        </interface>
+        <!-- 0x0034 启动搜表 -->
+        <interface iop="0x0034" name="启动搜表">
+            <description>启动载波搜表功能</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="开始时间" type="double-long"/>
+                <field name="持续时间" type="double-long"/>
+                <field name="从节点重发次数" type="unsigned"/>
+                <field name="随机等待时间片个数" type="unsigned"/>
+            </request>
+            <response name="启动结果" type="bool"/>
+        </interface>
+        <!-- 0x0035 暂停搜表 -->
+        <interface iop="0x0035" name="暂停搜表">
+            <description>暂停指定端口的搜表功能</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="暂停结果" type="bool"/>
+        </interface>
+        <!-- 0x0036 上报搜表数据 -->
+        <interface iop="0x0036" name="上报搜表数据">
+            <description>上报搜表发现的电表档案数据</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <!-- 载波传输附加信息：PLC_READING_INFO OPTIONAL -->
+                <field name="抄读信息" type="sequence" optional="true">
+                    <field name="中继路由级数" type="unsigned"/>
+                    <field name="信道标识" type="unsigned"/>
+                    <field name="载波抄读相位" type="unsigned"/>
+                    <field name="载波信号品质" type="unsigned"/>
+                    <field name="载波标志" type="unsigned"/>
+                    <field name="保留" type="octet-string" size="3"/>
+                </field>
+                <!-- 表计档案 -->
+                <field name="表计档案" type="sequence_of">
+                    <!-- SEQUENCE OF AMR_METER -->
+                    <element type="sequence">
+                        <field name="档案地址" type="octet-string" size="6"/>
+                        <field name="档案MAC" type="octet-string" size="6"/>
+                        <field name="协议类型" type="unsigned"/>
+                    </element>
+                </field>
+            </response>
+        </interface>
+        <!-- 0x0037 获取从节点监控延时 -->
+        <interface iop="0x0037" name="获取从节点监控延时">
+            <description>获取从节点通信监控延时</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="载波从节点地址" type="octet-string" size="6"/>
+                <field name="协议类型" type="unsigned"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response name="通信延时" type="long-unsigned"/>
+        </interface>
+        <!-- 0x0038 从节点监控 -->
+        <interface iop="0x0038" name="从节点监控">
+            <description>对指定从节点进行通信监控</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="协议类型" type="unsigned"/>
+                <field name="载波从节点地址" type="octet-string" size="6"/>
+                <field name="通信控制字" type="com_dcb"/>
+                <field name="帧超时时间" type="long-unsigned"/>
+                <field name="字节超时时间" type="long-unsigned"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response name="接收报文" type="octet-string"/>
+        </interface>
+        <!-- 0x0039 获取广播延时 -->
+        <interface iop="0x0039" name="获取广播延时">
+            <description>获取广播通信延时</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="协议类型" type="unsigned"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response name="通信延时" type="long-unsigned"/>
+        </interface>
+        <!-- 0x003A 广播 -->
+        <interface iop="0x003A" name="广播">
+            <description>载波广播通信</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="协议类型" type="unsigned"/>
+                <field name="通信控制字" type="com_dcb"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response name="广播结果" type="bool"/>
+        </interface>
+        <!-- 0x003B 模块地址设置 -->
+        <interface iop="0x003B" name="模块地址设置">
+            <description>设置载波模块地址</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="模块地址" type="octet-string" size="6"/>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+        <!-- 0x003D 当前档案数量 -->
+        <interface iop="0x003D" name="当前档案数量">
+            <description>查询指定端口的当前档案数量</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="档案数量" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x003E 主动抄表 -->
+        <interface iop="0x003E" name="主动抄表">
+            <description>主动抄读指定电表数据</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信控制字" type="com_dcb"/>
+                <field name="表计地址" type="octet-string" size="6"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response name="抄读结果" type="bool"/>
+        </interface>
+        <!-- 0x0040 暂停抄表 -->
+        <interface iop="0x0040" name="暂停抄表">
+            <description>暂停指定端口的抄表功能</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="暂停结果" type="bool"/>
+        </interface>
+        <!-- 0x0041 恢复抄表 -->
+        <interface iop="0x0041" name="恢复抄表">
+            <description>恢复指定端口的抄表功能</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="恢复结果" type="bool"/>
+        </interface>
+        <!-- 0x0042 重启抄表 -->
+        <interface iop="0x0042" name="重启抄表">
+            <description>重启指定端口的抄表功能</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="重启结果" type="bool"/>
+        </interface>
+        <!-- 0x0043 查询档案 -->
+        <interface iop="0x0043" name="查询档案">
+            <description>查询指定范围的电表档案</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="档案起始序号" type="long-unsigned"/>
+                <field name="档案数量" type="long-unsigned"/>
+            </request>
+            <response format="sequence_of">
+                <!-- SEQUENCE OF AMR_METER -->
+                <element type="sequence" name="档案">
+                    <field name="档案地址" type="octet-string" size="6"/>
+                    <field name="档案MAC" type="octet-string" size="6"/>
+                    <field name="协议类型" type="unsigned"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0050 查询HPLC信息 -->
+        <interface iop="0x0050" name="查询HPLC信息">
+            <description>查询宽带载波通信相关信息</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned" format="hex" padding="8"/>
+                <field name="信息类型" type="enum">
+                    <enum_value value="1" name="网络拓扑信息"/>
+                    <enum_value value="2" name="宽带载波芯片信息"/>
+                    <enum_value value="3" name="多网络信息"/>
+                    <enum_value value="4" name="节点相线信息"/>
+                    <enum_value value="5" name="网络规模"/>
+                    <enum_value value="6" name="本地主节点模块ID信息"/>
+                    <enum_value value="7" name="从节点ID信息"/>
+                    <enum_value value="8" name="模块版本信息"/>
+                    <enum_value value="9" name="网络节点版本信息"/>
+                </field>
+            </request>
+            <response name="查询结果" type="bool"/>
+        </interface>
+        <!-- 0x0051 上报HPLC查询信息 -->
+        <interface iop="0x0051" name="上报HPLC查询信息">
+            <description>上报宽带载波查询信息结果</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned" format="hex" padding="8"/>
+                <field name="起始序号" type="long-unsigned" optional="true"/>
+                <field name="信息" type="choice">
+                    <choice value="1" name="网络拓扑信息" type="sequence_of">
+                        <!-- SEQUENCE OF AMR_HPLC_TOPOLOGYINFO -->
+                        <element type="sequence">
+                            <field name="节点地址" type="octet-string" size="6"/>
+                            <field name="节点拓扑信息" type="octet-string" size="5"/>
+                        </element>
+                    </choice>
+                    <choice value="2" name="宽带载波芯片信息" type="sequence_of">
+                        <!-- SEQUENCE OF AMR_HPLC_CHIPINFO -->
+                        <element type="sequence">
+                            <field name="节点序号" type="long-unsigned"/>
+                            <field name="节点地址" type="octet-string" size="6"/>
+                            <field name="节点设备类型" type="unsigned"/>
+                            <field name="节点芯片ID信息" type="octet-string" size="24"/>
+                            <field name="节点芯片软件版本" type="octet-string" size="2"/>
+                        </element>
+                    </choice>
+                    <choice value="3" name="多网络信息" type="sequence">
+                        <!-- AMR_HPLC_NETSINFO -->
+                        <field name="邻居节点个数" type="unsigned"/>
+                        <field name="本节点网络标识号" type="octet-string" size="3"/>
+                        <field name="本节点主节点地址" type="octet-string" size="6"/>
+                        <field name="邻居节点网络标识号" type="sequence_of">
+                            <element type="sequence">
+                                <field name="节点网络标识号" type="octet-string" size="3"/>
+                            </element>
+                        </field>
+                    </choice>
+                    <choice value="4" name="节点相线信息" type="sequence_of">
+                        <!-- SEQUENCE OF AMR_HPLC_PHASEINFO -->
+                        <element type="sequence">
+                            <field name="节点序号" type="long-unsigned"/>
+                            <field name="节点地址" type="octet-string" size="6"/>
+                            <field name="节点相位信息" type="octet-string" size="2"/>
+                        </element>
+                    </choice>
+                    <choice value="5" name="网络规模" type="long-unsigned"/>
+                    <choice value="6" name="主节点模块ID信息" type="sequence">
+                        <!-- AMR_HPLC_MASTERID -->
+                        <field name="模块厂商代码" type="visible-string" size="2"/>
+                        <field name="模块ID长度" type="unsigned"/>
+                        <field name="模块ID格式" type="unsigned"/>
+                        <field name="模块ID" type="visible-string"/>
+                    </choice>
+                    <choice value="7" name="从节点ID信息" type="sequence_of">
+                        <!-- SEQUENCE OF AMR_HPLC_SLAVEID -->
+                        <element type="sequence">
+                            <field name="从节点序号" type="long-unsigned"/>
+                            <field name="从节点地址" type="octet-string" size="6"/>
+                            <field name="从节点类型" type="unsigned"/>
+                            <field name="从节点模块厂商代码" type="visible-string" size="2"/>
+                            <field name="从节点模块ID长度" type="unsigned"/>
+                            <field name="从节点模块ID格式" type="unsigned"/>
+                            <field name="从节点模块ID" type="visible-string"/>
+                        </element>
+                    </choice>
+                    <choice value="8" name="模块版本信息" type="sequence">
+                        <!-- AMR_VERSION_INFO -->
+                        <field name="厂商代码" type="visible-string" size="2"/>
+                        <field name="芯片代码" type="visible-string" size="2"/>
+                        <field name="版本日期" type="date"/>
+                        <field name="软件版本" type="long-unsigned"/>
+                    </choice>
+                    <choice value="9" name="网络节点版本信息" type="sequence_of">
+                        <!-- SEQUENCE OF AMR_HPLC_NODEVERINFO -->
+                        <element type="sequence">
+                            <field name="节点地址" type="octet-string" size="6"/>
+                            <field name="软件版本" type="long-unsigned"/>
+                            <field name="版本日期" type="date"/>
+                            <field name="厂商代码" type="visible-string" size="2"/>
+                            <field name="芯片代码" type="visible-string" size="2"/>
+                        </element>
+                    </choice>
+                </field>
+            </request>
+            <response name="上报结果" type="bool"/>
+        </interface>
+        <!-- 0x0052 HPLC频点设置 -->
+        <interface iop="0x0052" name="HPLC频点设置">
+            <description>设置HPLC载波频点</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="频点" type="unsigned"/>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+        <!-- 0x0053 HPLC频点查询 -->
+        <interface iop="0x0053" name="HPLC频点查询">
+            <description>查询HPLC载波频点</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="频点" type="unsigned"/>
+        </interface>
+        <!-- 0x0054 HPLC台区识别 -->
+        <interface iop="0x0054" name="HPLC台区识别">
+            <description>HPLC台区识别功能开关</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="开关" type="unsigned"/>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+        <!-- 0x0055 HPLC离网感知 -->
+        <interface iop="0x0055" name="HPLC离网感知">
+            <description>HPLC离网感知功能开关</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="开关" type="unsigned"/>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+        <!-- 0x0056 HPLC拒绝节点上报 -->
+        <interface iop="0x0056" name="HPLC拒绝节点上报">
+            <description>HPLC拒绝节点上报功能开关</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="开关" type="unsigned"/>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+        <!-- 0x0060 查询抄表状态 -->
+        <interface iop="0x0060" name="查询抄表状态">
+            <description>查询载波模块抄表状态信息</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response format="SEQUENCE">
+                <field name="最近一次接收时间" type="double-long-unsigned" format="utc_seconds"/>
+                <field name="模块抄表状态" type="double-long"/>
+                <field name="模块搜表状态" type="double-long"/>
+                <field name="自动抄表状态" type="double-long"/>
+                <field name="清除路由次数" type="long-unsigned"/>
+                <field name="数据初始化次数" type="long-unsigned"/>
+                <field name="参数初始化次数" type="long-unsigned"/>
+                <field name="复位模块次数" type="long-unsigned"/>
+            </response>
+        </interface>
+        <!-- 0x0061 查询抄表模块信息 -->
+        <interface iop="0x0061" name="查询抄表模块信息">
+            <description>查询载波抄表模块的详细信息</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response format="SEQUENCE">
+                <field name="本地通信模式字" type="octet-string" size="6"/>
+                <field name="从节点监控最大超时" type="long-unsigned"/>
+                <field name="广播最大超时时间" type="long-unsigned"/>
+                <field name="最大支持报文长度" type="long-unsigned"/>
+                <field name="升级最大单个包长度" type="long-unsigned"/>
+                <field name="升级操作等待时间" type="unsigned"/>
+                <field name="广播成功延时时间" type="long-unsigned"/>
+                <field name="模块地址" type="octet-string" size="6"/>
+                <field name="支持的最大从节点数量" type="long-unsigned"/>
+                <field name="当前从节点数量" type="long-unsigned"/>
+                <field name="模块版本" type="visible-string"/>
+            </response>
+        </interface>
+        <!-- 0x0062 查询模块地址 -->
+        <interface iop="0x0062" name="查询模块地址">
+            <description>查询载波模块地址</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="模块地址" type="octet-string" size="6"/>
+        </interface>
+        <!-- 0x0063 启动升级 -->
+        <interface iop="0x0063" name="启动升级">
+            <description>启动载波模块升级，文件标识：0-主节点升级文件；1-主节点和子节点升级文件；2-子节点升级文件</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="文件路径" type="visible-string"/>
+                <field name="文件标识" type="unsigned"/>
+            </request>
+            <response name="启动结果" type="bool"/>
+        </interface>
+        <!-- 0x0064 查询升级状态 -->
+        <interface iop="0x0064" name="查询升级状态">
+            <description>查询载波模块升级状态，升级状态：0-未升级；1-升级中；2-升级结束；升级结果：0-升级成功；1-升级文件异常；2-升级传输失败；255-其他异常</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response format="SEQUENCE">
+                <field name="升级状态" type="unsigned"/>
+                <field name="升级开始时间" type="double-long-unsigned" format="utc_seconds"/>
+                <field name="升级结束时间" type="double-long-unsigned" format="utc_seconds"/>
+                <field name="升级结果" type="unsigned" optional="true"/>
+            </response>
+        </interface>
+        <!-- 0x0081 初始化 -->
+        <interface iop="0x0081" name="初始化【福建】">
+            <description>初始化操作</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="参数" type="enum"/>
+                <enum_value value="1" name="硬件初始化（复位）"/>
+                <enum_value value="2" name="参数初始化（恢复出厂设置）"/>
+                <enum_value value="3" name="数据初始化（节点侦听信息）"/>
+            </request>
+            <response name="初始化结果" type="bool"/>
+        </interface>
+        <!-- 0x0082 查询本地模块参数 -->
+        <interface iop="0x0082" name="查询本地模块参数【福建】">
+            <description>查询总预告任务对象数量和预告抄读对象数量</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response format="SEQUENCE">
+                <field name="总预告任务对象数量" type="long-unsigned"/>
+                <field name="预告抄读对象数量" type="unsigned"/>
+            </response>
+        </interface>
+        <!-- 0x0083 查询模块地址 -->
+        <interface iop="0x0083" name="查询模块地址【福建】">
+            <description>查询CCO模块地址</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="模块地址" type="octet-string" size="6"/>
+        </interface>
+        <!-- 0x0084 查询节点信息 -->
+        <interface iop="0x0084" name="查询节点信息【福建】">
+            <description>查询节点信息</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+            </request>
+            <response format="SEQUENCE">
+                <field name="厂商代码" type="visible-string" size="2"/>
+                <field name="芯片代码" type="visible-string" size="2"/>
+                <field name="版本日期" type="date"/>
+                <field name="软件版本" type="visible-string" size="2"/>
+            </response>
+        </interface>
+        <!-- 0x0085 查询节点相位信息 -->
+        <interface iop="0x0085" name="查询节点相位信息【福建】">
+            <description>查询节点相位信息</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+            </request>
+            <response name="相位" type="long-unsigned"/>
+        </interface>
+        <!-- 0x0086 查询模块串口参数 -->
+        <interface iop="0x0086" name="查询模块串口参数【福建】">
+            <description>查询模块串口参数</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response format="SEQUENCE">
+                <field name="当前速率" type="unsigned"/>
+                <field name="最高速率" type="unsigned"/>
+                <field name="恢复默认时长" type="long-unsigned"/>
+            </response>
+        </interface>
+        <!-- 0x0087 查询模块协议模式 -->
+        <interface iop="0x0087" name="查询模块协议模式【福建】">
+            <description>查询模块协议模式</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="模块运行模式" type="unsigned"/>
+        </interface>
+        <!-- 0x0088 模块地址设置 -->
+        <interface iop="0x0088" name="模块地址设置【福建】">
+            <description>模块地址设置</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="模块地址" type="octet-string" size="6"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0089 从节点上报设置 -->
+        <interface iop="0x0089" name="从节点上报设置【福建】">
+            <description>从节点上报设置</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="设置数量" type="unsigned"/>
+                <field name="配置列表" type="sequence_of">
+                    <!-- SEQUENCE OF AMR_CONFIG_LIST -->
+                    <element type="sequence" name="AMR_CONFIG_LIST">
+                        <field name="通信对象类型" type="unsigned"/>
+                        <field name="任务对象地址" type="octet-string" size="6"/>
+                        <field name="上报状态标志" type="unsigned"/>
+                    </element>
+                </field>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0090 启动获取广播延时 -->
+        <interface iop="0x0090" name="启动获取广播延时【福建】">
+            <description>启动获取广播延时</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="广播时长" type="unsigned"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0091 广播 -->
+        <interface iop="0x0091" name="广播【福建】">
+            <description>广播</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="广播时长" type="unsigned"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0092 启动从节点主动注注册 -->
+        <interface iop="0x0092" name="启动从节点主动注注册【福建】">
+            <description>启动从节点主动注注册</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="允许执行时间" type="long-unsigned"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0093 结束当前任务 -->
+        <interface iop="0x0093" name="结束当前任务【福建】">
+            <description>结束当前任务</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0094 启动预告任务执行 -->
+        <interface iop="0x0094" name="启动预告任务执行【福建】">
+            <description>启动预告任务执行</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="预告类型" type="enum">
+                    <enum_value name="短预告" value="0"/>
+                    <enum_value name="长预告" value="1"/>
+                </field>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0095 预告抄读对象 -->
+        <interface iop="0x0095" name="预告抄读对象【福建】">
+            <description>预告抄读对象</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="预告数量" type="long-unsigned"/>
+                <field name="延时修改" type="unsigned"/>
+                <field name="任务配置" type="sequence_of">
+                    <!-- SEQUENCE OF AMR_TASK -->
+                    <element type="sequence" name="AMR_TASK">
+                        <field name="任务序号" type="long-unsigned"/>
+                        <field name="通信对象类型" type="unsigned"/>
+                        <field name="任务对象地址" type="octet-string" size="6"/>
+                    </element>
+                </field>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0096 设置通信协议模式 -->
+        <interface iop="0x0096" name="设置通信协议模式【福建】">
+            <description>设置通信协议模式</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="模式字" type="enum">
+                    <enum_value name="国网" value="1"/>
+                    <enum_value name="福建" value="2"/>
+                </field>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0097 设置模块通信速率 -->
+        <interface iop="0x0097" name="设置模块通信速率【福建】">
+            <description>设置模块通信速率</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="波特率" type="enum">
+                    <enum_value name="300bps" value="0"/>
+                    <enum_value name="600bps" value="1"/>
+                    <enum_value name="1200bps" value="2"/>
+                    <enum_value name="2400bps" value="3"/>
+                    <enum_value name="4800bps" value="4"/>
+                    <enum_value name="7200bps" value="5"/>
+                    <enum_value name="9600bps" value="6"/>
+                    <enum_value name="19200bps" value="7"/>
+                    <enum_value name="38400bps" value="8"/>
+                    <enum_value name="57600bps" value="9"/>
+                    <enum_value name="115200bps" value="10"/>
+                </field>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0098 设置恢复默认速率时长 -->
+        <interface iop="0x0098" name="设置恢复默认速率时长【福建】">
+            <description>设置恢复默认速率时长</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="时长" type="long-unsigned"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0099 设置最高通信速率 -->
+        <interface iop="0x0099" name="设置最高通信速率【福建】">
+            <description>设置最高通信速率</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="波特率" type="enum">
+                    <enum_value name="300bps" value="0"/>
+                    <enum_value name="600bps" value="1"/>
+                    <enum_value name="1200bps" value="2"/>
+                    <enum_value name="2400bps" value="3"/>
+                    <enum_value name="4800bps" value="4"/>
+                    <enum_value name="7200bps" value="5"/>
+                    <enum_value name="9600bps" value="6"/>
+                    <enum_value name="19200bps" value="7"/>
+                    <enum_value name="38400bps" value="8"/>
+                    <enum_value name="57600bps" value="9"/>
+                    <enum_value name="115200bps" value="10"/>
+                </field>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0100 数据转发（国网） -->
+        <interface iop="0x0100" name="数据转发（国网）【福建】">
+            <description>数据转发（国网）</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="协议类型" type="unsigned"/>
+                <field name="发送数据内容" type="octet-string"/>
+            </request>
+            <response format="SEQUENCE">
+                <field name="协议类型" type="unsigned"/>
+                <field name="发送数据内容" type="octet-string"/>
+            </response>
+        </interface>
+        <!-- 0x0101 数据透传 -->
+        <interface iop="0x0101" name="数据透传【福建】">
+            <description>数据透传</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信类型" type="unsigned"/>
+                <field name="通信地址" type="octet-string" size="6"/>
+                <field name="通讯控制字" type="unsigned"/>
+                <field name="帧超时时间" type="long-unsigned"/>
+                <field name="字符超时时间" type="long-unsigned"/>
+                <field name="发送数据内容" type="octet-string"/>
+            </request>
+            <response name="接收报文" type="octet-string"/>
+        </interface>
+        <!-- 0x0102 上报从节点信息 -->
+        <interface iop="0x0102" name="上报从节点信息【福建】">
+            <description>上报从节点信息</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="节点地址" type="sequence_of">
+                    <!-- SEQUENCE OF AMR_ADDR_LIST -->
+                    <element type="sequence" name="AMR_ADDR_LIST">
+                        <field name="节点地址" type="octet-string" size="6"/>
+                    </element>
+                </field>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0103 上报事件数据 -->
+        <interface iop="0x0103" name="上报事件数据【福建】">
+            <description>上报事件数据</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信类型" type="unsigned"/>
+                <field name="任务对象地址" type="octet-string" size="6"/>
+                <field name="数据帧" type="octet-string"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0104 上报抄读内容请求 -->
+        <interface iop="0x0104" name="上报抄读内容请求【福建】">
+            <description>上报抄读内容请求</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信类型" type="unsigned"/>
+                <field name="任务对象地址" type="octet-string" size="6"/>
+                <field name="信道延时时间" type="long-unsigned"/>
+            </request>
+            <response format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="方案号" type="long-unsigned"/>
+                <field name="任务序号" type="long-unsigned"/>
+                <field name="通信类型" type="unsigned"/>
+                <field name="任务对象地址" type="octet-string" size="6"/>
+                <field name="协议类型" type="unsigned"/>
+                <field name="抄读类型" type="enum">
+                    <enum_value name="短抄读" value="0"/>
+                    <enum_value name="长抄读" value="1"/>
+                </field>
+                <field name="数据帧" type="octet-string"/>
+            </response>
+        </interface>
+        <!-- 0x0105 上报预告的通信对象数据 -->
+        <interface iop="0x0105" name="上报预告的通信对象数据【福建】">
+            <description>上报预告的通信对象数据</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="方案号" type="long-unsigned"/>
+                <field name="任务序号" type="long-unsigned"/>
+                <field name="通信类型" type="unsigned"/>
+                <field name="任务对象地址" type="octet-string" size="6"/>
+                <field name="数据帧" type="octet-string"/>
+            </request>
+            <response format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="方案号" type="long-unsigned"/>
+                <field name="任务序号" type="long-unsigned"/>
+                <field name="通信类型" type="unsigned"/>
+                <field name="任务对象地址" type="octet-string" size="6"/>
+                <field name="状态类型" type="enum">
+                    <enum_value name="短数据" value="0"/>
+                    <enum_value name="长数据" value="1"/>
+                </field>
+                <field name="状态确认" type="enum">
+                    <enum_value name="否认" value="0"/>
+                    <enum_value name="确认" value="1"/>
+                    <enum_value name="有后续任务" value="2"/>
+                </field>
+                <field name="错误信息" type="unsigned" optional="true"/>
+            </response>
+        </interface>
+        <!-- 0x0106 上报广播延时 -->
+        <interface iop="0x0106" name="上报广播延时【福建】">
+            <description>上报广播延时</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信类型" type="unsigned"/>
+            </request>
+            <response format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="数据帧" type="octet-string"/>
+            </response>
+        </interface>
+        <!-- 0x0107 上报广播完成 -->
+        <interface iop="0x0107" name="上报广播完成【福建】">
+            <description>上报广播完成</description>
+            <request name="上报内容（端口号）" type="double-long-unsigned"/>
+            <response name="端口号" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x0108 带任务信息的事件上报 -->
+        <interface iop="0x0108" name="带任务信息的事件上报【福建】">
+            <description>带任务信息的事件上报</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="任务方案号" type="long-unsigned"/>
+                <field name="具体任务序号" type="long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+                <field name="规约类型" type="unsigned"/>
+                <field name="返回报文内容" type="octet-string"/>
+            </request>
+        </interface>
+        <!-- 0x0109 CCO任务队列_智能补采 -->
+        <interface iop="0x0109" name="CCO任务队列_智能补采【福建】">
+            <description>CCO任务队列_智能补采</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="任务方案号" type="long-unsigned"/>
+                <field name="具体任务序号" type="long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+                <field name="规约类型" type="unsigned"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="任务方案号" type="long-unsigned"/>
+                <field name="具体任务序号" type="long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+                <field name="规约类型" type="unsigned"/>
+                <field name="返回报文内容" type="octet-string"/>
+            </response>
+        </interface>
+        <!-- 0x010A CCO任务队列_本地定时 -->
+        <interface iop="0x010A" name="CCO任务队列_本地定时【福建】">
+            <description>CCO任务队列_本地定时</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="任务方案号" type="long-unsigned"/>
+                <field name="具体任务序号" type="long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+                <field name="规约类型" type="unsigned"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="任务方案号" type="long-unsigned"/>
+                <field name="具体任务序号" type="long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+                <field name="规约类型" type="unsigned"/>
+                <field name="返回报文内容" type="octet-string"/>
+            </response>
+        </interface>
+        <!-- 0x010B CCO并发抄表 -->
+        <interface iop="0x010B" name="CCO并发抄表【福建】">
+            <description>CCO并发抄表</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="任务方案号" type="long-unsigned"/>
+                <field name="具体任务序号" type="long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+                <field name="规约类型" type="unsigned"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x010C CCO并发数据上报 -->
+        <interface iop="0x010C" name="CCO并发数据上报【福建】">
+            <description>CCO并发数据上报</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="任务方案号" type="long-unsigned"/>
+                <field name="具体任务序号" type="long-unsigned"/>
+                <field name="通信对象类型" type="unsigned"/>
+                <field name="通信对象地址" type="octet-string" size="6"/>
+                <field name="规约类型" type="unsigned"/>
+                <field name="返回报文内容" type="octet-string"/>
+            </request>
+        </interface>
+        <!-- 0x010D 清空CCO并发抄表队列 -->
+        <interface iop="0x010D" name="清空CCO并发抄表队列【福建】">
+            <description>清空CCO并发抄表队列</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0004H 模组管理器接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0004" name="模组管理器接口定义" description="模组管理器(mapManager)消息接口">
+        <!-- 0x0001 模组插拔事件 (事件广播) -->
+        <interface iop="0x0001" name="模组插拔事件" type="event">
+            <description>模组插拔事件通知 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="模组序号" type="double-long"/>
+                <field name="插拔状态" type="choice">
+                    <choice value="0" name="插入" type="sequence">
+                        <!-- 模组信息 -->
+                        <field name="模块设备型号" type="visible-string"/>
+                        <field name="模块设备ID" type="visible-string"/>
+                        <field name="软件版本" type="visible-string"/>
+                        <field name="软件发布日期" type="visible-string"/>
+                        <field name="硬件版本" type="visible-string"/>
+                        <field name="硬件发布日期" type="visible-string"/>
+                        <field name="厂商编码" type="visible-string"/>
+                        <field name="通道配置" type="sequence_of">
+                            <element type="sequence">
+                                <!-- 通道信息 -->
+                                <field name="接口类型" type="unsigned"/>
+                                <field name="功能配置" type="unsigned"/>
+                                <field name="驱动名称" type="visible-string"/>
+                            </element>
+                        </field>
+                    </choice>
+                    <choice value="1" name="拔出" type="null"/>
+                </field>
+            </event>
+        </interface>
+        <!-- 0x0010 查询模组信息 -->
+        <interface iop="0x0010" name="查询模组信息">
+            <description>查询指定模组的详细信息</description>
+            <request name="模组序号" type="double-long"/>
+            <response type="choice">
+                <!-- 槽位信息 -->
+                <choice value="0" name="模组已识别" type="sequence">
+                    <!-- 模组信息 -->
+                    <field name="模块设备型号" type="visible-string"/>
+                    <field name="模块设备ID" type="visible-string"/>
+                    <field name="软件版本" type="visible-string"/>
+                    <field name="软件发布日期" type="visible-string"/>
+                    <field name="硬件版本" type="visible-string"/>
+                    <field name="硬件发布日期" type="visible-string"/>
+                    <field name="厂商编码" type="visible-string"/>
+                    <field name="通道配置" type="sequence_of">
+                        <element type="sequence">
+                            <!-- 通道信息 -->
+                            <field name="接口类型" type="unsigned"/>
+                            <field name="功能配置" type="unsigned"/>
+                            <field name="驱动名称" type="visible-string"/>
+                        </element>
+                    </field>
+                </choice>
+                <choice value="1" name="模组未识别" type="null"/>
+                <choice value="2" name="模组未接入" type="null"/>
+            </response>
+        </interface>
+        <!-- 0x0011 查询模组槽位信息 -->
+        <interface iop="0x0011" name="查询模组槽位信息">
+            <description>根据模组型号查询其所在的槽位序号列表</description>
+            <request name="模组型号" type="visible-string"/>
+            <response format="sequence_of">
+                <element type="double-long"/>
+            </response>
+        </interface>
+        <!-- 0x0012 查询模组插拔状态 -->
+        <interface iop="0x0012" name="查询模组插拔状态">
+            <description>查询指定模组的当前插拔状态及变位状态</description>
+            <request name="模组序号" type="double-long"/>
+            <response format="SEQUENCE">
+                <field name="模组插入状态" type="enum">
+                    <enum_value name="插入" value="0"/>
+                    <enum_value name="拔出" value="1"/>
+                </field>
+                <field name="模组变位状态" type="bool"/>
+            </response>
+        </interface>
+        <!-- 0x0013 模组复位 -->
+        <interface iop="0x0013" name="模组复位">
+            <description>复位指定模组</description>
+            <request name="模组序号" type="double-long"/>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0014 模组重启 -->
+        <interface iop="0x0014" name="模组重启">
+            <description>重启指定模组，可指定关电时长</description>
+            <request format="SEQUENCE">
+                <field name="模组序号" type="double-long"/>
+                <field name="关电时长" type="double-long-unsigned"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0015 文件传输 -->
+        <interface iop="0x0015" name="文件传输">
+            <description>向指定模组传输文件</description>
+            <request format="SEQUENCE">
+                <field name="模组序号" type="double-long"/>
+                <field name="文件路径" type="visible-string"/>
+            </request>
+            <response name="结果" type="bool"/>
+        </interface>
+        <!-- 0x0016 查询所有模组信息 -->
+        <interface iop="0x0016" name="查询所有模组信息">
+            <description>查询所有槽位的模组信息列表</description>
+            <request type="null"/>
+            <response format="sequence_of">
+                <element type="choice">
+                    <!-- 槽位信息 -->
+                    <choice value="0" name="模组已识别" type="sequence">
+                        <!-- 模组信息 -->
+                        <field name="模块设备型号" type="visible-string"/>
+                        <field name="模块设备ID" type="visible-string"/>
+                        <field name="软件版本" type="visible-string"/>
+                        <field name="软件发布日期" type="visible-string"/>
+                        <field name="硬件版本" type="visible-string"/>
+                        <field name="硬件发布日期" type="visible-string"/>
+                        <field name="厂商编码" type="visible-string"/>
+                        <field name="通道配置" type="sequence_of">
+                            <element type="sequence">
+                                <!-- 通道信息 -->
+                                <field name="接口类型" type="unsigned"/>
+                                <field name="功能配置" type="unsigned"/>
+                                <field name="驱动名称" type="visible-string"/>
+                            </element>
+                        </field>
+                    </choice>
+                    <choice value="1" name="模组未识别" type="null"/>
+                    <choice value="2" name="模组未接入" type="null"/>
+                </element>
+            </response>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0005H 数据中心接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0005" name="数据中心接口定义" description="数据中心模块专用接口，负责数据存储、查询和管理">
+        <!-- 0x0001 数据更新事件 (事件广播) -->
+        <interface iop="0x0001" name="数据更新事件" type="event">
+            <description>数据更新事件通知 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="数据类标识" type="long-unsigned"/>
+                <field name="数据项标识" type="sequence" optional="true">
+                    <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                    <field name="次数据DI" type="sequence_of">
+                        <element type="double-long-unsigned" format="hex" padding="8"/>
+                    </field>
+                </field>
+            </event>
+        </interface>
+        <!-- 0x0002 初始化事件 (事件广播) -->
+        <interface iop="0x0002" name="初始化事件" type="event">
+            <description>初始化事件通知 (广播事件报文)</description>
+            <event name="事件内容" type="choice">
+                <choice value="0" name="数据初始化" type="sequence">
+                    <!-- DATA_RESET结构体展开 -->
+                    <field name="逻辑设备号" type="unsigned"/>
+                    <field name="数据类标识" type="long-unsigned" optional="true"/>
+                </choice>
+                <choice value="1" name="恢复出厂参数" type="unsigned"/>
+            </event>
+        </interface>
+        <!-- 0x0010 读普通数据 -->
+        <interface iop="0x0010" name="读普通数据">
+            <description>读取普通数据</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="数据项标识" type="sequence_of">
+                    <element type="double-long-unsigned" format="hex"/>
+                </field>
+            </request>
+            <response format="sequence_of">
+                <!-- SEQUENCE OF 普通数据 -->
+                <element type="sequence" name="普通数据">
+                    <field name="数据项标识" type="double-long-unsigned" format="hex"/>
+                    <field name="数据类标识" type="long-unsigned" format="hex"/>
+                    <field name="数据缓冲" type="octet-string"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0011 写普通数据 -->
+        <interface iop="0x0011" name="写普通数据">
+            <description>写入普通数据</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="数据集合" type="sequence_of">
+                    <!-- SEQUENCE OF 普通数据 -->
+                    <element type="sequence" name="普通数据">
+                        <field name="数据项标识" type="double-long-unsigned" format="hex"/>
+                        <field name="数据类标识" type="long-unsigned" format="hex"/>
+                        <field name="数据缓冲" type="octet-string"/>
+                    </element>
+                </field>
+            </request>
+            <response name="写入结果" type="bool"/>
+        </interface>
+        <!-- 0x0012 开始读记录型数据 -->
+        <interface iop="0x0012" name="开始读记录型数据">
+            <description>开始读记录型数据，建立数据库句柄</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="筛选方式" type="choice">
+                    <choice value="0" name="采集起始时间" type="sequence">
+                        <!-- FILTER结构体展开 -->
+                        <field name="筛选区间开始" type="double-long-unsigned"/>
+                        <field name="筛选区间结束" type="double-long-unsigned"/>
+                    </choice>
+                    <choice value="1" name="采集结束时间" type="sequence">
+                        <!-- FILTER结构体展开 -->
+                        <field name="筛选区间开始" type="double-long-unsigned"/>
+                        <field name="筛选区间结束" type="double-long-unsigned"/>
+                    </choice>
+                    <choice value="2" name="采集存储时标" type="sequence">
+                        <!-- FILTER结构体展开 -->
+                        <field name="筛选区间开始" type="double-long-unsigned"/>
+                        <field name="筛选区间结束" type="double-long-unsigned"/>
+                    </choice>
+                    <choice value="3" name="数据存储序号" type="sequence">
+                        <!-- FILTER结构体展开 -->
+                        <field name="筛选区间开始" type="double-long-unsigned"/>
+                        <field name="筛选区间结束" type="double-long-unsigned"/>
+                    </choice>
+                    <choice value="4" name="信息点号" type="sequence">
+                        <!-- FILTER结构体展开 -->
+                        <field name="筛选区间开始" type="double-long-unsigned"/>
+                        <field name="筛选区间结束" type="double-long-unsigned"/>
+                    </choice>
+                    <choice value="255" name="不筛选" type="null"/>
+                </field>
+                <field name="排序方式" type="enum">
+                    <enum_value value="0" name="升序"/>
+                    <enum_value value="1" name="降序"/>
+                    <enum_value value="255" name="默认不排序"/>
+                </field>
+                <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                <field name="次数据DI" type="sequence_of">
+                    <element type="double-long-unsigned"/>
+                </field>
+            </request>
+            <response format="SEQUENCE">
+                <field name="数据库句柄" type="double-long-unsigned"/>
+                <field name="数据记录条数" type="double-long-unsigned"/>
+            </response>
+        </interface>
+        <!-- 0x0013 单步读取记录数据 -->
+        <interface iop="0x0013" name="单步读取记录数据">
+            <description>单步读取记录数据</description>
+            <request format="SEQUENCE">
+                <field name="数据库句柄" type="double-long-unsigned"/>
+                <field name="附加校验" type="octet-string" optional="true"/>
+            </request>
+            <response format="SEQUENCE" optional="true">
+                <!-- 记录信息结构体展开 -->
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="数据内容" type="sequence_of">
+                    <!-- SEQUENCE OF RECORD -->
+                    <element type="sequence">
+                        <field name="主数据DI" type="double-long-unsigned" optional="true" format="hex" padding="8"/>
+                        <field name="次数据ID" type="double-long-unsigned" format="hex" padding="8"/>
+                        <field name="数据域" type="octet-string"/>
+                    </element>
+                </field>
+                <field name="数据时标" type="sequence" optional="true">
+                    <!-- TIMEFLAG结构体展开 -->
+                    <field name="采集起始时间" type="double-long-unsigned" format="utc_seconds"/>
+                    <field name="采集结束时间" type="double-long-unsigned" format="utc_seconds"/>
+                    <field name="采集存储时间" type="double-long-unsigned" format="utc_seconds"/>
+                </field>
+            </response>
+        </interface>
+        <!-- 0x0014 结束记录型数据读取 -->
+        <interface iop="0x0014" name="结束记录型数据读取">
+            <description>结束记录型数据读取，释放数据库句柄</description>
+            <request name="数据库句柄" type="double-long-unsigned"/>
+            <response name="结束结果" type="bool"/>
+        </interface>
+        <!-- 0x0015 写记录型数据 -->
+        <interface iop="0x0015" name="写记录型数据">
+            <description>写入记录型数据</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="采集开始时间" type="double-long-unsigned" format="utc_seconds"/>
+                <field name="采集结束时间" type="double-long-unsigned" format="utc_seconds"/>
+                <field name="采集存储时标" type="double-long-unsigned" format="utc_seconds"/>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="数据类标识" type="long-unsigned"/>
+                <field name="主数据DI" type="double-long-unsigned" optional="true" format="hex" padding="8"/>
+                <field name="次数据DI" type="sequence_of">
+                    <element type="double-long-unsigned" format="hex" padding="8"/>
+                </field>
+                <field name="数据域" type="sequence_of">
+                    <element type="octet-string"/>
+                </field>
+                <field name="附加校验" type="octet-string"/>
+            </request>
+            <response name="记录序号" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x0016 更新记录数据 -->
+        <interface iop="0x0016" name="更新记录数据">
+            <description>更新记录数据</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                <field name="次数据DI" type="double-long-unsigned"/>
+                <field name="筛选方式" type="choice">
+                    <choice value="1" name="采集存储时标" type="double-long-unsigned"/>
+                    <choice value="2" name="存储序号" type="double-long-unsigned"/>
+                </field>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="附加校验" type="octet-string"/>
+                <field name="数据缓冲" type="octet-string"/>
+            </request>
+            <response name="更新结果" type="bool"/>
+        </interface>
+        <!-- 0x0020 获取存储记录条数 -->
+        <interface iop="0x0020" name="获取存储记录条数">
+            <description>获取存储记录条数</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                <field name="次数据DI" type="double-long-unsigned"/>
+                <field name="筛选方式" type="choice">
+                    <choice value="0" name="所有记录" type="null"/>
+                    <choice value="1" name="存储时间区间" type="sequence">
+                        <!-- FILTER结构体展开 -->
+                        <field name="筛选区间开始" type="double-long-unsigned"/>
+                        <field name="筛选区间结束" type="double-long-unsigned"/>
+                    </choice>
+                </field>
+            </request>
+            <response name="记录条数" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x0021 获取存储记录深度 -->
+        <interface iop="0x0021" name="获取存储记录深度">
+            <description>获取存储记录深度</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                <field name="次数据DI" type="double-long-unsigned"/>
+            </request>
+            <response name="记录深度" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x0030 数据初始化 -->
+        <interface iop="0x0030" name="数据初始化">
+            <description>数据初始化</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="数据类标识" type="long-unsigned" optional="true"/>
+            </request>
+            <response name="初始化结果" type="bool"/>
+        </interface>
+        <!-- 0x0031 清除指定数据 -->
+        <interface iop="0x0031" name="清除指定数据">
+            <description>清除指定数据</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="数据类型标识" type="long-unsigned"/>
+                <field name="数据项标识" type="sequence" optional="true">
+                    <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                    <field name="次数据DI" type="double-long-unsigned"/>
+                </field>
+            </request>
+            <response name="清除结果" type="bool"/>
+        </interface>
+        <!-- 0x0032 恢复出厂参数 -->
+        <interface iop="0x0032" name="恢复出厂参数">
+            <description>恢复出厂参数</description>
+            <request name="逻辑设备号" type="unsigned"/>
+            <response name="恢复结果" type="bool"/>
+        </interface>
+        <!-- 0x3013 单步读取记录数据(扩展) -->
+        <interface iop="0x3013" name="单步读取记录数据(扩展)">
+            <description>单步读取记录数据扩展版本，一次读取多条记录</description>
+            <request format="SEQUENCE">
+                <field name="数据库句柄" type="double-long-unsigned"/>
+                <field name="附加校验" type="octet-string" optional="true"/>
+            </request>
+            <response format="sequence_of">
+                <!-- SEQUENCE OF 记录信息 -->
+                <element type="sequence">
+                    <field name="信息点号" type="long-unsigned"/>
+                    <field name="数据内容" type="sequence_of">
+                        <!-- SEQUENCE OF RECORD -->
+                        <element type="sequence">
+                            <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                            <field name="次数据ID" type="double-long-unsigned"/>
+                            <field name="数据域" type="octet-string"/>
+                        </element>
+                    </field>
+                    <field name="数据时标" type="sequence" optional="true">
+                        <!-- TIMEFLAG结构体展开 -->
+                        <field name="采集起始时间" type="double-long-unsigned" format="utc_seconds"/>
+                        <field name="采集结束时间" type="double-long-unsigned" format="utc_seconds"/>
+                        <field name="采集存储时间" type="double-long-unsigned" format="utc_seconds"/>
+                    </field>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x3015 写记录型数据(扩展) -->
+        <interface iop="0x3015" name="写记录型数据(扩展)">
+            <description>写记录型数据扩展版本，支持多个信息点</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="数据类标识" type="long-unsigned"/>
+                <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                <field name="信息点记录集合" type="sequence_of">
+                    <!-- SEQUENCE OF 一个信息点记录信息 -->
+                    <element type="sequence">
+                        <field name="采集开始时间" type="double-long-unsigned" format="utc_seconds"/>
+                        <field name="采集结束时间" type="double-long-unsigned" format="utc_seconds"/>
+                        <field name="采集存储时标" type="double-long-unsigned" format="utc_seconds"/>
+                        <field name="信息点号" type="long-unsigned"/>
+                        <field name="次数据DI" type="sequence_of">
+                            <element type="double-long-unsigned"/>
+                        </field>
+                        <field name="数据域" type="sequence_of">
+                            <element type="octet-string"/>
+                        </field>
+                        <field name="附加校验" type="octet-string"/>
+                    </element>
+                </field>
+            </request>
+            <response name="写入结果" type="bool"/>
+        </interface>
+        <!-- 0x3022 读最近N条记录型数据 -->
+        <interface iop="0x3022" name="读最近N条记录型数据">
+            <description>读取最近N条记录型数据，按写入数据库的顺序读取最后n[1,10]条记录</description>
+            <request format="SEQUENCE">
+                <field name="逻辑设备号" type="unsigned"/>
+                <field name="信息点号" type="long-unsigned"/>
+                <field name="数据类标识" type="long-unsigned"/>
+                <field name="上n条记录" type="unsigned"/>
+                <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                <field name="次数据DI" type="double-long-unsigned"/>
+                <field name="附加校验" type="octet-string" optional="true"/>
+            </request>
+            <response format="sequence_of">
+                <!-- SEQUENCE OF 记录信息 -->
+                <element type="sequence">
+                    <field name="信息点号" type="long-unsigned"/>
+                    <field name="数据内容" type="sequence_of">
+                        <!-- SEQUENCE OF RECORD -->
+                        <element type="sequence">
+                            <field name="主数据DI" type="double-long-unsigned" optional="true"/>
+                            <field name="次数据ID" type="double-long-unsigned"/>
+                            <field name="数据域" type="octet-string"/>
+                        </element>
+                    </field>
+                    <field name="数据时标" type="sequence" optional="true">
+                        <!-- TIMEFLAG结构体展开 -->
+                        <field name="采集起始时间" type="double-long-unsigned" format="utc_seconds"/>
+                        <field name="采集结束时间" type="double-long-unsigned" format="utc_seconds"/>
+                        <field name="采集存储时间" type="double-long-unsigned" format="utc_seconds"/>
+                    </field>
+                </element>
+            </response>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0006H 安全在线监测接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0006" name="安全在线监测接口定义" description="安全在线监测模块专用接口，负责安全事件监控和报警">
+        <!-- 0x0001 以太网远程端口开放监控 (事件广播) -->
+        <interface iop="0x0001" name="以太网远程端口开放监控" type="event">
+            <description>以太网远程端口开放监控事件通知 (广播事件报文)</description>
+            <event format="sequence_of">
+                <element type="long-unsigned"/>
+            </event>
+        </interface>
+        <!-- 0x0002 以太网外联信息监控 (事件广播) -->
+        <interface iop="0x0002" name="以太网外联信息监控" type="event">
+            <description>以太网外联信息监控事件通知 (广播事件报文)</description>
+            <event format="sequence_of">
+                <element type="sequence">
+                    <field name="外联IP" type="octet-string" format="ip"/>
+                    <field name="外联端口" type="long-unsigned"/>
+                </element>
+            </event>
+        </interface>
+        <!-- 0x0003 关键目录文件变更监控 (事件广播) -->
+        <interface iop="0x0003" name="关键目录文件变更监控" type="event">
+            <description>关键目录文件变更监控事件通知 (广播事件报文)</description>
+            <event format="sequence_of">
+                <element type="visible-string"/>
+            </event>
+        </interface>
+        <!-- 0x0004 以太网登录控制台监控 (事件广播) -->
+        <interface iop="0x0004" name="以太网登录控制台监控" type="event">
+            <description>以太网登录控制台监控事件通知 (广播事件报文)</description>
+            <event name="事件内容" type="enum">
+                <enum_value value="0" name="登录控制台"/>
+                <enum_value value="1" name="退出控制台"/>
+                <enum_value value="2" name="登录失败"/>
+            </event>
+        </interface>
+        <!-- 0x0005 危险命令操作监控 (事件广播) -->
+        <interface iop="0x0005" name="危险命令操作监控" type="event">
+            <description>危险命令操作监控事件通知 (广播事件报文)</description>
+            <event name="事件内容" type="enum">
+                <enum_value value="0" name="文件/目录删除命令操作"/>
+                <enum_value value="1" name="文件/目录重命名命令操作"/>
+                <enum_value value="2" name="文件/目录复制命令操作"/>
+                <enum_value value="3" name="文件/目录进程结束命令操作"/>
+            </event>
+        </interface>
+        <!-- 0x0006 SSH服务异常监控 (事件广播) -->
+        <interface iop="0x0006" name="SSH服务异常监控" type="event">
+            <description>SSH服务异常监控事件通知 (广播事件报文)</description>
+            <event name="事件内容" type="enum">
+                <enum_value value="0" name="打开"/>
+                <enum_value value="1" name="关闭"/>
+                <enum_value value="2" name="服务异常"/>
+                <enum_value value="3" name="服务长时间未关闭"/>
+            </event>
+        </interface>
+        <!-- 0x0007 口令信息变更异常监控 (事件广播) -->
+        <interface iop="0x0007" name="口令信息变更异常监控" type="event">
+            <description>口令信息变更异常监控事件通知 (广播事件报文)</description>
+            <event format="sequence_of">
+                <element type="sequence">
+                    <field name="用户名" type="visible-string"/>
+                </element>
+            </event>
+        </interface>
+        <!-- 0x0008 串口登录控制台监控 (事件广播) -->
+        <interface iop="0x0008" name="串口登录控制台监控" type="event">
+            <description>串口登录控制台监控事件通知 (广播事件报文)</description>
+            <event name="事件内容" type="enum">
+                <enum_value value="0" name="登录控制台"/>
+                <enum_value value="1" name="退出控制台"/>
+                <enum_value value="2" name="登录失败"/>
+            </event>
+        </interface>
+        <!-- 0x0009 会话流量异常监控 (事件广播) -->
+        <interface iop="0x0009" name="会话流量异常监控" type="event">
+            <description>会话流量异常监控事件通知 (广播事件报文)</description>
+            <event format="sequence_of">
+                <element type="sequence">
+                    <field name="远程ip" type="octet-string" format="ip"/>
+                    <field name="远程端口" type="long-unsigned"/>
+                    <field name="本地ip" type="octet-string" format="ip"/>
+                    <field name="本地端口" type="long-unsigned"/>
+                    <field name="协议" type="visible-string"/>
+                    <field name="关联进程" type="visible-string"/>
+                    <field name="进程类型" type="enum">
+                        <enum_value value="0" name="未知"/>
+                        <enum_value value="1" name="宿主机内进程"/>
+                        <enum_value value="2" name="容器内进程"/>
+                    </field>
+                </element>
+            </event>
+        </interface>
+        <!-- 0x000A 会话带宽异常监控 (事件广播) -->
+        <interface iop="0x000A" name="会话带宽异常监控" type="event">
+            <description>会话带宽异常监控事件通知 (广播事件报文)</description>
+            <event format="sequence_of">
+                <element type="sequence">
+                    <field name="远程ip" type="octet-string" format="ip"/>
+                    <field name="远程端口" type="long-unsigned"/>
+                    <field name="本地ip" type="octet-string" format="ip"/>
+                    <field name="本地端口" type="long-unsigned"/>
+                    <field name="协议" type="visible-string"/>
+                    <field name="关联进程" type="visible-string"/>
+                    <field name="流速限值" type="double-long-unsigned"/>
+                    <field name="当前流速" type="double-long-unsigned"/>
+                </element>
+            </event>
+        </interface>
+        <!-- 0x000B 进程异常监控 (事件广播) -->
+        <interface iop="0x000B" name="进程异常监控" type="event">
+            <description>进程异常监控事件通知 (广播事件报文)</description>
+            <event format="sequence_of">
+                <element type="sequence">
+                    <field name="异常类型" type="enum">
+                        <enum_value value="1" name="进程增加"/>
+                    </field>
+                    <field name="进程启动时间" type="date_time_s"/>
+                    <field name="进程名" type="visible-string"/>
+                    <field name="进程user" type="visible-string"/>
+                    <field name="进程group" type="visible-string"/>
+                    <field name="进程cmd" type="visible-string"/>
+                </element>
+            </event>
+        </interface>
+        <!-- 0x000C 用户登录异常监控 (事件广播) -->
+        <interface iop="0x000C" name="用户登录异常监控" type="event">
+            <description>用户登录异常监控事件通知 (广播事件报文)</description>
+            <event format="SEQUENCE">
+                <field name="异常类型" type="enum">
+                    <enum_value value="1" name="爆破登录"/>
+                </field>
+                <field name="登录用户" type="visible-string"/>
+                <field name="登录IP/串口设备名" type="visible-string"/>
+            </event>
+        </interface>
+        <!-- 0x0010 配置流量超限参数 -->
+        <interface iop="0x0010" name="配置流量超限参数">
+            <description>配置流量超限参数</description>
+            <request format="SEQUENCE">
+                <field name="月累计流量限值" type="double-long-unsigned"/>
+                <field name="流速限值" type="double-long-unsigned"/>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0011 查询流量超限参数 -->
+        <interface iop="0x0011" name="查询流量超限参数">
+            <description>查询流量超限参数</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="月累计流量限值" type="double-long-unsigned"/>
+                <field name="流速限值" type="double-long-unsigned"/>
+            </response>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0007H 桌面接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0007" name="桌面接口定义" description="桌面GUI模块专用接口，负责应用管理和界面控制">
+        <!-- 0x0001 轮显通知 (事件广播) -->
+        <interface iop="0x0001" name="轮显通知" type="event">
+            <description>轮显通知事件 (广播事件报文)</description>
+            <event name="事件内容" type="choice">
+                <choice value="0" name="进入轮显" type="double-long-unsigned"/>
+                <choice value="1" name="退出轮显" type="null"/>
+            </event>
+        </interface>
+        <!-- 0x0002 APP激活 (事件广播) -->
+        <interface iop="0x0002" name="APP激活" type="event">
+            <description>APP激活事件通知 (广播事件报文)</description>
+            <event name="注册ID" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x0010 APP注册 -->
+        <interface iop="0x0010" name="APP注册">
+            <description>APP向桌面注册，获取注册ID。APP图标中包含图标文件的二进制数据。APP名称不允许包含中文。</description>
+            <request format="SEQUENCE">
+                <field name="APP名称" type="visible-string"/>
+                <field name="APP简称" type="visible-string"/>
+                <field name="APP图标" type="octet-string"/>
+                <field name="APP轮显" type="bool"/>
+            </request>
+            <response name="注册ID" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x0011 APP退出并返回桌面 -->
+        <interface iop="0x0011" name="APP退出并返回桌面">
+            <description>APP退出并返回桌面</description>
+            <request name="注册ID" type="double-long-unsigned"/>
+            <response name="退出结果" type="bool"/>
+        </interface>
+        <!-- 0x0012 刷新状态栏 -->
+        <interface iop="0x0012" name="刷新状态栏">
+            <description>刷新状态栏，显示时长为0表示一直显示</description>
+            <request format="SEQUENCE">
+                <field name="显示时长" type="double-long-unsigned"/>
+                <field name="显示内容" type="visible-string"/>
+            </request>
+            <response name="刷新结果" type="bool"/>
+        </interface>
+        <!-- 0x0013 刷新工具栏 -->
+        <interface iop="0x0013" name="刷新工具栏">
+            <description>刷新工具栏状态信息</description>
+            <request format="sequence_of">
+                <!-- SEQUENCE OF 工具栏位域 -->
+                <element type="choice">
+                    <choice value="0" name="通道" type="choice">
+                        <!-- 远程通信状态 -->
+                        <choice value="0" name="信号强度" type="long-unsigned"/>
+                        <choice value="1" name="网络制式" type="unsigned"/>
+                        <choice value="2" name="联机状态" type="bool"/>
+                    </choice>
+                    <choice value="1" name="以太网联机" type="bool"/>
+                    <choice value="2" name="信息点号" type="long-unsigned"/>
+                    <choice value="3" name="密钥状态" type="unsigned"/>
+                    <choice value="4" name="蓝牙链接" type="enum">
+                        <enum_value value="0" name="不显"/>
+                        <enum_value value="1" name="闪烁"/>
+                        <enum_value value="2" name="长显"/>
+                    </choice>
+                    <choice value="5" name="电池" type="sequence">
+                        <!-- 电池信息 -->
+                        <field name="电池状态" type="enum">
+                            <enum_value value="0" name="未插入"/>
+                            <enum_value value="1" name="失效"/>
+                            <enum_value value="2" name="充电"/>
+                            <enum_value value="3" name="未充电"/>
+                        </field>
+                        <field name="电池电量" type="unsigned"/>
+                    </choice>
+                </element>
+            </request>
+            <response name="刷新结果" type="bool"/>
+        </interface>
+        <!-- 0x0014 弹出信息提示框 -->
+        <interface iop="0x0014" name="弹出信息提示框">
+            <description>弹出信息提示框，显示时长为0表示一直显示；按键操作取消弹框</description>
+            <request format="SEQUENCE">
+                <field name="显示时长" type="double-long-unsigned"/>
+                <field name="显示内容" type="visible-string"/>
+            </request>
+            <response name="弹出结果" type="bool"/>
+        </interface>
+        <!-- 0x0015 取消信息提示框 -->
+        <interface iop="0x0015" name="取消信息提示框">
+            <description>取消信息提示框</description>
+            <request format="NULL"/>
+            <response name="取消结果" type="bool"/>
+        </interface>
+        <!-- 0x0016 APP退出轮显 -->
+        <interface iop="0x0016" name="APP退出轮显">
+            <description>APP退出轮显</description>
+            <request format="NULL"/>
+            <response name="退出轮显结果" type="bool"/>
+        </interface>
+        <!-- 0x0017 当前活跃APP -->
+        <interface iop="0x0017" name="当前活跃APP">
+            <description>查询当前活跃APP</description>
+            <request format="NULL"/>
+            <response name="注册ID" type="double-long-unsigned"/>
+        </interface>
+        <!-- 0x0018 屏显控制 -->
+        <interface iop="0x0018" name="屏显控制">
+            <description>屏显控制</description>
+            <request name="控制类型" type="choice">
+                <choice value="0" name="显示全白" type="null"/>
+                <choice value="1" name="显示全黑" type="null"/>
+                <choice value="2" name="显示点阵" type="octet-string"/>
+                <choice value="3" name="屏显取消" type="null"/>
+            </request>
+            <response name="控制结果" type="bool"/>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0008H 遥信脉冲管理接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0008" name="遥信脉冲管理接口定义" description="遥信脉冲管理(rspSample)消息接口">
+        <!-- 0x0001 遥信变位事件 -->
+        <interface iop="0x0001" name="遥信变位事件" type="event">
+            <description>遥信变位事件通知</description>
+            <event format="SEQUENCE">
+                <field name="设备号" type="unsigned"/>
+                <field name="遥信状态" type="bit-string"/>
+                <field name="遥信变位状态" type="bit-string"/>
+                <field name="遥信变位时间" type="sequence_of" element_type="date_time"/>
+            </event>
+        </interface>
+        <!-- 0x0011 遥信状态 -->
+        <interface iop="0x0011" name="遥信状态">
+            <description>查询遥信状态，响应的遥信状态路数为"遥信脉冲配置"总路数，配置为脉冲接口时，不应产生遥信变位，遥信状态默认为0；遥信变位信息至少支持上三次变位记录</description>
+            <request name="设备号" type="unsigned"/>
+            <response format="SEQUENCE">
+                <field name="当前遥信状态" type="bit-string"/>
+                <field name="遥信变位信息" type="sequence_of">
+                    <element type="sequence">
+                        <field name="遥信状态" type="bit-string"/>
+                        <field name="变位状态" type="bit-string"/>
+                        <field name="变位时间" type="sequence_of" element_type="date_time"/>
+                    </element>
+                </field>
+            </response>
+        </interface>
+        <!-- 0x0012 脉冲计数及统计时间 -->
+        <interface iop="0x0012" name="脉冲计数及统计时间">
+            <description>脉冲数为累计脉冲数量。响应的脉冲计数路数为"遥信脉冲配置"总路数，配置为遥信接口时，脉冲统计个数为0</description>
+            <request name="设备号" type="unsigned"/>
+            <response format="SEQUENCE_OF" name="脉冲计数">
+                <element type="sequence">
+                    <field name="脉冲个数" type="double-long-unsigned"/>
+                    <field name="统计时间H" type="double-long-unsigned" description="单位：s"/>
+                    <field name="统计时间L" type="long-unsigned" description="单位：ms"/>
+                    <field name="启动时间" type="date_time"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0014 遥信防抖时间 -->
+        <interface iop="0x0014" name="遥信防抖时间">
+            <description>设置遥信防抖时间</description>
+            <request format="SEQUENCE">
+                <field name="设备号" type="unsigned"/>
+                <field name="防抖时间" type="long-unsigned" description="单位：ms"/>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=0009H 串口管理接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x0009" name="串口管理接口定义" description="串口管理（uartManager）消息接口">
+        <!-- 0x0001 参数变更通知 -->
+        <interface iop="0x0001" name="参数变更通知" type="event">
+            <description>串口参数变更通知，独占模式下需提供相关APP信息</description>
+            <event format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="工作模式" type="enum">
+                    <enum_value value="0" name="独占模式"/>
+                    <enum_value value="1" name="主模式"/>
+                    <enum_value value="2" name="从模式"/>
+                </field>
+                <field name="变更前独占APP名称" type="visible-string" optional="true"/>
+                <field name="当前独占APP名称" type="visible-string" optional="true"/>
+                <field name="端口参数" type="com_dcb" optional="true"/>
+            </event>
+        </interface>
+        <!-- 0x0002 数据接收通知 -->
+        <interface iop="0x0002" name="数据接收通知" type="event">
+            <description>串口数据接收通知</description>
+            <event format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="启动标志" type="choice">
+                    <choice value="0" name="应答帧" type="null"/>
+                    <choice value="1" name="启动帧" type="null"/>
+                </field>
+                <field name="状态" type="choice">
+                    <choice value="0" name="正常" type="null"/>
+                    <choice value="1" name="任务超时" type="null"/>
+                    <choice value="2" name="任务队列满" type="null"/>
+                    <choice value="3" name="串口参数错" type="null"/>
+                    <choice value="4" name="其它错误" type="null"/>
+                </field>
+                <field name="数据接收缓冲" type="octet-string"/>
+            </event>
+        </interface>
+        <!-- 0x0010 串口信息查询 -->
+        <interface iop="0x0010" name="串口信息查询">
+            <description>查询串口信息，当处于独占模式和从模式下，串口状态有具体信息；独占模式下，独占APP名有效；从模式下，监听APP列表有效</description>
+            <request name="端口号" type="double-long-unsigned"/>
+            <response format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="串口模式" type="choice">
+                    <choice value="0" name="独占模式" type="null"/>
+                    <choice value="1" name="主模式" type="null"/>
+                    <choice value="2" name="从模式" type="null"/>
+                </field>
+                <field name="串口状态" type="sequence" optional="true">
+                    <field name="独占APP名" type="visible-string" optional="true"/>
+                    <field name="端口参数" type="com_dcb"/>
+                    <field name="监听APP列表" type="sequence_of" element_type="visible-string" optional="true"/>
+                </field>
+            </response>
+        </interface>
+        <!-- 0x0011 串口独占模式参数设置 -->
+        <interface iop="0x0011" name="串口独占模式参数设置">
+            <description>仅独占模式下，使用该接口</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="端口参数" type="com_dcb"/>
+            </request>
+            <response type="choice">
+                <choice value="0" name="成功" type="null"/>
+                <choice value="1" name="其它失败类型" type="null"/>
+                <choice value="2" name="帧超时" type="null"/>
+                <choice value="4" name="端口错误" type="null"/>
+                <choice value="5" name="格式错误" type="null"/>
+            </response>
+        </interface>
+        <!-- 0x0012 从模式APP注册 -->
+        <interface iop="0x0012" name="从模式APP注册">
+            <description>从模式APP注册</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+            </request>
+            <response type="choice">
+                <choice value="0" name="成功" type="null"/>
+                <choice value="1" name="其它失败类型" type="null"/>
+                <choice value="2" name="帧超时" type="null"/>
+                <choice value="4" name="端口错误" type="null"/>
+                <choice value="5" name="格式错误" type="null"/>
+                <choice value="6" name="未注册" type="null"/>
+                <choice value="7" name="模式错误" type="null"/>
+            </response>
+        </interface>
+        <!-- 0x0013 数据发送 -->
+        <interface iop="0x0013" name="数据发送">
+            <description>通过串口发送数据</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned" format="hex" padding="8"/>
+                <field name="启动标志" type="choice">
+                    <choice value="0" name="应答帧" type="null"/>
+                    <choice value="1" name="启动帧" type="null"/>
+                </field>
+                <field name="优先级" type="unsigned"/>
+                <field name="帧超时时间" type="long-unsigned"/>
+                <field name="字符超时时间" type="long-unsigned"/>
+                <field name="最大超时时间" type="long-unsigned"/>
+                <field name="端口参数" type="com_dcb" optional="true"/>
+                <field name="预计最大接收字节数" type="long-unsigned"/>
+                <field name="发送数据缓冲" type="octet-string"/>
+            </request>
+            <response type="choice">
+                <choice value="0" name="成功" type="null"/>
+                <choice value="1" name="其它失败类型" type="null"/>
+                <choice value="2" name="帧超时" type="null"/>
+                <choice value="3" name="缓冲区满" type="null"/>
+                <choice value="4" name="端口错误" type="null"/>
+                <choice value="5" name="格式错误" type="null"/>
+            </response>
+        </interface>
+        <!-- 0x0014 通信异常 -->
+        <interface iop="0x0014" name="通信异常">
+            <description>通信异常处理</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="异常原因" type="unsigned"/>
+            </request>
+            <response name="处理结果" type="bool"/>
+        </interface>
+        <!-- 0x0015 从模式APP取消注册 -->
+        <interface iop="0x0015" name="从模式APP取消注册">
+            <description>从模式APP取消注册</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+            </request>
+            <response type="choice">
+                <choice value="0" name="成功" type="null"/>
+                <choice value="1" name="其它失败类型" type="null"/>
+                <choice value="2" name="帧超时" type="null"/>
+                <choice value="4" name="端口错误" type="null"/>
+                <choice value="5" name="格式错误" type="null"/>
+                <choice value="6" name="未注册" type="null"/>
+                <choice value="7" name="模式错误" type="null"/>
+            </response>
+        </interface>
+        <!-- 0x0016 串口模式设置 -->
+        <interface iop="0x0016" name="串口模式设置">
+            <description>约定串口模式设置的权限仅对低压集抄APP开放，由低压集抄APP统一管理串口模式</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="串口模式" type="choice">
+                    <choice value="0" name="独占模式" type="null"/>
+                    <choice value="1" name="主模式" type="null"/>
+                    <choice value="2" name="从模式" type="null"/>
+                </field>
+                <field name="独占APP名" type="visible-string" optional="true"/>
+                <field name="端口参数" type="com_dcb" optional="true"/>
+            </request>
+            <response type="choice">
+                <choice value="0" name="成功" type="null"/>
+                <choice value="1" name="其它失败类型" type="null"/>
+                <choice value="2" name="帧超时" type="null"/>
+                <choice value="4" name="端口错误" type="null"/>
+                <choice value="5" name="格式错误" type="null"/>
+                <choice value="7" name="模式错误" type="null"/>
+            </response>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=000AH 蓝牙管理接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x000A" name="蓝牙管理接口定义" description="蓝牙管理（btManager）消息接口">
+        <!-- 0x0001 报文通知 -->
+        <interface iop="0x0001" name="报文通知" type="event">
+            <description>蓝牙报文通知事件。端口0和1用于主模式（对端为主动设备）；端口2~31用于从模式（对端为从动设备）</description>
+            <event format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="MAC地址" type="octet-string"/>
+                <field name="报文内容" type="octet-string"/>
+            </event>
+        </interface>
+        <!-- 0x0002 蓝牙端口通知 -->
+        <interface iop="0x0002" name="蓝牙端口通知" type="event">
+            <description>蓝牙端口状态变化通知事件</description>
+            <event format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="模式" type="enum">
+                    <enum_value value="0" name="主动"/>
+                    <enum_value value="1" name="从动"/>
+                </field>
+                <field name="MAC地址" type="octet-string"/>
+                <field name="是否连接" type="bool"/>
+            </event>
+        </interface>
+        <!-- 0x0010 发送数据 -->
+        <interface iop="0x0010" name="发送数据">
+            <description>通过蓝牙端口发送数据</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="报文内容" type="octet-string"/>
+            </request>
+            <response name="发送结果" type="bool"/>
+        </interface>
+        <!-- 0x0011 蓝牙转发 -->
+        <interface iop="0x0011" name="蓝牙转发">
+            <description>蓝牙数据转发处理</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="MAC地址" type="octet-string"/>
+                <field name="参数" type="sequence">
+                    <field name="配对模式" type="enum">
+                        <enum_value value="0" name="Numeric Comparison"/>
+                        <enum_value value="1" name="Just Works"/>
+                        <enum_value value="2" name="Passkey Entry"/>
+                        <enum_value value="3" name="Out of Band"/>
+                    </field>
+                    <field name="配对密码" type="visible-string"/>
+                </field>
+                <field name="发送帧" type="octet-string"/>
+                <field name="等待接收" type="sequence" optional="true">
+                    <field name="帧超时时间" type="long-unsigned" description="单位：ms"/>
+                    <field name="字符超时" type="long-unsigned" description="单位：ms"/>
+                </field>
+            </request>
+            <response format="SEQUENCE">
+                <field name="发送结果" type="double-long"/>
+                <field name="接收帧" type="octet-string"/>
+            </response>
+        </interface>
+        <!-- 0x0012 蓝牙参数配置 -->
+        <interface iop="0x0012" name="蓝牙参数配置">
+            <description>配置蓝牙基本参数</description>
+            <request format="SEQUENCE">
+                <field name="蓝牙名称" type="visible-string"/>
+                <field name="MAC地址" type="octet-string"/>
+                <field name="发射功率档" type="unsigned"/>
+                <field name="广播间隔" type="long-unsigned" description="单位：ms，无换算"/>
+                <field name="扫描间隔" type="long-unsigned" description="单位：ms，无换算"/>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0013 蓝牙参数查询 -->
+        <interface iop="0x0013" name="蓝牙参数查询">
+            <description>查询蓝牙基本参数</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="蓝牙名称" type="visible-string"/>
+                <field name="MAC地址" type="octet-string"/>
+                <field name="发射功率档" type="unsigned"/>
+                <field name="广播间隔" type="long-unsigned" description="单位：ms，无换算"/>
+                <field name="扫描间隔" type="long-unsigned" description="单位：ms，无换算"/>
+            </response>
+        </interface>
+        <!-- 0x0014 蓝牙端口配置 -->
+        <interface iop="0x0014" name="蓝牙端口配置">
+            <description>配置蓝牙端口参数。从模式（对端为从动设备）时，需配置对端设备的MAC地址；主模式（对端为主动设备）时，MAC地址为全F</description>
+            <request format="SEQUENCE_OF" name="端口配置列表">
+                <element type="sequence">
+                    <field name="端口号" type="double-long-unsigned"/>
+                    <field name="模式" type="enum">
+                        <enum_value value="0" name="主动"/>
+                        <enum_value value="1" name="从动"/>
+                    </field>
+                    <field name="MAC地址" type="octet-string"/>
+                    <field name="参数" type="sequence">
+                        <field name="配对模式" type="enum">
+                            <enum_value value="0" name="Numeric Comparison"/>
+                            <enum_value value="1" name="Just Works"/>
+                            <enum_value value="2" name="Passkey Entry"/>
+                            <enum_value value="3" name="Out of Band"/>
+                        </field>
+                        <field name="配对密码" type="visible-string"/>
+                    </field>
+                </element>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0015 蓝牙连接信息 -->
+        <interface iop="0x0015" name="蓝牙连接信息">
+            <description>查询蓝牙连接状态信息</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE_OF" name="连接信息列表">
+                <element type="sequence">
+                    <field name="端口号" type="double-long-unsigned"/>
+                    <field name="模式" type="enum">
+                        <enum_value value="0" name="主动"/>
+                        <enum_value value="1" name="从动"/>
+                    </field>
+                    <field name="是否连接" type="bool"/>
+                    <field name="MAC地址" type="octet-string"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0016 蓝牙检表配置 -->
+        <interface iop="0x0016" name="蓝牙检表配置">
+            <description>配置蓝牙检表参数</description>
+            <request format="SEQUENCE">
+                <field name="脉冲类型" type="enum">
+                    <enum_value value="0" name="秒脉冲"/>
+                    <enum_value value="1" name="需量周期"/>
+                    <enum_value value="2" name="时段投切"/>
+                    <enum_value value="3" name="正向谐波"/>
+                    <enum_value value="4" name="反向谐波"/>
+                    <enum_value value="5" name="无功脉冲"/>
+                    <enum_value value="6" name="有功脉冲"/>
+                    <enum_value value="255" name="关闭"/>
+                </field>
+                <field name="信道发射间隔" type="unsigned"/>
+                <field name="信道发射功率档位" type="unsigned"/>
+                <field name="设备地址" type="octet-string"/>
+                <field name="发射信道" type="sequence_of" element_type="long-unsigned"/>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=000BH 物联管理接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x000B" name="物联管理接口定义" description="物联管理（iotManager）消息接口">
+        <!-- 0x0001 容器操作通知 -->
+        <interface iop="0x0001" name="容器操作通知" type="event">
+            <description>容器操作事件通知</description>
+            <event format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="发生时间" type="date_time_s"/>
+                <field name="通知类别" type="choice">
+                    <choice value="0" name="安装" type="null"/>
+                    <choice value="1" name="升级" type="null"/>
+                    <choice value="2" name="卸载" type="null"/>
+                    <choice value="3" name="启动" type="null"/>
+                    <choice value="4" name="停止" type="null"/>
+                    <choice value="5" name="配置参数" type="null"/>
+                </field>
+                <field name="结果" type="choice">
+                    <choice value="0" name="成功" type="null"/>
+                    <choice value="1" name="失败" type="null"/>
+                </field>
+                <field name="失败原因" type="visible-string" optional="true"/>
+            </event>
+        </interface>
+        <!-- 0x0002 容器告警通知 -->
+        <interface iop="0x0002" name="容器告警通知" type="event">
+            <description>容器告警事件通知</description>
+            <event format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="发生时间" type="date_time_s"/>
+                <field name="告警类别" type="choice">
+                    <choice value="0" name="无" type="null"/>
+                    <choice value="1" name="越限" type="null"/>
+                    <choice value="2" name="恢复" type="null"/>
+                </field>
+                <field name="通知类别" type="choice">
+                    <choice value="0" name="CPU" type="null"/>
+                    <choice value="1" name="内存" type="null"/>
+                    <choice value="2" name="磁盘" type="null"/>
+                    <choice value="3" name="重启" type="null"/>
+                    <choice value="4" name="异常" type="null"/>
+                </field>
+                <field name="告警描述" type="visible-string" optional="true"/>
+            </event>
+        </interface>
+        <!-- 0x0003 APP操作通知 -->
+        <interface iop="0x0003" name="APP操作通知" type="event">
+            <description>APP操作事件通知</description>
+            <event format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="应用名称" type="visible-string"/>
+                <field name="发生时间" type="date_time_s"/>
+                <field name="通知类别" type="choice">
+                    <choice value="0" name="安装" type="null"/>
+                    <choice value="1" name="升级" type="null"/>
+                    <choice value="2" name="卸载" type="null"/>
+                    <choice value="3" name="启动" type="null"/>
+                    <choice value="4" name="停止" type="null"/>
+                    <choice value="5" name="配置参数" type="null"/>
+                    <choice value="6" name="使能" type="null"/>
+                    <choice value="7" name="去使能" type="null"/>
+                    <choice value="8" name="下发许可" type="null"/>
+                </field>
+                <field name="结果" type="choice">
+                    <choice value="0" name="成功" type="null"/>
+                    <choice value="1" name="失败" type="null"/>
+                </field>
+                <field name="失败原因" type="visible-string" optional="true"/>
+            </event>
+        </interface>
+        <!-- 0x0004 APP告警通知 -->
+        <interface iop="0x0004" name="APP告警通知" type="event">
+            <description>APP告警事件通知</description>
+            <event format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="应用名称" type="visible-string"/>
+                <field name="发生时间" type="date_time_s"/>
+                <field name="告警类别" type="choice">
+                    <choice value="0" name="无" type="null"/>
+                    <choice value="1" name="越限" type="null"/>
+                    <choice value="2" name="恢复" type="null"/>
+                </field>
+                <field name="通知类别" type="choice">
+                    <choice value="0" name="CPU" type="null"/>
+                    <choice value="1" name="内存" type="null"/>
+                    <choice value="2" name="重启" type="null"/>
+                    <choice value="3" name="异常" type="null"/>
+                </field>
+                <field name="告警描述" type="visible-string" optional="true"/>
+            </event>
+        </interface>
+        <!-- 0x0005 系统告警通知 -->
+        <interface iop="0x0005" name="系统告警通知" type="event">
+            <description>系统告警事件通知</description>
+            <event format="SEQUENCE">
+                <field name="发生时间" type="date_time_s"/>
+                <field name="告警类别" type="choice">
+                    <choice value="0" name="无" type="null"/>
+                    <choice value="1" name="越限" type="null"/>
+                    <choice value="2" name="恢复" type="null"/>
+                </field>
+                <field name="通知类别" type="choice">
+                    <choice value="0" name="CPU" type="null"/>
+                    <choice value="1" name="内存" type="null"/>
+                    <choice value="2" name="磁盘" type="null"/>
+                    <choice value="3" name="温度" type="null"/>
+                    <choice value="4" name="异常" type="null"/>
+                </field>
+                <field name="告警描述" type="visible-string" optional="true"/>
+            </event>
+        </interface>
+        <!-- 0x0006 系统升级通知 -->
+        <interface iop="0x0006" name="系统升级通知" type="event">
+            <description>系统升级事件通知</description>
+            <event format="SEQUENCE">
+                <field name="发生时间" type="date_time_s"/>
+                <field name="通知类别" type="choice">
+                    <choice value="0" name="补丁升级" type="null"/>
+                    <choice value="1" name="文件系统升级" type="null"/>
+                    <choice value="2" name="内核升级" type="null"/>
+                    <choice value="3" name="全量升级" type="null"/>
+                </field>
+                <field name="结果" type="choice">
+                    <choice value="0" name="成功" type="null"/>
+                    <choice value="1" name="失败" type="null"/>
+                </field>
+                <field name="失败原因" type="visible-string" optional="true"/>
+            </event>
+        </interface>
+        <!-- 0x0007 IP地址变更 -->
+        <interface iop="0x0007" name="IP地址变更" type="event">
+            <description>设备IP地址变更事件通知</description>
+            <event format="SEQUENCE">
+                <field name="设备名" type="visible-string"/>
+                <field name="配置方式" type="choice">
+                    <choice value="0" name="DHCP" type="null"/>
+                    <choice value="1" name="静态" type="sequence">
+                        <field name="IP地址" type="octet-string" size="4" format="ip"/>
+                        <field name="子网掩码" type="octet-string" size="4" format="ip"/>
+                        <field name="网关" type="octet-string" size="4" format="ip"/>
+                    </choice>
+                </field>
+            </event>
+        </interface>
+        <!-- 0x0010 容器安装 -->
+        <interface iop="0x0010" name="容器安装">
+            <description>安装容器</description>
+            <request format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="应用名称" type="visible-string" optional="true"/>
+                <field name="容器镜像" type="sequence" optional="true">
+                    <field name="镜像名字" type="visible-string"/>
+                    <field name="镜像存储文件路径" type="visible-string"/>
+                </field>
+                <field name="容器配置信息" type="sequence">
+                    <field name="CPU核数" type="unsigned"/>
+                    <field name="CPU监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    <field name="内存限值" type="long-unsigned" description="单位：M Byte"/>
+                    <field name="内存监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    <field name="存储限值" type="long-unsigned" description="单位：M Byte"/>
+                    <field name="磁盘存储监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    <field name="挂载的宿主机文件夹" type="visible-string"/>
+                    <field name="应用存储文件路径" type="visible-string"/>
+                    <field name="映射的硬件接口" type="visible-string"/>
+                    <field name="端口资源配置参数" type="visible-string"/>
+                </field>
+                <field name="应用信息" type="sequence" optional="true">
+                    <field name="应用版本号" type="visible-string"/>
+                    <field name="升级文件信息" type="sequence">
+                        <field name="文件的名字" type="visible-string"/>
+                        <field name="文件类型" type="visible-string"/>
+                        <field name="文件路径" type="visible-string"/>
+                        <field name="文件的大小" type="double-long-unsigned" description="单位：bytes"/>
+                        <field name="文件的md5值" type="octet-string"/>
+                        <field name="文件的数字签证信息" type="sequence" optional="true">
+                            <field name="数字证书文件名字" type="visible-string"/>
+                            <field name="数字证书文件路径" type="visible-string"/>
+                            <field name="文件的大小" type="double-long-unsigned" description="单位：bytes"/>
+                            <field name="数字证书文件的md5值" type="octet-string"/>
+                        </field>
+                    </field>
+                    <field name="应用配置信息" type="sequence">
+                        <field name="CPU核数" type="unsigned"/>
+                        <field name="CPU监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="内存限值" type="long-unsigned" description="MByte"/>
+                        <field name="内存监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    </field>
+                </field>
+            </request>
+            <response name="安装结果" type="bool"/>
+        </interface>
+        <!-- 0x0011 容器操作 -->
+        <interface iop="0x0011" name="容器操作">
+            <description>执行容器操作（启动、停止、删除）</description>
+            <request format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="操作" type="choice">
+                    <choice value="0" name="启动" type="null"/>
+                    <choice value="1" name="停止" type="null"/>
+                    <choice value="2" name="删除" type="null"/>
+                </field>
+            </request>
+            <response name="操作结果" type="bool"/>
+        </interface>
+        <!-- 0x0012 容器配置 -->
+        <interface iop="0x0012" name="容器配置">
+            <description>配置容器参数</description>
+            <request format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="容器配置信息" type="sequence">
+                    <field name="CPU核数" type="unsigned"/>
+                    <field name="CPU监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    <field name="内存限值" type="long-unsigned" description="单位：M Byte"/>
+                    <field name="内存监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    <field name="存储限值" type="long-unsigned" description="单位：M Byte"/>
+                    <field name="磁盘存储监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    <field name="挂载的宿主机文件夹" type="visible-string"/>
+                    <field name="应用存储文件路径" type="visible-string"/>
+                    <field name="映射的硬件接口" type="visible-string"/>
+                    <field name="端口资源配置参数" type="visible-string"/>
+                </field>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0013 容器查询 -->
+        <interface iop="0x0013" name="容器查询">
+            <description>查询容器信息</description>
+            <request name="容器名称" type="visible-string" optional="true"/>
+            <response format="SEQUENCE_OF" name="容器信息列表">
+                <element type="sequence">
+                    <field name="容器ID" type="visible-string"/>
+                    <field name="容器名称" type="visible-string"/>
+                    <field name="容器配置信息" type="sequence">
+                        <field name="CPU核数" type="unsigned"/>
+                        <field name="CPU监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="内存限值" type="long-unsigned" description="单位：M Byte"/>
+                        <field name="内存监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="存储限值" type="long-unsigned" description="单位：M Byte"/>
+                        <field name="磁盘存储监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="挂载的宿主机文件夹" type="visible-string"/>
+                        <field name="应用存储文件路径" type="visible-string"/>
+                        <field name="映射的硬件接口" type="visible-string"/>
+                        <field name="端口资源配置参数" type="visible-string"/>
+                    </field>
+                    <field name="容器运行信息" type="sequence">
+                        <field name="容器状态" type="visible-string"/>
+                        <field name="容器CPU使用率" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="容器内存使用率" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="容器存储使用率" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="容器IP地址" type="octet-string" format="ip"/>
+                        <field name="容器镜像名称" type="visible-string"/>
+                        <field name="容器创建时间" type="date_time_s"/>
+                        <field name="容器启动时间" type="date_time_s"/>
+                        <field name="容器运行时间" type="double-long-unsigned" description="单位：秒，换算：0"/>
+                    </field>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0014 APP安装 -->
+        <interface iop="0x0014" name="APP安装">
+            <description>在容器中安装APP</description>
+            <request format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="应用名称" type="visible-string"/>
+                <field name="应用信息" type="sequence">
+                    <field name="应用版本号" type="visible-string"/>
+                    <field name="升级文件信息" type="sequence">
+                        <field name="文件的名字" type="visible-string"/>
+                        <field name="文件类型" type="visible-string"/>
+                        <field name="文件路径" type="visible-string"/>
+                        <field name="文件的大小" type="double-long-unsigned" description="单位：bytes"/>
+                        <field name="文件的md5值" type="octet-string"/>
+                        <field name="文件的数字签证信息" type="sequence" optional="true">
+                            <field name="数字证书文件名字" type="visible-string"/>
+                            <field name="数字证书文件路径" type="visible-string"/>
+                            <field name="文件的大小" type="double-long-unsigned" description="单位：bytes"/>
+                            <field name="数字证书文件的md5值" type="octet-string"/>
+                        </field>
+                    </field>
+                    <field name="应用配置信息" type="sequence">
+                        <field name="CPU核数" type="unsigned"/>
+                        <field name="CPU监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="内存限值" type="long-unsigned" description="MByte"/>
+                        <field name="内存监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    </field>
+                </field>
+            </request>
+            <response name="安装结果" type="bool"/>
+        </interface>
+        <!-- 0x0015 APP操作 -->
+        <interface iop="0x0015" name="APP操作">
+            <description>执行APP操作（启动、停止、卸载、使能、去使能）</description>
+            <request format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="应用名称" type="visible-string"/>
+                <field name="操作" type="choice">
+                    <choice value="0" name="启动" type="null"/>
+                    <choice value="1" name="停止" type="null"/>
+                    <choice value="2" name="卸载" type="null"/>
+                    <choice value="3" name="使能" type="null"/>
+                    <choice value="4" name="去使能" type="null"/>
+                </field>
+            </request>
+            <response name="操作结果" type="bool"/>
+        </interface>
+        <!-- 0x0016 APP配置 -->
+        <interface iop="0x0016" name="APP配置">
+            <description>配置APP参数</description>
+            <request format="SEQUENCE">
+                <field name="容器名称" type="visible-string"/>
+                <field name="应用名称" type="visible-string"/>
+                <field name="应用配置" type="sequence">
+                    <field name="CPU核数" type="unsigned"/>
+                    <field name="CPU监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    <field name="内存限值" type="long-unsigned" description="MByte"/>
+                    <field name="内存监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                </field>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0017 APP查询 -->
+        <interface iop="0x0017" name="APP查询">
+            <description>查询APP状态信息</description>
+            <request format="SEQUENCE">
+                <field name="容器名称" type="visible-string" optional="true"/>
+                <field name="APP名称" type="visible-string" optional="true"/>
+            </request>
+            <response format="SEQUENCE_OF" name="APP状态列表">
+                <element type="sequence">
+                    <field name="应用序号" type="unsigned"/>
+                    <field name="应用名称" type="visible-string"/>
+                    <field name="容器名称" type="visible-string"/>
+                    <field name="应用版本" type="visible-string"/>
+                    <field name="应用哈希值" type="visible-string"/>
+                    <field name="应用服务列表" type="sequence_of">
+                        <element type="sequence">
+                            <field name="服务序号" type="unsigned"/>
+                            <field name="服务名称" type="visible-string"/>
+                            <field name="服务是否使能" type="bool"/>
+                            <field name="服务状态" type="choice">
+                                <choice value="0" name="运行" type="null"/>
+                                <choice value="1" name="停止" type="null"/>
+                            </field>
+                            <field name="CPU实际使用率" type="long-unsigned" description="单位：%，换算：-2"/>
+                            <field name="内存实际使用率" type="long-unsigned" description="单位：%，换算：-2"/>
+                            <field name="启动时间" type="date_time_s"/>
+                        </element>
+                    </field>
+                    <field name="应用配置信息" type="sequence">
+                        <field name="CPU核数" type="unsigned"/>
+                        <field name="CPU监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                        <field name="内存限值" type="long-unsigned" description="MByte"/>
+                        <field name="内存监控阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                    </field>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0018 APP许可配置 -->
+        <interface iop="0x0018" name="APP许可配置">
+            <description>配置APP许可信息</description>
+            <request format="SEQUENCE_OF" name="许可列表">
+                <element type="sequence">
+                    <field name="应用编号" type="visible-string"/>
+                    <field name="应用名称" type="visible-string"/>
+                    <field name="应用许可" type="octet-string"/>
+                </element>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0019 APP许可查询 -->
+        <interface iop="0x0019" name="APP许可查询">
+            <description>查询APP许可信息</description>
+            <request name="APP名称" type="visible-string" optional="true"/>
+            <response format="SEQUENCE_OF" name="许可列表">
+                <element type="sequence">
+                    <field name="应用编号" type="visible-string"/>
+                    <field name="应用名称" type="visible-string"/>
+                    <field name="应用许可" type="octet-string"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x001A 系统升级 -->
+        <interface iop="0x001A" name="系统升级">
+            <description>执行系统升级</description>
+            <request format="SEQUENCE">
+                <field name="升级后版本" type="visible-string"/>
+                <field name="升级类型" type="choice">
+                    <choice value="0" name="表示补丁升级" type="null"/>
+                    <choice value="1" name="表示文件系统升级" type="null"/>
+                    <choice value="2" name="表示内核升级" type="null"/>
+                    <choice value="3" name="表示全量升级（文件系统+内核升级）" type="null"/>
+                </field>
+                <field name="升级文件信息" type="sequence">
+                    <field name="文件的名字" type="visible-string"/>
+                    <field name="文件类型" type="visible-string"/>
+                    <field name="文件路径" type="visible-string"/>
+                    <field name="文件的大小" type="double-long-unsigned" description="单位：bytes"/>
+                    <field name="文件的md5值" type="octet-string"/>
+                    <field name="文件的数字签证信息" type="sequence" optional="true">
+                        <field name="数字证书文件名字" type="visible-string"/>
+                        <field name="数字证书文件路径" type="visible-string"/>
+                        <field name="文件的大小" type="double-long-unsigned" description="单位：bytes"/>
+                        <field name="数字证书文件的md5值" type="octet-string"/>
+                    </field>
+                </field>
+            </request>
+            <response name="升级结果" type="bool"/>
+        </interface>
+        <!-- 0x001B 系统版本查询 -->
+        <interface iop="0x001B" name="系统版本查询">
+            <description>查询系统版本信息</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="操作系统版本" type="visible-string"/>
+                <field name="内核版本" type="visible-string"/>
+                <field name="文件系统版本" type="visible-string"/>
+                <field name="硬件版本" type="visible-string"/>
+            </response>
+        </interface>
+        <!-- 0x001C 日志信息查询 -->
+        <interface iop="0x001C" name="日志信息查询">
+            <description>查询日志信息</description>
+            <request type="choice">
+                <choice value="0" name="日志文件名称" type="visible-string"/>
+                <choice value="1" name="日志类型" type="choice">
+                    <choice value="0" name="全部日志" type="null"/>
+                    <choice value="1" name="系统日志" type="null"/>
+                    <choice value="2" name="操作日志" type="null"/>
+                    <choice value="3" name="安全日志" type="null"/>
+                    <choice value="4" name="驱动日志" type="null"/>
+                    <choice value="5" name="broker日志" type="null"/>
+                    <choice value="6" name="审计日志" type="null"/>
+                    <choice value="7" name="调试日志" type="null"/>
+                    <choice value="8" name="容器日志" type="null"/>
+                    <choice value="9" name="应用日志" type="null"/>
+                    <choice value="255" name="其它日志" type="null"/>
+                </choice>
+            </request>
+            <response format="SEQUENCE_OF" name="日志信息列表">
+                <element type="sequence">
+                    <field name="日志文件名称及路径" type="visible-string"/>
+                    <field name="日志文件大小" type="double-long-unsigned" description="单位：KB，换算：0"/>
+                    <field name="md5值" type="octet-string" optional="true"/>
+                    <field name="日志文件创建时间" type="date_time_s"/>
+                    <field name="日志类型" type="choice">
+                        <choice value="0" name="全部日志" type="null"/>
+                        <choice value="1" name="系统日志" type="null"/>
+                        <choice value="2" name="操作日志" type="null"/>
+                        <choice value="3" name="安全日志" type="null"/>
+                        <choice value="4" name="驱动日志" type="null"/>
+                        <choice value="5" name="broker日志" type="null"/>
+                        <choice value="6" name="审计日志" type="null"/>
+                        <choice value="7" name="调试日志" type="null"/>
+                        <choice value="8" name="容器日志" type="null"/>
+                        <choice value="9" name="应用日志" type="null"/>
+                        <choice value="255" name="其它日志" type="null"/>
+                    </field>
+                    <field name="容器名称" type="visible-string" optional="true"/>
+                    <field name="应用名称" type="visible-string" optional="true"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x001D 日志打包 -->
+        <interface iop="0x001D" name="日志打包">
+            <description>打包日志文件</description>
+            <request format="SEQUENCE">
+                <field name="筛选条件" type="choice">
+                    <choice value="0" name="日志文件路径" type="visible-string"/>
+                    <choice value="1" name="日志类型" type="choice">
+                        <choice value="0" name="全部日志" type="null"/>
+                        <choice value="1" name="系统日志" type="null"/>
+                        <choice value="2" name="操作日志" type="null"/>
+                        <choice value="3" name="安全日志" type="null"/>
+                        <choice value="4" name="驱动日志" type="null"/>
+                        <choice value="5" name="broker日志" type="null"/>
+                        <choice value="6" name="审计日志" type="null"/>
+                        <choice value="7" name="调试日志" type="null"/>
+                        <choice value="8" name="容器日志" type="null"/>
+                        <choice value="9" name="应用日志" type="null"/>
+                        <choice value="255" name="其它日志" type="null"/>
+                    </choice>
+                </field>
+                <field name="打包后文件路径" type="visible-string" optional="true"/>
+            </request>
+            <response name="打包后的文件路径及名称" type="visible-string"/>
+        </interface>
+        <!-- 0x001E 日志删除 -->
+        <interface iop="0x001E" name="日志删除">
+            <description>删除日志文件</description>
+            <request type="choice">
+                <choice value="0" name="日志文件路径" type="visible-string"/>
+                <choice value="1" name="日志类型" type="choice">
+                    <choice value="0" name="全部日志" type="null"/>
+                    <choice value="1" name="系统日志" type="null"/>
+                    <choice value="2" name="操作日志" type="null"/>
+                    <choice value="3" name="安全日志" type="null"/>
+                    <choice value="4" name="驱动日志" type="null"/>
+                    <choice value="5" name="broker日志" type="null"/>
+                    <choice value="6" name="审计日志" type="null"/>
+                    <choice value="7" name="调试日志" type="null"/>
+                    <choice value="8" name="容器日志" type="null"/>
+                    <choice value="9" name="应用日志" type="null"/>
+                    <choice value="255" name="其它日志" type="null"/>
+                </choice>
+            </request>
+            <response name="删除结果" type="bool"/>
+        </interface>
+        <!-- 0x001F 系统监测配置 -->
+        <interface iop="0x001F" name="系统监测配置">
+            <description>配置系统监测参数</description>
+            <request format="SEQUENCE">
+                <field name="内存使用率上限阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                <field name="存储使用率上限阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                <field name="CPU使用率上限阈值" type="long-unsigned" description="单位：%，换算：-2"/>
+                <field name="主板温度上限阈值" type="long" description="单位：℃，换算：-1"/>
+                <field name="主板温度下限阈值" type="long" description="单位：℃，换算：-1"/>
+                <field name="监测周期" type="long-unsigned" description="单位：分钟，换算：0"/>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0030 端口功能配置 -->
+        <interface iop="0x0030" name="端口功能配置">
+            <description>配置端口功能，支持远程通信与抄表模式</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="工作模式" type="enum"/>
+                <enum_value value="0" name="远程通信"/>
+                <enum_value value="1" name="抄表模式"/>
+                <field name="端口参数" type="com_dcb" optional="true"/>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+        <!-- 0x0031 业务设置IP -->
+        <interface iop="0x0031" name="业务设置IP">
+            <description>配置业务设备的IP参数</description>
+            <request format="SEQUENCE">
+                <field name="设备节点名" type="visible-string"/>
+                <field name="配置方式" type="choice">
+                    <choice value="0" name="DHCP" type="null"/>
+                    <choice value="1" name="静态" type="sequence">
+                        <field name="IP地址" type="octet-string" size="4" format="ip"/>
+                        <field name="子网掩码" type="octet-string" size="4" format="ip"/>
+                        <field name="网关" type="octet-string" size="4" format="ip"/>
+                    </choice>
+                </field>
+            </request>
+            <response name="设置结果" type="bool"/>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=1003H 营销统一采集管理接口定义 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x1003" name="营销统一采集管理接口定义" description="营销统一采集管理（taskManager）消息接口">
+        <!-- 0x0010 透明转发 -->
+        <interface iop="0x0010" name="透明转发">
+            <description>透明转发数据</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned"/>
+                <field name="通信控制字" type="com_dcb"/>
+                <field name="帧超时时间" type="long-unsigned"/>
+                <field name="字符超时时间" type="long-unsigned"/>
+                <field name="发送数据内容" type="octet-string"/>
+            </request>
+            <response name="接收报文" type="octet-string"/>
+        </interface>
+        <!-- 0x0011 代理 -->
+        <interface iop="0x0011" name="代理">
+            <description>698.45 APDU代理</description>
+            <request name="698.45 APDU" type="octet-string"/>
+            <response name="698.45 APDU" type="octet-string"/>
+        </interface>
+        <!-- 0x0012 搜表 -->
+        <interface iop="0x0012" name="搜表">
+            <description>搜表操作，端口号为0xFFFFFFFF表示所有端口</description>
+            <request format="SEQUENCE">
+                <field name="端口号" type="double-long-unsigned" format="hex" padding="8"/>
+                <field name="搜表时长" type="long-unsigned" description="单位：min"/>
+            </request>
+            <response name="搜表结果" type="bool"/>
+        </interface>
+        <!-- 0x0013 当日抄读状态 -->
+        <interface iop="0x0013" name="当日抄读状态">
+            <description>查询当日抄读状态，一个数据对象抄读失败（含重试）视为失败1次</description>
+            <request name="表计地址" type="octet-string"/>
+            <response format="SEQUENCE">
+                <field name="最近一次抄表成功标志" type="bool"/>
+                <field name="连续抄读失败次数" type="long-unsigned"/>
+                <field name="最近一次发送时间" type="date_time_s"/>
+                <field name="最近一次接收时间" type="date_time_s"/>
+                <field name="最近一次抄表失败时间" type="date_time_s"/>
+            </response>
+        </interface>
+        <!-- 0x0020 设备文件代发 -->
+        <interface iop="0x0020" name="设备文件代发">
+            <description>设备文件代发，文件属性：bit0：读（1：可读，0：不可读）；bit1：写（1：可写，0：不可写）；bit2：执行（1：可执行，0：不可执行）</description>
+            <request format="SEQUENCE">
+                <field name="目标类型" type="choice">
+                    <choice value="81" name="OAD" type="double-long-unsigned"/>
+                    <choice value="82" name="ROAD" type="sequence">
+                        <field name="OAD" type="double-long-unsigned"/>
+                        <field name="OAD列表" type="sequence_of" element_type="double-long-unsigned"/>
+                    </choice>
+                    <choice value="92" name="MS" type="sequence_of">
+                        <element type="sequence">
+                            <field name="地址类型" type="choice">
+                                <choice value="0" name="单地址" type="null"/>
+                                <choice value="1" name="组地址" type="null"/>
+                                <choice value="2" name="广播地址" type="null"/>
+                            </field>
+                            <field name="设备地址" type="octet-string"/>
+                        </element>
+                    </choice>
+                </field>
+                <field name="文件信息" type="sequence">
+                    <field name="源文件" type="visible-string"/>
+                    <field name="目标文件" type="visible-string" description="格式：[路径/]文件名"/>
+                    <field name="文件大小" type="double-long-unsigned" description="单位：字节"/>
+                    <field name="文件属性" type="bit-string"/>
+                    <field name="文件版本" type="visible-string"/>
+                    <field name="文件类别" type="choice">
+                        <choice value="0" name="当前设备文件" type="null"/>
+                        <choice value="1" name="其他设备文件" type="null"/>
+                    </field>
+                </field>
+                <field name="传输块大小" type="long-unsigned" description="单位：字节"/>
+                <field name="文件校验" type="sequence">
+                    <field name="校验类型" type="choice">
+                        <choice value="0" name="CRC校验" type="null"/>
+                        <choice value="1" name="md5校验" type="null"/>
+                        <choice value="2" name="SHA1校验" type="null"/>
+                        <choice value="255" name="其他" type="null"/>
+                    </field>
+                    <field name="校验值" type="octet-string"/>
+                </field>
+                <field name="兼容软件版本号" type="sequence_of" element_type="visible-string"/>
+                <field name="兼容硬件版本号" type="sequence_of" element_type="visible-string"/>
+                <field name="下载方的标识" type="visible-string"/>
+                <field name="安全传输" type="bool"/>
+            </request>
+            <response name="代发结果" type="bool"/>
+        </interface>
+        <!-- 0x0021 设备升级结果 -->
+        <interface iop="0x0021" name="设备升级结果">
+            <description>查询设备升级结果</description>
+            <request format="SEQUENCE_OF" name="设备地址集合">
+                <element type="sequence">
+                    <field name="地址类型" type="choice">
+                        <choice value="0" name="单地址" type="null"/>
+                        <choice value="1" name="组地址" type="null"/>
+                        <choice value="2" name="广播地址" type="null"/>
+                    </field>
+                    <field name="设备地址" type="octet-string"/>
+                </element>
+            </request>
+            <response format="SEQUENCE_OF" name="升级结果列表">
+                <element type="sequence">
+                    搜表
+                    <field name="设备地址" type="octet-string" size="6"/>
+                    <field name="升级结果" type="choice">
+                        <choice value="0" name="初始状态(出厂默认)" type="null"/>
+                        <choice value="1" name="启动传输成功，待下载" type="null"/>
+                        <choice value="2" name="下载中" type="null"/>
+                        <choice value="3" name="下载成功" type="null"/>
+                        <choice value="4" name="真实性、完整性校验成功" type="null"/>
+                        <choice value="5" name="定时升级等待中" type="null"/>
+                        <choice value="6" name="升级成功" type="null"/>
+                        <choice value="20" name="硬件版本不匹配" type="null"/>
+                        <choice value="21" name="软件版本不匹配" type="null"/>
+                        <choice value="22" name="写外部Flash错" type="null"/>
+                        <choice value="23" name="读取外部Flash错" type="null"/>
+                        <choice value="24" name="写程序Flash错" type="null"/>
+                        <choice value="25" name="完整性校验错" type="null"/>
+                        <choice value="26" name="真实性校验错" type="null"/>
+                        <choice value="27" name="定时升级时间异常" type="null"/>
+                        <choice value="254" name="未知" type="null"/>
+                        <choice value="255" name="升级失败其他原因" type="null"/>
+                    </field>
+                </element>
+            </response>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=1006H 统一安全接入套件（SDK）消息接口定义 -->
+    <!-- 按照图片B.14的定义新增最小必要接口 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x1006" name="统一安全接入套件（SDK）消息接口定义" description="统一安全接入套件（SDK）消息接口">
+        <!-- 0x0001 主站连接成功 (事件广播) -->
+        <interface iop="0x0001" name="主站连接成功" type="event">
+            <description>主站连接成功事件</description>
+            <event format="SEQUENCE">
+                <field name="时间" type="date_time_s"/>
+                <field name="代理端口" type="long-unsigned"/>
+            </event>
+        </interface>
+        <!-- 0x0002 主站连接断开 (事件广播) -->
+        <interface iop="0x0002" name="主站连接断开" type="event">
+            <description>主站连接断开事件</description>
+            <event format="SEQUENCE">
+                <field name="时间" type="date_time_s"/>
+                <field name="代理端口" type="long-unsigned"/>
+                <field name="断开原因" type="visible-string" optional="true"/>
+            </event>
+        </interface>
+        <!-- 0x0010 主站连接状态 -->
+        <interface iop="0x0010" name="主站连接状态">
+            <description>查询主站连接状态</description>
+            <request format="NULL"/>
+            <response format="SEQUENCE">
+                <field name="连接状态" type="bool"/>
+                <field name="代理端口" type="long-unsigned"/>
+                <field name="连接发生时间" type="date_time_s" optional="true"/>
+            </response>
+        </interface>
+        <!-- 0x0011 连续未通信时长 -->
+        <interface iop="0x0011" name="连续未通信时长">
+            <description>SDK 与主站连续未通信的累计秒数</description>
+            <request format="NULL"/>
+            <response format="sequence_of" name="未通信时长列表">
+                <element type="sequence">
+                    <field name="代理端口" type="long-unsigned"/>
+                    <field name="连续未通信时长" type="double-long-unsigned" description="单位：秒"/>
+                </element>
+            </response>
+        </interface>
+        <!-- 0x0012 主站连接参数查询 -->
+        <interface iop="0x0012" name="主站连接参数查询">
+            <description>查询当前主站连接参数</description>
+            <request format="NULL"/>
+            <response type="choice">
+                <choice value="0" name="网关模式" type="sequence">
+                    <field name="加密协议" type="unsigned" description="取值：0=无，1=SSAl，2=SSL，255=明文，其它值保留"/>
+                    <field name="加密模式" type="unsigned" description="取值：0=硬加密，1=软加密，2=混合加密，255=其它"/>
+                    <field name="网关IP" type="octet-string" size="4" format="ip"/>
+                    <field name="网关端口" type="long-unsigned"/>
+                    <field name="主站参数" type="sequence_of" description="固定下发7组主站参数">
+                        <element type="sequence">
+                            <field name="主站IP" type="octet-string" size="4" format="ip"/>
+                            <field name="主站端口" type="long-unsigned"/>
+                            <field name="代理端口" type="long-unsigned"/>
+                        </element>
+                    </field>
+                </choice>
+                <choice value="1" name="直连模式" type="sequence_of">
+                    <element type="sequence">
+                        <field name="主站IP" type="octet-string" size="4" format="ip"/>
+                        <field name="主站端口" type="long-unsigned"/>
+                        <field name="代理端口" type="long-unsigned"/>
+                    </element>
+                </choice>
+            </response>
+        </interface>
+        <!-- 0x0013 主站连接配置 -->
+        <interface iop="0x0013" name="主站连接配置">
+            <description>配置主站连接参数</description>
+            <request format="SEQUENCE">
+                <field name="加密协议" type="unsigned" description="取值：0=无，1=SSAl，2=SSL，255=明文，其它值保留"/>
+                <field name="加密模式" type="unsigned" description="取值：0=硬加密，1=软加密，2=混合加密，255=其它"/>
+                <field name="网关IP" type="octet-string" size="4" format="ip" description="注：明文模式下，网关IP固定为00"/>
+                <field name="网关端口" type="long-unsigned"/>
+                <field name="主站参数" type="sequence_of" description="固定下发7组主站参数">
+                    <element type="sequence">
+                        <field name="主站IP" type="octet-string" size="4" format="ip" description="未配置时主站IP取0"/>
+                        <field name="主站端口" type="long-unsigned"/>
+                        <field name="代理端口" type="long-unsigned"/>
+                    </element>
+                </field>
+            </request>
+            <response name="配置结果" type="bool"/>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=1007H 安全芯片调度（secResManager）消息接口定义 -->
+    <!-- 按照图片B.15定义添加两个事件接口 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x1007" name="安全芯片调度（secResManager）消息接口定义" description="安全芯片调度（secResManager）消息接口">
+        <!-- 0x0001 APP 期限告警通知 (事件广播) -->
+        <interface iop="0x0001" name="APP 期限告警通知" type="event">
+            <description>APP 期限告警通知事件</description>
+            <event format="SEQUENCE">
+                <field name="发生时间" type="date_time_s"/>
+                <field name="应用名称" type="visible-string"/>
+                <field name="APP有效期" type="date_time_s"/>
+            </event>
+        </interface>
+        <!-- 0x0002 APP 异常告警通知 (事件广播) -->
+        <interface iop="0x0002" name="APP 异常告警通知" type="event">
+            <description>APP 异常告警通知事件</description>
+            <event format="SEQUENCE">
+                <field name="发生时间" type="date_time_s"/>
+                <field name="应用名称" type="visible-string"/>
+                <field name="运行信息" type="visible-string"/>
+                <field name="签名信息" type="visible-string"/>
+            </event>
+        </interface>
+    </interface_group>
+    <!-- =============================================== -->
+    <!-- IID=1008H 远程通信监控（comMonitor）消息接口定义 -->
+    <!-- 表B.15 远程通信监控消息接口 -->
+    <!-- =============================================== -->
+    <interface_group iid="0x1008" name="远程通信监控（comMonitor）消息接口定义" description="远程通信监控（comMonitor）消息接口">
+        <!-- 0x0010 查询代理端口网卡类型 -->
+        <interface iop="0x0010" name="查询代理端口网卡类型">
+            <description>查询指定SDK南向端口对应的代理端口网卡类型；请求为0时表示查询全部端口</description>
+            <request name="SDK南向端口" type="long-unsigned"/>
+            <response format="SEQUENCE_OF" name="端口网卡信息">
+                <element type="sequence">
+                    <field name="SDK南向端口" type="long-unsigned"/>
+                    <field name="通道号" type="long-unsigned"/>
+                </element>
+            </response>
+        </interface>
+    </interface_group>
+</app_msg_protocol>

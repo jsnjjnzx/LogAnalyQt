@@ -1,0 +1,50 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "macos-homebrew",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase",
+        "QT_ADDITIONAL_PACKAGES_PREFIX_PATH": "/opt/homebrew/opt/qtdeclarative;/opt/homebrew/opt/qtsvg",
+        "OPENSSL_ROOT_DIR": "/opt/homebrew/opt/openssl@3",
+        "CMAKE_EXPORT_NO_PACKAGE_REGISTRY": "ON"
+      }
+    },
+    {
+      "name": "macos-debug",
+      "displayName": "macOS Debug (Homebrew Qt)",
+      "inherits": "macos-homebrew",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "macos-release",
+      "displayName": "macOS Release (Homebrew Qt)",
+      "inherits": "macos-homebrew",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "macos-debug",
+      "configurePreset": "macos-debug",
+      "jobs": 8
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
+      "jobs": 8
+    }
+  ]
+}

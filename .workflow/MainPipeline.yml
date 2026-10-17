@@ -1,0 +1,39 @@
+version: '1.0'
+name: loganalyqt-main-ci
+displayName: LogAnalyQt 双平台构建验证
+triggers:
+  trigger: auto
+  push:
+    branches:
+      precise:
+        - main
+stages:
+  - name: build
+    displayName: Windows 与 macOS 构建
+    strategy: naturally
+    trigger: auto
+    steps:
+      - step: shell@agent
+        name: build_windows
+        displayName: Windows Release 构建与测试
+        hostGroupID: loganalyqt-windows
+        script: |
+          $ErrorActionPreference = "Stop"
+          $RunRoot = Join-Path $env:TEMP "loganalyqt-gitee-$env:GITEE_PIPELINE_BUILD_NUMBER"
+          if (Test-Path $RunRoot) { Remove-Item -Recurse -Force $RunRoot }
+          git clone --no-checkout https://gitee.com/jsnjjnzx/LogAnalyQt.git $RunRoot
+          git -C $RunRoot checkout --detach $env:GITEE_COMMIT
+          Set-Location $RunRoot
+          & .\scripts\ci\run_windows_ci.ps1
+      - step: shell@agent
+        name: build_macos
+        displayName: macOS Release 构建与测试
+        hostGroupID: loganalyqt-macos
+        script: |
+          set -euo pipefail
+          RUN_ROOT="${TMPDIR:-/tmp}/loganalyqt-gitee-${GITEE_PIPELINE_BUILD_NUMBER}"
+          rm -rf "$RUN_ROOT"
+          git clone --no-checkout https://gitee.com/jsnjjnzx/LogAnalyQt.git "$RUN_ROOT"
+          git -C "$RUN_ROOT" checkout --detach "$GITEE_COMMIT"
+          cd "$RUN_ROOT"
+          scripts/ci/run_macos_ci.sh

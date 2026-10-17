@@ -1,0 +1,2315 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    中国南方电网计量自动化终端上行通信规约（2026版V1.0）
+
+    DI code 使用正常阅读顺序 DI3 DI2 DI1 DI0；
+    报文中的四字节 DI 按低字节在前传输。
+
+    AFNs 与 DIs 是两张相互独立的协议字典；
+    程序从报文分别读取 AFN 和 DI 后独立查表并组合显示。
+
+    DI type:
+    - Struct: 按 Field 顺序解析
+    - None: 无 DI 自身字段；数据仍可由 AFN 服务解析
+    - ServiceDefined: DI 只负责命名，数据内容由 AFN 服务结构解析
+
+    Field type 使用技术规范“数据格式”列的原始名称；
+    BIN、YYMMDDhhmm 的解码规则由业务解析器固定实现。
+
+    E00003XX 是普通任务系列的精确查表键；
+    XX 的识别和实际任务号提取由业务解析器负责，XML 不处理通配。
+
+    A.9 的通道号 00H～20H、22H～29H 由业务归一化到 E0000200；
+    配置表号 30H～50H 由业务归一化到 E0000230。XML 仍只做精确查表。
+
+    A.11 的 01H～FDH 模拟量、脉冲量、运算量和差动规则归一化到对应 XX 模板；
+    A.12 的 485 端口 00H～1EH 归一化到 E0000AXX；
+    A.14 的开关编号、功控时段和断线检测轮次归一化到各区间首项模板。
+    所有范围识别和实际编号显示均由业务解析器处理。
+
+    Field countRefFF:
+    - 仅与 countRef 同时使用；引用值为 FFH 时采用配置的实际重复次数。
+    - A.9 的 FFH 表示一个全 F 占位项，因此配置为 countRefFF="1"。
+
+    Field required:
+    - 不填写或 true: 必选字段
+    - false: 可选尾字段；只有剩余字节足够容纳完整字段时才解析
+-->
+<ProtCsgUpstreamConfig version="v2.0.0" date="2026-08-05">
+    <AFNs>
+        <AFN code="00" name="确认/否定">
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="many"
+                     pw="none" tp="none"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="many"
+                     pw="none" tp="none"/>
+        </AFN>
+        <AFN code="02" name="链路接口检测">
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="none" tp="none"/>
+        </AFN>
+        <AFN code="04" name="写参数">
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="many"
+                     pw="required" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="error" cardinality="many"
+                     pw="none" tp="none"/>
+        </AFN>
+        <AFN code="06" name="安全认证">
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="required" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="required" tp="seq"/>
+        </AFN>
+        <AFN code="0A" name="读参数">
+            <Service direction="down" type="DataUnits"
+                     layout="query" cardinality="many"
+                     pw="optional" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="many"
+                     pw="optional" tp="seq"/>
+        </AFN>
+        <AFN code="0C" name="读当前数据">
+            <Service direction="down" type="DataUnits"
+                     layout="query" cardinality="many"
+                     pw="optional" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="many"
+                     pw="optional" tp="seq"/>
+        </AFN>
+        <AFN code="0D" name="读历史数据">
+            <Service direction="down" type="DataUnits"
+                     layout="timed-query-density" cardinality="many"
+                     pw="optional" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="timed-content" cardinality="many"
+                     pw="optional" tp="seq"/>
+        </AFN>
+        <AFN code="0E" name="读事件记录">
+            <Service direction="down" type="DataUnits"
+                     layout="timed-query" cardinality="many"
+                     pw="optional" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="many"
+                     pw="optional" tp="seq"/>
+        </AFN>
+        <AFN code="0F" name="文件传输">
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="none" tp="none"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="none" tp="none"/>
+        </AFN>
+        <AFN code="10" name="中继转发">
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="none" tp="none"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="none" tp="none"/>
+        </AFN>
+        <AFN code="12" name="读任务数据">
+            <Service direction="down" type="Struct"
+                     pw="optional" tp="seq">
+                <Field name="数据起始时间"
+                       type="BCD_DATETIME"
+                       length="5"
+                       format="YYMMDDhhmm"/>
+                <Field name="数据结束时间"
+                       type="BCD_DATETIME"
+                       length="5"
+                       format="YYMMDDhhmm"/>
+                <Field name="数据密度"
+                       type="BIN"
+                       length="1"/>
+            </Service>
+            <Service direction="up" type="Choice"
+                     pw="optional" tp="seq">
+                <Selector name="数据结构方式"
+                          type="BIN"
+                          length="1"/>
+                <Case value="0" name="自描述方式">
+                    <Field id="pointCount"
+                           name="信息点标识组数 n"
+                           type="BIN"
+                           length="1"/>
+                    <Field id="diCount"
+                           name="数据标识编码组数 m"
+                           type="BIN"
+                           length="1"/>
+                    <Field name="任务数据组"
+                           type="DataItemGroups"
+                           pointCountRef="pointCount"
+                           diCountRef="diCount"/>
+                </Case>
+                <Case value="1" name="任务定义方式">
+                    <Field name="任务数据内容"
+                           type="Blob"
+                           length="-1"/>
+                </Case>
+            </Service>
+        </AFN>
+        <AFN code="13" name="读告警数据">
+            <Service direction="down" type="DataUnits"
+                     layout="timed-query" cardinality="many"
+                     pw="optional" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="many"
+                     pw="optional" tp="seq"/>
+        </AFN>
+        <AFN code="14" name="级联命令">
+            <Service direction="down" type="DataUnits"
+                     layout="query" cardinality="one"
+                     pw="none" tp="none"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="none" tp="none"/>
+        </AFN>
+        <AFN code="15" name="用户自定义数据">
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="none" tp="none"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="none" tp="none"/>
+        </AFN>
+        <AFN code="16" name="数据安全传输">
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="required" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="required" tp="seq"/>
+        </AFN>
+        <AFN code="17" name="数据转加密">
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="required" tp="seq"/>
+            <Service direction="up" type="DataUnits"
+                     layout="content" cardinality="one"
+                     pw="required" tp="seq"/>
+        </AFN>
+        <AFN code="20" name="请求主站数据">
+            <Service direction="up" type="DataUnits"
+                     layout="query" cardinality="many"
+                     pw="none" tp="none"/>
+            <Service direction="down" type="DataUnits"
+                     layout="content" cardinality="many"
+                     pw="optional" tp="seq"/>
+        </AFN>
+    </AFNs>
+
+    <DIs>
+        <DI code="E0000000"
+            name="全部确认/否认"
+            type="Struct">
+            <Field name="确认结果"
+                   type="BIN"
+                   length="1"
+                   display="ConfirmationResult"
+                   description="全部确认或全部否认"/>
+        </DI>
+
+        <DI code="E0000100"
+            name="主站通信地址"
+            type="Struct">
+            <Field name="IP 地址" type="BIN" length="4" display="IPv4"/>
+            <Field name="端口号" type="BIN" length="2"/>
+            <Field name="地址保留" type="BIN" length="2"/>
+            <Field name="通信通道类型" type="BIN" length="1"
+                   description="FF：无效；02：GPRS/CDMA/3G/4G/5G；03：PSTN；04：Ethernet；06：RS232/RS485；07：CSD；08：Radio"/>
+        </DI>
+
+        <DI code="E0000101"
+            name="备用主站通信地址1"
+            type="Struct">
+            <Field name="IP 地址" type="BIN" length="4" display="IPv4"/>
+            <Field name="端口号" type="BIN" length="2"/>
+            <Field name="地址保留" type="BIN" length="2"/>
+            <Field name="通信通道类型" type="BIN" length="1"
+                   description="同主站通信地址的通信通道类型"/>
+        </DI>
+
+        <DI code="E0000102"
+            name="备用主站通信地址2"
+            type="Struct">
+            <Field name="IP 地址" type="BIN" length="4" display="IPv4"/>
+            <Field name="端口号" type="BIN" length="2"/>
+            <Field name="地址保留" type="BIN" length="2"/>
+            <Field name="通信通道类型" type="BIN" length="1"
+                   description="同主站通信地址的通信通道类型"/>
+        </DI>
+
+        <DI code="E0000103"
+            name="网关或代理服务器地址和端口"
+            type="Struct">
+            <Field name="IP 地址" type="BIN" length="4" display="IPv4"/>
+            <Field name="端口号" type="BIN" length="2"/>
+            <Field name="地址保留" type="BIN" length="2"/>
+        </DI>
+
+        <DI code="E0000104" name="APN" type="Struct">
+            <Field name="APN" type="ASCII" length="16"
+                   description="不足部分在低字节填充 00H，缺省为 CMNET"/>
+        </DI>
+
+        <DI code="E0000105" name="APN 用户名" type="Struct">
+            <Field name="APN 用户名" type="ASCII" length="32"
+                   description="空余字节以 00H 填充"/>
+        </DI>
+
+        <DI code="E0000106" name="APN 密码" type="Struct">
+            <Field name="APN 密码" type="ASCII" length="32"
+                   description="空余字节以 00H 填充"/>
+        </DI>
+
+        <DI code="E0000107" name="心跳周期" type="Struct">
+            <Field name="心跳周期" type="BCD" length="1" fill="FF"
+                   unit="分" description="缺省 15 分钟"/>
+        </DI>
+
+        <DI code="E0000108" name="掉线重拨间隔" type="Struct">
+            <Field name="掉线重拨间隔" type="BCD" length="1" fill="FF"
+                   unit="分" description="缺省 30 分钟"/>
+        </DI>
+
+        <DI code="E0000109" name="掉线后重拨次数" type="Struct">
+            <Field name="掉线后重拨次数" type="BCD" length="1" fill="FF"
+                   description="缺省 3 次；达到指定次数后当天不再重拨"/>
+        </DI>
+
+        <DI code="E000010A" name="传输方式" type="Struct">
+            <Field name="传输方式" type="BCD" length="1" fill="FF"
+                   description="0：TCP 方式；1：UDP 方式"/>
+        </DI>
+
+        <DI code="E000010B" name="压缩方式" type="Struct">
+            <Field name="压缩方式" type="BIN" length="1"
+                   description="0：非压缩；1：压缩"/>
+        </DI>
+
+        <DI code="E000010F" name="基础通信参数集合" type="None"/>
+
+        <DI code="E0000110"
+            name="终端通信网络模式选择"
+            type="Struct">
+            <Field name="终端通信网络模式选择" type="BS" length="1"
+                   description="FFH 表示默认值，自动选择远程通信方式">
+                <Bit index="0" name="2G" zero="不可选择" one="可选择"/>
+                <Bit index="1" name="3G" zero="不可选择" one="可选择"/>
+                <Bit index="2" name="4G" zero="不可选择" one="可选择"/>
+            </Field>
+        </DI>
+
+        <DI code="E0000111" name="运营商通信参数-移动" type="Struct">
+            <Field name="主站通信地址" type="BIN" length="8"/>
+            <Field name="主站通信通道类型" type="BIN" length="1"/>
+            <Field name="备用主站通信地址1" type="BIN" length="8"/>
+            <Field name="备用主站通信通道类型1" type="BIN" length="1"/>
+            <Field name="备用主站通信地址2" type="BIN" length="8"/>
+            <Field name="备用主站通信通道类型2" type="BIN" length="1"/>
+            <Field name="网关或代理服务器地址" type="BIN" length="8"/>
+            <Field name="网关通信通道类型" type="BIN" length="1"/>
+            <Field name="第一套 APN" type="ASCII" length="32"/>
+            <Field name="第一套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第一套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第二套 APN" type="ASCII" length="32"/>
+            <Field name="第二套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第二套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第三套 APN" type="ASCII" length="32"/>
+            <Field name="第三套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第三套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第四套 APN" type="ASCII" length="32"/>
+            <Field name="第四套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第四套 APN 密码" type="ASCII" length="32"/>
+        </DI>
+
+        <DI code="E0000112" name="运营商通信参数-联通" type="Struct">
+            <Field name="主站通信地址" type="BIN" length="8"/>
+            <Field name="主站通信通道类型" type="BIN" length="1"/>
+            <Field name="备用主站通信地址1" type="BIN" length="8"/>
+            <Field name="备用主站通信通道类型1" type="BIN" length="1"/>
+            <Field name="备用主站通信地址2" type="BIN" length="8"/>
+            <Field name="备用主站通信通道类型2" type="BIN" length="1"/>
+            <Field name="网关或代理服务器地址" type="BIN" length="8"/>
+            <Field name="网关通信通道类型" type="BIN" length="1"/>
+            <Field name="第一套 APN" type="ASCII" length="32"/>
+            <Field name="第一套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第一套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第二套 APN" type="ASCII" length="32"/>
+            <Field name="第二套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第二套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第三套 APN" type="ASCII" length="32"/>
+            <Field name="第三套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第三套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第四套 APN" type="ASCII" length="32"/>
+            <Field name="第四套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第四套 APN 密码" type="ASCII" length="32"/>
+        </DI>
+
+        <DI code="E0000113" name="运营商通信参数-电信" type="Struct">
+            <Field name="主站通信地址" type="BIN" length="8"/>
+            <Field name="主站通信通道类型" type="BIN" length="1"/>
+            <Field name="备用主站通信地址1" type="BIN" length="8"/>
+            <Field name="备用主站通信通道类型1" type="BIN" length="1"/>
+            <Field name="备用主站通信地址2" type="BIN" length="8"/>
+            <Field name="备用主站通信通道类型2" type="BIN" length="1"/>
+            <Field name="网关或代理服务器地址" type="BIN" length="8"/>
+            <Field name="网关通信通道类型" type="BIN" length="1"/>
+            <Field name="第一套 APN" type="ASCII" length="32"/>
+            <Field name="第一套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第一套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第二套 APN" type="ASCII" length="32"/>
+            <Field name="第二套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第二套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第三套 APN" type="ASCII" length="32"/>
+            <Field name="第三套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第三套 APN 密码" type="ASCII" length="32"/>
+            <Field name="第四套 APN" type="ASCII" length="32"/>
+            <Field name="第四套 APN 用户名" type="ASCII" length="32"/>
+            <Field name="第四套 APN 密码" type="ASCII" length="32"/>
+        </DI>
+
+        <DI code="E000011E" name="通信通道加解密状态" type="Struct">
+            <Field name="远程通信通道加解密状态" type="BCD" length="1"
+                   fill="FF" description="0：非加密；1：加密"/>
+            <Field name="本地通道加解密状态" type="BCD" length="1"
+                   fill="FF" description="0：非加密；1：加密"/>
+            <Field name="预留" type="BIN" length="2"/>
+        </DI>
+
+        <DI code="E0000120" name="终端省地市区县码" type="Struct">
+            <Field name="终端省地市区县码" type="BCD" length="3"
+                   byteOrder="little" fill="FF"/>
+        </DI>
+
+        <DI code="E0000121" name="终端地址" type="Struct">
+            <Field name="终端地址" type="BIN" length="3"
+                   byteOrder="little"/>
+        </DI>
+
+        <DI code="E0000122" name="终端通信工作模式" type="Struct">
+            <Field name="终端通信工作模式" type="BCD" length="1"
+                   fill="FF" description="0：混合模式；1：客户机模式；2：服务器模式"/>
+        </DI>
+
+        <DI code="E0000123" name="TCP 监听端口号" type="Struct">
+            <Field name="TCP 监听端口号" type="BIN" length="2"
+                   byteOrder="little"/>
+        </DI>
+
+        <DI code="E0000124" name="终端当前通道 IP 地址" type="Struct">
+            <Field name="终端当前通道 IP 地址" type="BIN" length="4"
+                   display="IPv4"/>
+        </DI>
+
+        <DI code="E0000125" name="终端当前通道子网掩码地址" type="Struct">
+            <Field name="终端当前通道子网掩码地址" type="BIN" length="4"
+                   display="IPv4"/>
+        </DI>
+
+        <DI code="E0000126" name="终端当前通道网关地址" type="Struct">
+            <Field name="终端当前通道网关地址" type="BIN" length="4"
+                   display="IPv4"/>
+        </DI>
+
+        <DI code="E0000127" name="有线网络 IP 地址获取方式" type="Struct">
+            <Field name="有线网络 IP 地址获取方式" type="BCD" length="1"
+                   fill="FF" description="0：手动设置；1：自动设置"/>
+        </DI>
+
+        <DI code="E000012F" name="扩展通信参数集合" type="None"/>
+
+        <DI code="E0000180" name="异常判断时间阈值" type="Struct">
+            <Field name="异常判断时间阈值" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 15 分钟"/>
+        </DI>
+        <DI code="E0000181" name="异常恢复时间阈值" type="Struct">
+            <Field name="异常恢复时间阈值" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 15 分钟"/>
+        </DI>
+        <DI code="E0000182" name="断相失压失流判断时间" type="Struct">
+            <Field name="断相失压失流判断时间" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 1 分钟"/>
+        </DI>
+        <DI code="E0000183" name="断相失压失流恢复时间" type="Struct">
+            <Field name="断相失压失流恢复时间" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 1 分钟"/>
+        </DI>
+        <DI code="E0000184" name="逆相序判断时间" type="Struct">
+            <Field name="逆相序判断时间" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 15 分钟"/>
+        </DI>
+        <DI code="E0000185" name="逆相序恢复时间" type="Struct">
+            <Field name="逆相序恢复时间" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 15 分钟"/>
+        </DI>
+        <DI code="E0000186" name="电流反极性判断时间" type="Struct">
+            <Field name="电流反极性判断时间" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 15 分钟"/>
+        </DI>
+        <DI code="E0000187" name="电流反极性恢复时间" type="Struct">
+            <Field name="电流反极性恢复时间" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 15 分钟"/>
+        </DI>
+        <DI code="E0000188" name="电能表时钟异常阈值" type="Struct">
+            <Field name="电能表时钟异常阈值" type="BCD" length="1"
+                   fill="FF" unit="分" description="缺省 10 分钟"/>
+        </DI>
+        <DI code="E0000189" name="电能表飞走阈值" type="Struct">
+            <Field name="电能表飞走阈值" type="BCD" length="1"
+                   fill="FF" description="缺省 10 倍"/>
+        </DI>
+        <DI code="E000018A" name="电能表停走阈值" type="Struct">
+            <Field name="电能表停走阈值" type="BCD" length="2"
+                   byteOrder="little" format="NN.NN" fill="FF" unit="kWh"
+                   description="缺省 0.1 kWh"/>
+        </DI>
+        <DI code="E000018B" name="剩余金额不足阈值" type="Struct">
+            <Field name="剩余金额不足阈值" type="BCD" length="3"
+                   byteOrder="little" format="NNNN.NN" fill="FF" unit="元"
+                   description="缺省 20.00 元"/>
+        </DI>
+        <DI code="E000018C" name="月通信流量越限值" type="Struct">
+            <Field name="月通信流量越限值" type="BCD" length="3"
+                   byteOrder="little" fill="FF" unit="kB"
+                   description="0 表示不进行流量控制"/>
+        </DI>
+        <DI code="E000018F" name="基础阈值参数集合" type="None"/>
+        <DI code="E0000190" name="系统 CPU 占用率阈值" type="Struct">
+            <Field name="系统 CPU 占用率阈值" type="BCD" length="2"
+                   byteOrder="little" format="NN.NN" fill="FF" unit="%"/>
+        </DI>
+        <DI code="E0000191" name="系统内存占用率阈值" type="Struct">
+            <Field name="系统内存占用率阈值" type="BCD" length="2"
+                   byteOrder="little" format="NN.NN" fill="FF" unit="%"/>
+        </DI>
+        <DI code="E0000192" name="系统存储资源占用率阈值" type="Struct">
+            <Field name="系统存储资源占用率阈值" type="BCD" length="2"
+                   byteOrder="little" format="NN.NN" fill="FF" unit="%"/>
+        </DI>
+        <DI code="E0000193" name="CPU 温度阈值" type="Struct">
+            <Field name="CPU 温度阈值" type="BCD" length="3"
+                   byteOrder="little" format="NNNN.NN" fill="FF" unit="℃"/>
+        </DI>
+        <DI code="E0000194" name="应用 CPU 占用率阈值" type="Struct">
+            <Field name="应用 CPU 占用率阈值" type="BCD" length="2"
+                   byteOrder="little" format="NN.NN" fill="FF" unit="%"/>
+        </DI>
+        <DI code="E0000195" name="应用内存占用率阈值" type="Struct">
+            <Field name="应用内存占用率阈值" type="BCD" length="2"
+                   byteOrder="little" format="NN.NN" fill="FF" unit="%"/>
+        </DI>
+        <DI code="E0000196" name="应用存储资源占用阈值" type="Struct">
+            <Field name="应用存储资源占用阈值" type="BCD" length="3"
+                   byteOrder="little" fill="FF" unit="kB"/>
+        </DI>
+        <DI code="E0000197" name="日志占用阈值" type="Struct">
+            <Field name="日志占用阈值" type="BCD" length="3"
+                   byteOrder="little" fill="FF" unit="kB"/>
+        </DI>
+        <DI code="E000019A" name="温湿度传感器阈值上限" type="Struct">
+            <Field name="温湿度传感器阈值上限" type="BCD" length="2"
+                   byteOrder="little" format="NNN.N" fill="FF" unit="℃"/>
+        </DI>
+        <DI code="E000019B" name="温湿度传感器阈值下限" type="Struct">
+            <Field name="温湿度传感器阈值下限" type="BCD" length="2"
+                   byteOrder="little" format="NNN.N" fill="FF" unit="℃"/>
+        </DI>
+        <DI code="E0020101" name="温度调节频率" type="Struct">
+            <Field name="温度调节频率" type="BCD" length="2"
+                   byteOrder="little" fill="FF" unit="秒" description="缺省 30 秒"/>
+        </DI>
+        <DI code="E0020102" name="温度调节步长" type="Struct">
+            <Field name="温度调节步长" type="BCD" length="2"
+                   byteOrder="little" format="NNN.N" fill="FF" unit="℃"
+                   description="缺省 1 ℃"/>
+        </DI>
+
+        <DI code="E0000200" name="有效抄表通道定义" type="Struct">
+            <Field name="抄表基准时间" type="YYMMDDhhmm" length="5"/>
+            <Field name="定时抄表周期单位" type="BIN" length="1"
+                   display="PeriodUnit"/>
+            <Field name="定时抄表周期" type="BIN" length="1"
+                   description="终端按此周期循环抄表"/>
+        </DI>
+
+        <DI code="E0000221" name="有效的抄表参数配置表总数" type="Struct">
+            <Field name="有效的抄表参数配置表总数" type="BCD" length="1"
+                   fill="FF"/>
+        </DI>
+
+        <DI code="E0000230" name="抄表参数配置表" type="Struct">
+            <Field name="有效性标志" type="BIN" length="1"
+                   display="ValidityFlag"/>
+            <Field name="存储点数" type="BCD" length="2"
+                   byteOrder="little" fill="FF"
+                   description="0 表示按最大存储容量存储"/>
+            <Field name="电表类型" type="BIN" length="1"
+                   description="01：单相电子表；02：多功能表；03：三相电子表；04：其他类型；FF：所有类型"/>
+            <Field name="重点用户属性" type="BIN" length="1"
+                   description="0：普通用户；1：重点用户；FF：所有类型"/>
+            <Field id="pointCount" name="信息点标识组数" type="BIN" length="1"
+                   description="FF 表示所有符合通道参数的测量点"/>
+            <Field name="信息点标识" type="BIN" length="2" display="DA"
+                   countRef="pointCount" countRefFF="1"/>
+            <Field id="diCount" name="数据标识编码组数" type="BIN" length="1"
+                   description="FF 表示按自定义方式抄读数据"/>
+            <Field name="数据标识编码" type="BIN" length="4"
+                   byteOrder="little" display="DI"
+                   countRef="diCount" countRefFF="1"/>
+        </DI>
+
+        <DI code="E0000260" name="通道数据补抄时间" type="Struct">
+            <Field name="485通道曲线数据补抄时间" type="BCD" length="1"
+                   fill="FF" unit="日"/>
+            <Field name="485通道日冻结补抄时间" type="BCD" length="1"
+                   fill="FF" unit="日"/>
+            <Field name="485通道月冻结补抄时间" type="BCD" length="1"
+                   fill="FF" unit="月"/>
+            <Field name="其他通道曲线数据补抄时间" type="BCD" length="1"
+                   fill="FF" unit="日"/>
+            <Field name="其他通道日冻结补抄时间" type="BCD" length="1"
+                   fill="FF" unit="日"/>
+            <Field name="其他通道月冻结补抄时间" type="BCD" length="1"
+                   fill="FF" unit="月"/>
+        </DI>
+
+        <DI code="E0000261" name="冻结电能表时钟判断" type="Struct">
+            <Field name="485通道冻结电能表时钟判断" type="BCD" length="1"
+                   fill="FF" description="0：关闭判断；1：开启判断"/>
+            <Field name="其他通道冻结电能表时钟判断" type="BCD" length="1"
+                   fill="FF" description="0：关闭判断；1：开启判断"/>
+        </DI>
+
+        <!-- A.11 运算量参数：01H～FDH 系列由业务归一化到 XX 模板。 -->
+        <DI code="E0000500" name="模拟量数量" type="Struct">
+            <Field name="模拟量数量" type="BIN" length="1"
+                   description="有效模拟量号范围为 01H～NN"/>
+        </DI>
+        <DI code="E00005XX" name="模拟量" type="Struct">
+            <Field name="模拟量类型和相位" type="BIN" length="1"
+                   description="高半字节：1 电压、2 电流、3 电压监测时间；低半字节：1 A相、2 B相、3 C相"/>
+            <Field name="测量点号" type="BIN" length="2" byteOrder="little"/>
+        </DI>
+        <DI code="E00005FE" name="模拟量状态标记" type="Struct">
+            <Field name="模拟量状态标记" type="BS" length="32"
+                   description="每位从低到高对应一个模拟量；0 无效，1 有效"/>
+        </DI>
+        <DI code="E00005FF" name="模拟量参数集合" type="None"/>
+
+        <DI code="E0000600" name="脉冲量数量" type="Struct">
+            <Field name="脉冲量数量" type="BIN" length="1"
+                   description="有效脉冲量号范围为 01H～NN"/>
+        </DI>
+        <DI code="E00006XX" name="脉冲量" type="Struct">
+            <Field name="测量点号" type="BIN" length="2" byteOrder="little"/>
+            <Field name="脉冲类型" type="BIN" length="1"
+                   description="01 正向有功；02 反向有功；03 正向感性无功；04 正向容性无功；05 反向容性无功；06 反向感性无功"/>
+            <Field name="脉冲常数" type="BIN" length="3" byteOrder="little"/>
+        </DI>
+        <DI code="E00006FE" name="脉冲量状态标记" type="Struct">
+            <Field name="脉冲量状态标记" type="BS" length="32"
+                   description="每位从低到高对应一个脉冲量；0 无效，1 有效"/>
+        </DI>
+        <DI code="E00006FF" name="脉冲量参数集合" type="None"/>
+
+        <DI code="E0000700" name="运算量数量" type="Struct">
+            <Field name="运算量数量" type="BIN" length="1"
+                   description="有效运算量号范围为 01H～NN"/>
+        </DI>
+        <DI code="E00007XX" name="运算量" type="Struct">
+            <Field name="所属测量点号" type="BIN" length="2" byteOrder="little"/>
+            <Field name="数据标识编码" type="BIN" length="4"
+                   byteOrder="little" display="DI"/>
+            <Field name="运算符号1" type="BIN" length="1" display="ArithmeticSign"/>
+            <Field name="测量点号1" type="BIN" length="2" byteOrder="little"/>
+            <Field name="运算符号2" type="BIN" length="1" display="ArithmeticSign"/>
+            <Field name="测量点号2" type="BIN" length="2" byteOrder="little"/>
+            <Field name="运算符号3" type="BIN" length="1" display="ArithmeticSign"/>
+            <Field name="测量点号3" type="BIN" length="2" byteOrder="little"/>
+            <Field name="运算符号4" type="BIN" length="1" display="ArithmeticSign"/>
+            <Field name="测量点号4" type="BIN" length="2" byteOrder="little"/>
+            <Field name="运算符号5" type="BIN" length="1" display="ArithmeticSign"/>
+            <Field name="测量点号5" type="BIN" length="2" byteOrder="little"/>
+            <Field name="运算符号6" type="BIN" length="1" display="ArithmeticSign"/>
+            <Field name="测量点号6" type="BIN" length="2" byteOrder="little"/>
+            <Field name="运算符号7" type="BIN" length="1" display="ArithmeticSign"/>
+            <Field name="测量点号7" type="BIN" length="2" byteOrder="little"/>
+            <Field name="运算符号8" type="BIN" length="1" display="ArithmeticSign"/>
+            <Field name="测量点号8" type="BIN" length="2" byteOrder="little"/>
+        </DI>
+        <DI code="E00007FE" name="运算量状态标记" type="Struct">
+            <Field name="运算量状态标记" type="BS" length="32"
+                   description="每位从低到高对应一个运算量；0 无效，1 有效"/>
+        </DI>
+        <DI code="E00007FF" name="运算量参数集合" type="None"/>
+
+        <DI code="E0000800" name="差动规则数量" type="Struct">
+            <Field name="差动规则数量" type="BIN" length="1"
+                   description="有效差动规则号范围为 01H～NN"/>
+        </DI>
+        <DI code="E00008XX" name="差动规则" type="Struct">
+            <Field name="数据标识编码" type="BIN" length="4"
+                   byteOrder="little" display="DI"/>
+            <Field name="比较测量点号" type="BIN" length="2" byteOrder="little"/>
+            <Field name="被比较测量点号" type="BIN" length="2" byteOrder="little"/>
+            <Field name="最小绝对差值" type="BCD" length="3"
+                   byteOrder="little" format="NNNN.NN" fill="FF"/>
+            <Field name="差动比率报警阈值" type="BCD" length="2"
+                   byteOrder="little" format="NN.NN" fill="FF" unit="%"/>
+            <Field name="差动比率报警恢复阈值" type="BCD" length="2"
+                   byteOrder="little" format="NN.NN" fill="FF" unit="%"/>
+        </DI>
+        <DI code="E00008FE" name="差动规则状态标记" type="Struct">
+            <Field name="差动规则状态标记" type="BS" length="32"
+                   description="每位从低到高对应一个差动规则；0 无效，1 有效"/>
+        </DI>
+        <DI code="E00008FF" name="差动规则参数集合" type="None"/>
+        <DI code="E0000900" name="组合有功无功统计标志" type="Struct">
+            <Field name="组合有功统计标志" type="BS" length="1"
+                   description="D0～D3 分别表示正向有功加、正向有功减、反向有功加、反向有功减"/>
+            <Field name="组合无功1统计标志" type="BS" length="1"
+                   description="每象限各占加、减两位"/>
+            <Field name="组合无功2统计标志" type="BS" length="1"
+                   description="每象限各占加、减两位"/>
+        </DI>
+
+        <!-- A.12 端口参数：00H～1EH 由业务归一化到 E0000AXX。 -->
+        <DI code="E0000AXX" name="485端口定义" type="Struct">
+            <Field name="端口功能" type="BIN" length="1" display="PortFunction"/>
+            <Field name="通信波特率" type="BIN" length="1" display="BaudRate300"/>
+            <Field name="校验方式" type="BIN" length="1" display="Parity"/>
+            <Field name="数据位" type="BIN" length="1" display="DataBits"/>
+            <Field name="停止位" type="BIN" length="1" display="StopBits"/>
+        </DI>
+        <DI code="E0000040" name="宽带载波频段" type="Struct">
+            <Field name="宽带载波频段" type="BIN" length="1"/>
+        </DI>
+
+        <!-- A.14 负荷管理参数。重复编号区间由业务映射到区间首项模板。 -->
+        <DI code="E0000C00" name="开关接点类型" type="Struct">
+            <Field name="开关接点类型" type="BIN" length="1"
+                   description="00 常开；01 常闭"/>
+        </DI>
+        <DI code="E0000C0F" name="开关接点类型集合" type="None"/>
+        <DI code="E0000C10" name="输入开关状态" type="Struct">
+            <Field name="输入开关状态" type="BIN" length="1"
+                   description="00 合；01 分"/>
+        </DI>
+        <DI code="E0000C1F" name="输入开关状态集合" type="None"/>
+        <DI code="E0000C20" name="输出开关状态" type="Struct">
+            <Field name="输出开关状态" type="BIN" length="1"
+                   description="00 合；01 分"/>
+        </DI>
+        <DI code="E0000C2F" name="输出开关状态集合" type="None"/>
+        <DI code="E0000C30" name="输出开关轮次" type="Struct">
+            <Field name="输出开关轮次" type="BIN" length="1"
+                   description="轮次号 1～12"/>
+        </DI>
+        <DI code="E0000C3F" name="输出开关轮次集合" type="None"/>
+        <DI code="E0000C40" name="遥控拉闸时间" type="Struct">
+            <Field name="遥控拉闸时间" type="hhmm" length="2"
+                   description="全 0 表示遥控后不自动合闸"/>
+        </DI>
+        <DI code="E0000C50" name="保电状态" type="Struct">
+            <Field name="保电状态" type="BIN" length="1"
+                   description="00 非保电状态；01 保电状态"/>
+        </DI>
+        <DI code="E0000C60" name="功率控制是否有效" type="Struct">
+            <Field name="功率控制是否有效" type="BIN" length="1" display="ValidityFlag"/>
+        </DI>
+        <DI code="E0000C61" name="月度电量控制是否有效" type="Struct">
+            <Field name="月度电量控制是否有效" type="BIN" length="1" display="ValidityFlag"/>
+        </DI>
+        <DI code="E0000C62" name="购电量控制是否有效" type="Struct">
+            <Field name="购电量控制是否有效" type="BIN" length="1" display="ValidityFlag"/>
+        </DI>
+        <DI code="E0000C63" name="功率控制跳闸轮次有效标志" type="Struct">
+            <Field name="功率控制跳闸轮次有效标志" type="BS" length="1"
+                   description="D0～D7 分别对应 1～8 轮"/>
+        </DI>
+        <DI code="E0000C64" name="月电量控制跳闸轮次有效标志" type="Struct">
+            <Field name="月电量控制跳闸轮次有效标志" type="BS" length="1"
+                   description="D0～D7 分别对应 1～8 轮"/>
+        </DI>
+        <DI code="E0000C65" name="购电量控制跳闸轮次有效标志" type="Struct">
+            <Field name="购电量控制跳闸轮次有效标志" type="BS" length="1"
+                   description="D0～D7 分别对应 1～8 轮"/>
+        </DI>
+        <DI code="E0000C66" name="过负荷持续时间" type="Struct">
+            <Field name="过负荷持续时间" type="hhmmss" length="3"/>
+        </DI>
+        <DI code="E0000C67" name="负荷恢复持续时间" type="Struct">
+            <Field name="负荷恢复持续时间" type="hhmmss" length="3"/>
+        </DI>
+        <DI code="E0000C68" name="拉闸命令告警延时" type="Struct">
+            <Field name="拉闸命令告警延时" type="BIN" length="1" description="单位分钟"/>
+        </DI>
+        <DI code="E0000C69" name="功率控制用功率累加标志" type="Struct">
+            <Field name="功率累加标志" type="BS" length="1"/>
+            <Field name="测量点号1" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号2" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号3" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号4" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号5" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号6" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号7" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号8" type="BIN" length="2" byteOrder="little"/>
+        </DI>
+        <DI code="E0000C6A" name="电量控制用电量累加标志" type="Struct">
+            <Field name="电量累加标志" type="BS" length="1"/>
+            <Field name="测量点号1" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号2" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号3" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号4" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号5" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号6" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号7" type="BIN" length="2" byteOrder="little"/>
+            <Field name="测量点号8" type="BIN" length="2" byteOrder="little"/>
+        </DI>
+        <DI code="E0000C6B" name="功率定值浮动系数" type="Struct">
+            <Field name="功率定值浮动系数" type="BIN" length="1" sign="msb" description="百分数；最高位 0 上浮、1 下浮"/>
+        </DI>
+        <DI code="E0000C6C" name="月电量控定值浮动系数" type="Struct">
+            <Field name="月电量控定值浮动系数" type="BIN" length="1" sign="msb" description="百分数；最高位 0 上浮、1 下浮"/>
+        </DI>
+        <DI code="E0000C6D" name="最低负荷" type="Struct">
+            <Field name="最低负荷" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" fill="FF" unit="kW"/>
+        </DI>
+        <DI code="E0000C70" name="临时限电控制" type="Struct">
+            <Field name="临时限电控有效标识" type="BIN" length="1"/>
+            <Field name="临时限电指标" type="BIN" length="1" description="单位百分比"/>
+            <Field name="临时限电时间" type="hhmm" length="2"/>
+        </DI>
+        <DI code="E0000C71" name="功率控制计算滑窗时间" type="Struct">
+            <Field name="功率控制计算滑窗时间" type="BIN" length="1" description="单位分钟"/>
+        </DI>
+
+        <DI code="E0000D00" name="功率控制系列1时段数" type="Struct">
+            <Field name="时段数" type="BIN" length="1"/>
+        </DI>
+        <DI code="E0000D01" name="功率控制系列1时段" type="Struct">
+            <Field name="起始时间" type="hhmm" length="2"/>
+            <Field name="功控投入标志" type="BIN" length="1" display="ValidityFlag"/>
+            <Field name="功率定值" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" fill="FF" unit="kW"/>
+        </DI>
+        <DI code="E0000D09" name="功率控制系列1执行时间" type="Struct">
+            <Field name="开始月日" type="BCD" length="2"/>
+            <Field name="结束月日" type="BCD" length="2"/>
+            <Field name="频率单位" type="BIN" length="1" description="04 日；05 月；06 周"/>
+            <Field name="执行频率值" type="BS" length="4"/>
+        </DI>
+        <DI code="E0000D0F" name="功率控制系列1集合" type="None"/>
+        <DI code="E0000D10" name="功率控制系列2时段数" type="Struct"><Field name="时段数" type="BIN" length="1"/></DI>
+        <DI code="E0000D11" name="功率控制系列2时段" type="Struct">
+            <Field name="起始时间" type="hhmm" length="2"/><Field name="功控投入标志" type="BIN" length="1" display="ValidityFlag"/><Field name="功率定值" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" fill="FF" unit="kW"/>
+        </DI>
+        <DI code="E0000D19" name="功率控制系列2执行时间" type="Struct"><Field name="开始月日" type="BCD" length="2"/><Field name="结束月日" type="BCD" length="2"/><Field name="频率单位" type="BIN" length="1" description="04 日；05 月；06 周"/><Field name="执行频率值" type="BS" length="4"/></DI>
+        <DI code="E0000D1F" name="功率控制系列2集合" type="None"/>
+        <DI code="E0000D20" name="功率控制系列3时段数" type="Struct"><Field name="时段数" type="BIN" length="1"/></DI>
+        <DI code="E0000D21" name="功率控制系列3时段" type="Struct"><Field name="起始时间" type="hhmm" length="2"/><Field name="功控投入标志" type="BIN" length="1" display="ValidityFlag"/><Field name="功率定值" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" fill="FF" unit="kW"/></DI>
+        <DI code="E0000D29" name="功率控制系列3执行时间" type="Struct"><Field name="开始月日" type="BCD" length="2"/><Field name="结束月日" type="BCD" length="2"/><Field name="频率单位" type="BIN" length="1" description="04 日；05 月；06 周"/><Field name="执行频率值" type="BS" length="4"/></DI>
+        <DI code="E0000D2F" name="功率控制系列3集合" type="None"/>
+        <DI code="E0000D30" name="功率控制系列4时段数" type="Struct"><Field name="时段数" type="BIN" length="1"/></DI>
+        <DI code="E0000D31" name="功率控制系列4时段" type="Struct"><Field name="起始时间" type="hhmm" length="2"/><Field name="功控投入标志" type="BIN" length="1" display="ValidityFlag"/><Field name="功率定值" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" fill="FF" unit="kW"/></DI>
+        <DI code="E0000D39" name="功率控制系列4执行时间" type="Struct"><Field name="开始月日" type="BCD" length="2"/><Field name="结束月日" type="BCD" length="2"/><Field name="频率单位" type="BIN" length="1" description="04 日；05 月；06 周"/><Field name="执行频率值" type="BS" length="4"/></DI>
+        <DI code="E0000D3F" name="功率控制系列4集合" type="None"/>
+
+        <DI code="E0000E00" name="月电量限额" type="Struct"><Field name="月电量限额" type="BCD" length="4" byteOrder="little" fill="FF" unit="kWh"/></DI>
+        <DI code="E0000E01" name="轮次电量" type="Struct"><Field name="轮次电量" type="BCD" length="4" byteOrder="little" format="NNNNNNN.N" fill="FF" unit="kWh"/></DI>
+        <DI code="E0000E02" name="本次购电量" type="Struct"><Field name="本次购电量" type="BCD" length="4" byteOrder="little" sign="leading-bit" fill="FF" unit="kWh"/><Field name="购电单序号" type="BIN" length="1"/></DI>
+        <DI code="E0000E03" name="剩余电量" type="Struct"><Field name="剩余电量" type="BCD" length="5" byteOrder="little" format="NNNNNNNNN.N" sign="leading-bit" fill="FF" unit="kWh"/></DI>
+        <DI code="E0000E04" name="电能量费率时段和费率数" type="Struct">
+            <Field name="时段费率号1" type="BIN" length="1"/>
+            <Field name="时段费率号2" type="BIN" length="1"/>
+            <Field name="时段费率号3" type="BIN" length="1"/>
+            <Field name="时段费率号4" type="BIN" length="1"/>
+            <Field name="时段费率号5" type="BIN" length="1"/>
+            <Field name="时段费率号6" type="BIN" length="1"/>
+            <Field name="时段费率号7" type="BIN" length="1"/>
+            <Field name="时段费率号8" type="BIN" length="1"/>
+            <Field name="时段费率号9" type="BIN" length="1"/>
+            <Field name="时段费率号10" type="BIN" length="1"/>
+            <Field name="时段费率号11" type="BIN" length="1"/>
+            <Field name="时段费率号12" type="BIN" length="1"/>
+            <Field name="时段费率号13" type="BIN" length="1"/>
+            <Field name="时段费率号14" type="BIN" length="1"/>
+            <Field name="时段费率号15" type="BIN" length="1"/>
+            <Field name="时段费率号16" type="BIN" length="1"/>
+            <Field name="时段费率号17" type="BIN" length="1"/>
+            <Field name="时段费率号18" type="BIN" length="1"/>
+            <Field name="时段费率号19" type="BIN" length="1"/>
+            <Field name="时段费率号20" type="BIN" length="1"/>
+            <Field name="时段费率号21" type="BIN" length="1"/>
+            <Field name="时段费率号22" type="BIN" length="1"/>
+            <Field name="时段费率号23" type="BIN" length="1"/>
+            <Field name="时段费率号24" type="BIN" length="1"/>
+            <Field name="时段费率号25" type="BIN" length="1"/>
+            <Field name="时段费率号26" type="BIN" length="1"/>
+            <Field name="时段费率号27" type="BIN" length="1"/>
+            <Field name="时段费率号28" type="BIN" length="1"/>
+            <Field name="时段费率号29" type="BIN" length="1"/>
+            <Field name="时段费率号30" type="BIN" length="1"/>
+            <Field name="时段费率号31" type="BIN" length="1"/>
+            <Field name="时段费率号32" type="BIN" length="1"/>
+            <Field name="时段费率号33" type="BIN" length="1"/>
+            <Field name="时段费率号34" type="BIN" length="1"/>
+            <Field name="时段费率号35" type="BIN" length="1"/>
+            <Field name="时段费率号36" type="BIN" length="1"/>
+            <Field name="时段费率号37" type="BIN" length="1"/>
+            <Field name="时段费率号38" type="BIN" length="1"/>
+            <Field name="时段费率号39" type="BIN" length="1"/>
+            <Field name="时段费率号40" type="BIN" length="1"/>
+            <Field name="时段费率号41" type="BIN" length="1"/>
+            <Field name="时段费率号42" type="BIN" length="1"/>
+            <Field name="时段费率号43" type="BIN" length="1"/>
+            <Field name="时段费率号44" type="BIN" length="1"/>
+            <Field name="时段费率号45" type="BIN" length="1"/>
+            <Field name="时段费率号46" type="BIN" length="1"/>
+            <Field name="时段费率号47" type="BIN" length="1"/>
+            <Field name="时段费率号48" type="BIN" length="1"/>
+            <Field name="费率数" type="BIN" length="1" description="有效范围 1～48"/>
+        </DI>
+        <DI code="E0000E10" name="厂休控是否投入" type="Struct"><Field name="厂休控是否投入" type="BIN" length="1" display="ValidityFlag"/></DI>
+        <DI code="E0000E11" name="厂休控参数" type="Struct"><Field name="厂休控定值" type="BCD" length="5" byteOrder="little" format="NNNNNNNN.NN" sign="leading-bit" fill="FF" unit="kW"/><Field name="限电起始时间" type="hhmm" length="2"/><Field name="限电延续时间" type="BIN" length="2" byteOrder="little" description="单位分钟"/><Field name="每周限电日" type="BS" length="1"/></DI>
+        <DI code="E0000E21" name="输出控制轮次断线检测结果" type="Struct"><Field name="断线检测结果及回路" type="BIN" length="1" description="高半字节为检测结果，低半字节为断线回路"/></DI>
+        <DI code="E0000E30" name="断线检测允许时间" type="Struct"><Field name="断线检测允许时间" type="BIN" length="2" byteOrder="little" description="单位秒"/></DI>
+        <DI code="E0000E31" name="遥控信号允许时间" type="Struct"><Field name="遥控信号允许时间" type="BIN" length="2" byteOrder="little" description="单位秒"/></DI>
+        <DI code="E0000E32" name="连续无通信保电判定时间" type="Struct"><Field name="连续无通信保电判定时间" type="BIN" length="2" byteOrder="little" description="0 表示无自动保电功能；单位分钟"/></DI>
+        <DI code="E0000E33" name="控制脉冲脉宽" type="Struct"><Field name="控制脉冲脉宽" type="BIN" length="1" description="00 300ms；01 1000ms；02 3000ms；03 5000ms；FF 电平模式"/></DI>
+        <DI code="E0000E34" name="断线检测脉宽" type="Struct"><Field name="断线检测脉宽" type="BIN" length="1" description="00 100ms"/></DI>
+
+        <!-- A.16 测量点控制参数。控制密码和操作者代码均按规范保持 BIN 原文。 -->
+        <DI code="E0001100" name="电能表遥控拉闸" type="Struct">
+            <Field name="电能表地址" type="BIN" length="6"/><Field name="电能表控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/>
+        </DI>
+        <DI code="E0001101" name="电能表遥控合闸" type="Struct">
+            <Field name="电能表地址" type="BIN" length="6"/><Field name="电能表控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/><Field name="合闸类型" type="BIN" length="1" description="0 允许合闸；1 直接合闸"/>
+        </DI>
+        <DI code="E0001102" name="电能表保电" type="Struct"><Field name="电能表地址" type="BIN" length="6"/><Field name="电能表控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001103" name="电能表保电解除" type="Struct"><Field name="电能表地址" type="BIN" length="6"/><Field name="电能表控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001104" name="删除测量点" type="Struct"><Field name="测量点号" type="BIN" length="2" byteOrder="little"/><Field name="测量点地址" type="BIN" length="6"/></DI>
+        <DI code="E0001105" name="扩展电能表遥控拉闸" type="Struct"><Field name="电能表地址" type="BIN" length="6"/><Field name="电能表控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001106" name="扩展电能表遥控合闸" type="Struct"><Field name="电能表地址" type="BIN" length="6"/><Field name="电能表控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/><Field name="合闸类型" type="BIN" length="1" description="0 允许合闸；1 直接合闸"/></DI>
+
+        <!-- A.17 功能控制参数。 -->
+        <DI code="E0001200" name="户变关系识别功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/><Field name="识别起始日" type="BCD" length="1"/><Field name="识别起始时间" type="hhmm" length="2"/><Field name="允许执行时长" type="BIN" length="1" description="单位小时；0 表示执行一个轮次"/></DI>
+        <DI code="E0001201" name="相位识别功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/><Field name="识别起始日" type="BCD" length="1"/><Field name="识别起始时间" type="hhmm" length="2"/><Field name="允许执行时长" type="BIN" length="1" description="单位小时；0 表示执行一个轮次"/></DI>
+        <DI code="E0001202" name="定时搜表功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/><Field name="搜表起始日" type="BCD" length="1"/><Field name="搜表起始时间" type="hhmm" length="2"/><Field name="允许执行时长" type="BIN" length="1" description="单位小时；0 表示执行一个轮次"/></DI>
+        <DI code="E0001203" name="手动搜表功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/><Field name="允许执行时长" type="BIN" length="1" description="单位小时；0 表示执行一个轮次"/></DI>
+        <DI code="E0001204" name="拓扑识别功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/><Field name="识别起始日" type="BCD" length="1"/><Field name="识别起始时间" type="hhmm" length="2"/><Field name="允许执行时长" type="BIN" length="1" description="单位小时；0 表示执行一个轮次"/></DI>
+        <DI code="E0001206" name="校时功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/></DI>
+        <DI code="E0001207" name="终端采集模块负荷曲线功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/></DI>
+        <DI code="E0001208" name="负荷控制回路断线检测功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/><Field name="检测开始时间" type="hhmm" length="2"/><Field name="检测周期" type="BCD" length="1" description="单位分钟"/></DI>
+        <DI code="E000120A" name="资产管理功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/><Field name="执行周期" type="BCD" length="1" description="单位天"/><Field name="起始时间" type="hhmm" length="2"/></DI>
+        <DI code="E0001211" name="空调制冷温度设置" type="Struct"><Field name="设备地址" type="BIN" length="6"/><Field name="控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="制冷温度" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="℃"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001212" name="空调制热温度设置" type="Struct"><Field name="设备地址" type="BIN" length="6"/><Field name="控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="制热温度" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="℃"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001213" name="蓄电池电压下限设置" type="Struct"><Field name="设备地址" type="BIN" length="6"/><Field name="控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="电压下限" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="V"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001214" name="充电桩限制功率设置" type="Struct"><Field name="设备地址" type="BIN" length="6"/><Field name="控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="限制功率" type="BCD" length="4" byteOrder="little" format="NNNN.NNNN" fill="FF" unit="kW"/><Field name="充电枪号" type="BIN" length="1"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001215" name="空调限制功率设置" type="Struct"><Field name="设备地址" type="BIN" length="6"/><Field name="控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="限制功率" type="BCD" length="4" byteOrder="little" format="NNNN.NNNN" fill="FF" unit="kW"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001218" name="储能充放电限制功率设置" type="Struct"><Field name="设备地址" type="BIN" length="6"/><Field name="控制密码" type="BIN" length="4"/><Field name="操作者代码" type="BIN" length="4"/><Field name="工作模式" type="BIN" length="1" description="00 自动；01 充电；02 放电"/><Field name="充放电功率" type="BCD" length="4" byteOrder="little" format="NNNN.NNNN" fill="FF" unit="kW"/><Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001219" name="光伏发电调节" type="Struct">
+            <Field name="设备地址" type="BIN" length="6"/>
+            <Field name="控制密码" type="BIN" length="4"/>
+            <Field name="操作者代码" type="BIN" length="4"/>
+            <Field id="adjustmentMode" name="调节方式" type="BIN" length="1"
+                   description="00 开关机；01 有功功率；02 无功功率；03 功率因数；04 有功功率百分比；05 无功功率百分比"/>
+            <Field name="光伏发电调节值" type="Choice" selectorRef="adjustmentMode">
+                <Case value="0"><Field name="开关机" type="BIN" length="1" description="0 开机；1 关机"/></Case>
+                <Case value="1"><Field name="有功功率" type="BCD" length="4" byteOrder="little" format="NNNN.NNNN" fill="FF" unit="kW"/></Case>
+                <Case value="2"><Field name="无功功率" type="BCD" length="4" byteOrder="little" format="NNNN.NNNN" fill="FF" unit="kVar"/></Case>
+                <Case value="3"><Field name="功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/></Case>
+                <Case value="4"><Field name="有功功率百分比" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="%"/></Case>
+                <Case value="5"><Field name="无功功率百分比" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="%"/></Case>
+            </Field>
+            <Field name="控制有效时间" type="BIN" length="1" description="单位分钟"/>
+        </DI>
+        <DI code="E00012A0" name="终端即插即用功能" type="Struct"><Field name="启用标志" type="BIN" length="1" display="ValidityFlag"/></DI>
+        <DI code="E18000A0" name="添加黑名单节点" type="Struct"><Field id="nodeCount" name="节点总数量" type="BIN" length="2" byteOrder="little"/><Field name="节点地址" type="BIN" length="6" countRef="nodeCount"/></DI>
+        <DI code="E18000A1" name="删除黑名单节点" type="Struct"><Field id="nodeCount" name="节点总数量" type="BIN" length="2" byteOrder="little"/><Field name="节点地址" type="BIN" length="6" countRef="nodeCount" description="m=1 且地址全 FF 时删除全部黑名单节点"/></DI>
+
+        <!-- A.18 安全维护参数。 -->
+        <DI code="E0001300" name="终端界面操作密码" type="Struct"><Field name="终端界面操作密码" type="ASCII" length="6" description="只可设置，不可查询；终端使用密文存储"/></DI>
+        <DI code="E0001301" name="界面密码生效持续时间" type="Struct"><Field name="界面密码生效持续时间" type="BIN" length="1" description="单位分钟"/></DI>
+        <DI code="E0001302" name="终端维护口授权持续时间" type="Struct"><Field name="RS232端口授权时间" type="BIN" length="1" description="0 关闭；1～254 分钟；255 永久投运"/><Field name="维护RS485端口授权时间" type="BIN" length="1" description="0 关闭；1～254 分钟；255 永久投运"/><Field name="USB端口授权时间" type="BIN" length="1" description="0 关闭；1～254 分钟；255 永久投运"/><Field name="蓝牙或红外端口授权时间" type="BIN" length="1" description="0 关闭；1～254 分钟；255 永久投运"/><Field name="SSH端口授权时间" type="BIN" length="1" description="0 关闭；1～254 分钟；255 永久投运"/></DI>
+
+        <!-- A.19 应用管理参数。 -->
+        <DI code="E0001400" name="APP控制列表" type="Struct">
+            <Field id="appCount" name="APP数量" type="BIN" length="1"/>
+            <Field name="APP记录" type="Struct" countRef="appCount">
+                <Field name="APP名称" type="ASCII" length="32"/>
+                <Field name="APP控制状态" type="BIN" length="1" display="AppControlState"/>
+            </Field>
+        </DI>
+
+        <DI code="E0000130"
+            name="终端时间"
+            type="Struct">
+            <Field name="终端时间"
+                   type="YYMMDDhhmmss"
+                   length="6"/>
+        </DI>
+
+        <DI code="E0000131"
+            name="实时校时"
+            type="Struct">
+            <Field name="测量点号"
+                   type="BIN"
+                   length="2"
+                   byteOrder="little"
+                   description="FFFFH 表示所有测量点"/>
+            <Field name="时钟误差"
+                   type="BIN"
+                   length="2"
+                   byteOrder="little"
+                   sign="msb"
+                   description="单位秒；最高位为符号位"/>
+        </DI>
+
+        <DI code="E0000132"
+            name="广播校时"
+            type="Struct">
+            <Field name="终端时间"
+                   type="YYMMDDhhmmss"
+                   length="6"/>
+            <Field name="传输时延"
+                   type="BIN"
+                   length="2"
+                   byteOrder="little"
+                   sign="msb"
+                   description="单位秒；FFFFH 表示终端按本地通信时延自行设置"/>
+        </DI>
+
+        <DI code="E0000133"
+            name="精准校时"
+            type="Struct">
+            <Field name="测量点号"
+                   type="BIN"
+                   length="2"
+                   byteOrder="little"
+                   description="FFFFH 表示广播校时，其他值表示单表校时"/>
+            <Field name="电表时间"
+                   type="YYMMDDhhmmss"
+                   length="6"/>
+        </DI>
+
+        <!-- E0000134 的规范表列出三个时标，但说明只给出开始、结束两个时标，暂不猜测缺失字段。 -->
+
+        <DI code="E0000135"
+            name="电能表密文广播校时"
+            type="Struct">
+            <Field name="校时时间"
+                   type="YYMMDDhhmmss"
+                   length="6"/>
+        </DI>
+
+        <DI code="E0000140"
+            name="终端复位"
+            type="Struct">
+            <Field name="复位类型"
+                   type="BIN"
+                   length="1"
+                   description="00：参数恢复出厂设置；01：数据区复位；02：终端硬件复位；03：清除表档案；04：清除任务参数；05：清除表端任务参数；06：清除数据推送任务参数；07：清除所有故障录波文件；08：清除普通任务参数；09：清除中继任务参数"/>
+        </DI>
+
+        <DI code="E0000150"
+            name="告警主动上报屏蔽字"
+            type="Struct">
+            <Field name="告警主动上报屏蔽字"
+                   type="BS"
+                   length="32"
+                   description="位 0～255 对应报警 E2000001H～E20000FFH；0：屏蔽，1：不屏蔽"/>
+        </DI>
+
+        <DI code="E0000151"
+            name="告警判断屏蔽字"
+            type="Struct">
+            <Field name="告警判断屏蔽字"
+                   type="BS"
+                   length="32"
+                   description="位 0～255 对应相应报警编号；0：屏蔽，1：不屏蔽"/>
+        </DI>
+
+        <DI code="E0000152"
+            name="事件记录屏蔽字"
+            type="Struct">
+            <Field name="事件记录屏蔽字"
+                   type="BS"
+                   length="32"
+                   description="位 0～255 对应相应事件编号；0：屏蔽，1：不屏蔽"/>
+        </DI>
+
+        <DI code="E0000160"
+            name="月冻结电量"
+            type="Struct">
+            <Field name="结算小时"
+                   type="BCD"
+                   length="1"
+                   description="HH，范围 0～23，缺省为 0 点"/>
+            <Field name="结算日"
+                   type="BCD"
+                   length="1"
+                   description="DD，范围 1～30，缺省为每月 1 号"/>
+        </DI>
+
+        <DI code="E0000161"
+            name="日冻结电量"
+            type="Struct">
+            <Field name="结算小时"
+                   type="BCD"
+                   length="1"
+                   description="HH，范围 0～23，缺省为 0 点"/>
+        </DI>
+
+        <DI code="E0000162"
+            name="月电压合格率数据冻结"
+            type="Struct">
+            <Field name="结算小时"
+                   type="BCD"
+                   length="1"
+                   description="HH，范围 0～23，缺省为 0 点"/>
+            <Field name="结算日"
+                   type="BCD"
+                   length="1"
+                   description="DD，范围 1～30，缺省为每月 21 号"/>
+        </DI>
+
+        <DI code="E0000163"
+            name="日电压合格率数据冻结"
+            type="Struct">
+            <Field name="结算小时"
+                   type="BCD"
+                   length="1"
+                   description="HH，范围 0～23，缺省为 0 点"/>
+        </DI>
+
+        <DI code="E0000B00"
+            name="规约版本号"
+            type="Struct">
+            <Field name="规约版本号"
+                   type="BCD"
+                   length="2"
+                   byteOrder="little"
+                   description="本规约规定为 0120"/>
+        </DI>
+
+        <DI code="E0000B01"
+            name="终端软件版本号"
+            type="Struct">
+            <Field name="厂商编码"
+                   type="BIN"
+                   length="2"
+                   byteOrder="little"/>
+            <Field name="终端类型"
+                   type="BIN"
+                   length="1"
+                   description="01：厂站；02：专变；03：公变；04：集中器；05：智能量测终端"/>
+            <Field name="发布日期"
+                   type="YYMMDD"
+                   length="3"/>
+        </DI>
+
+        <DI code="E0000B02"
+            name="终端硬件版本号"
+            type="Struct">
+            <Field name="终端硬件版本号"
+                   type="BCD"
+                   length="2"
+                   byteOrder="little"/>
+        </DI>
+
+        <DI code="E0000B03"
+            name="终端资产编号"
+            type="Struct">
+            <Field name="终端资产编号"
+                   type="ASCII"
+                   length="24"
+                   description="不足 24 位时在高位补 0"/>
+        </DI>
+
+        <DI code="E0000B04"
+            name="终端厂家信息"
+            type="Struct">
+            <Field name="厂商代号"
+                   type="ASCII"
+                   length="4"/>
+            <Field name="生产日期"
+                   type="YYMMDD"
+                   length="3"/>
+        </DI>
+
+        <DI code="E0000B05"
+            name="远程模块信息"
+            type="Struct">
+            <Field name="厂商代号"
+                   type="ASCII"
+                   length="4"/>
+            <Field name="模块型号"
+                   type="ASCII"
+                   length="8"/>
+            <Field name="软件版本号"
+                   type="ASCII"
+                   length="4"/>
+            <Field name="软件发布日期"
+                   type="ASCII"
+                   length="6"/>
+            <Field name="硬件版本号"
+                   type="ASCII"
+                   length="4"/>
+            <Field name="硬件发布日期"
+                   type="ASCII"
+                   length="6"/>
+        </DI>
+
+        <DI code="E1800018"
+            name="本地通信模块程序版本号"
+            type="Struct">
+            <Field name="厂家代码"
+                   type="ASCII"
+                   length="2"/>
+            <Field name="芯片代码"
+                   type="ASCII"
+                   length="2"/>
+            <Field name="版本日期日"
+                   type="BCD"
+                   length="1"/>
+            <Field name="版本日期月"
+                   type="BCD"
+                   length="1"/>
+            <Field name="版本日期年"
+                   type="BCD"
+                   length="1"/>
+            <Field name="版本"
+                   type="BCD"
+                   length="2"/>
+        </DI>
+
+        <DI code="E0000B07"
+            name="是否具备安全模块"
+            type="Struct">
+            <Field name="是否具备安全模块"
+                   type="BIN"
+                   length="1"
+                   display="SecurityModuleFlag"/>
+        </DI>
+
+        <!-- E0000B08 是五组固定模块复合记录，留待复合记录批次统一实现。 -->
+
+        <DI code="E0000B09"
+            name="终端以太网 MAC 地址"
+            type="Struct">
+            <Field id="interfaceCount"
+                   name="以太网接口数量"
+                   type="BIN"
+                   length="1"/>
+            <Field name="以太网接口 MAC 地址"
+                   type="BIN"
+                   length="6"
+                   countRef="interfaceCount"/>
+        </DI>
+
+        <DI code="E0000B10"
+            name="终端远程模块 IMEI 及 SIM 卡号"
+            type="Struct">
+            <Field name="模块 IMEI 号"
+                   type="ASCII"
+                   length="20"/>
+            <Field name="SIM 卡 ICCID 号"
+                   type="ASCII"
+                   length="20"/>
+        </DI>
+
+        <DI code="E0000B11"
+            name="终端本地模块出厂 MAC 地址"
+            type="Struct">
+            <Field name="终端本地模块出厂 MAC 地址"
+                   type="BIN"
+                   length="6"/>
+        </DI>
+
+        <DI code="E0000B12"
+            name="终端坐标信息"
+            type="Struct">
+            <Field name="经度"
+                   type="BCD"
+                   length="5"
+                   description="FDDDMMSSSS，F=0 为东经、F=1 为西经"/>
+            <Field name="纬度"
+                   type="BCD"
+                   length="5"
+                   description="FDDDMMSSSS，F=0 为北纬、F=1 为南纬"/>
+            <Field name="海拔"
+                   type="BCD"
+                   length="4"
+                   format="NNNNNN.NN"
+                   sign="leading-bit"
+                   unit="米"/>
+        </DI>
+
+        <DI code="E0000B13"
+            name="终端型号"
+            type="Struct">
+            <Field name="终端型号"
+                   type="ASCII"
+                   length="16"/>
+        </DI>
+
+        <DI code="E0001000"
+            name="终端登录"
+            type="Struct">
+            <Field name="规约版本号"
+                   type="BCD"
+                   length="2"
+                   byteOrder="little"
+                   description="规约版本号"/>
+            <Field name="是否具备安全模块"
+                   type="BIN"
+                   length="1"
+                   display="SecurityModuleFlag"
+                   required="false"
+                   description="终端是否具备安全模块"/>
+            <Field name="终端时间"
+                   type="BCD_DATETIME"
+                   length="6"
+                   required="false"
+                   description="YYMMDDhhmmss"/>
+        </DI>
+
+        <DI code="E0001001"
+            name="终端心跳"
+            type="Struct">
+            <Field name="终端时间"
+                   type="BCD_DATETIME"
+                   length="6"
+                   required="false"
+                   description="可选终端时标，YYMMDDhhmmss"/>
+        </DI>
+
+        <DI code="E0001002"
+            name="登录退出"
+            type="None"/>
+
+        <DI code="E0001003"
+            name="终端心跳是否带时标"
+            type="Struct">
+            <Field name="是否带时标"
+                   type="BIN"
+                   length="1"
+                   description="0：不带时标；1：带时标；默认为 0"/>
+        </DI>
+
+        <DI code="E1010000"
+            name="用户电费信息"
+            type="Struct">
+            <Field name="剩余金额"
+                   type="BCD"
+                   length="4"
+                   format="NNNNNN.NN"
+                   sign="leading-bit"
+                   unit="元"/>
+            <Field name="时间"
+                   type="MMDDhhmm"
+                   length="4"/>
+        </DI>
+
+        <DI code="E1010001"
+            name="购电次数"
+            type="Struct">
+            <Field name="购电次数"
+                   type="BCD"
+                   length="2"
+                   unit="次"/>
+        </DI>
+
+        <DI code="050601FF"
+            name="日冻结正向有功电能数据块"
+            type="Struct">
+            <Field id="rateCount"
+                   name="费率数"
+                   type="BIN"
+                   length="1"/>
+            <Field name="日冻结正向有功总电能"
+                   type="BCD"
+                   length="4"
+                   byteOrder="little"
+                   format="NNNNNN.NN"
+                   unit="kWh"
+                   fill="FF"/>
+            <Field name="日冻结正向有功费率电能"
+                   type="BCD"
+                   length="4"
+                   byteOrder="little"
+                   format="NNNNNN.NN"
+                   unit="kWh"
+                   fill="FF"
+                   countRef="rateCount"/>
+        </DI>
+
+        <DI code="050602FF"
+            name="日冻结反向有功电能数据块"
+            type="Struct">
+            <Field id="rateCount"
+                   name="费率数"
+                   type="BIN"
+                   length="1"/>
+            <Field name="日冻结反向有功总电能"
+                   type="BCD"
+                   length="4"
+                   byteOrder="little"
+                   format="NNNNNN.NN"
+                   unit="kWh"
+                   fill="FF"/>
+            <Field name="日冻结反向有功费率电能"
+                   type="BCD"
+                   length="4"
+                   byteOrder="little"
+                   format="NNNNNN.NN"
+                   unit="kWh"
+                   fill="FF"
+                   countRef="rateCount"/>
+        </DI>
+
+        <DI code="05060000" name="日冻结组合有功总电能" type="Struct"><Field name="日冻结组合有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="05060100" name="日冻结正向有功总电能" type="Struct"><Field name="日冻结正向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="05060200" name="日冻结反向有功总电能" type="Struct"><Field name="日冻结反向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="050600FF" name="日冻结组合有功电能数据块" type="Struct"><Field id="dailyCombinedRateCount" name="费率数" type="BIN" length="1"/><Field name="日冻结组合有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/><Field name="日冻结组合有功费率电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF" countRef="dailyCombinedRateCount"/></DI>
+
+        <!-- C.4 的 Markdown 左侧存在重复合并列，DI 取每行右侧 DI3/DI2/DI1/DI0 有效列。 -->
+        <DI code="00000001" name="月冻结组合有功总电能" type="Struct"><Field name="月冻结组合有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="0000FF01" name="月冻结组合有功电能数据块" type="Struct"><Field id="monthlyCombinedRateCount" name="费率数" type="BIN" length="1"/><Field name="月冻结组合有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/><Field name="月冻结组合有功费率电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF" countRef="monthlyCombinedRateCount"/></DI>
+        <DI code="0001FF01" name="月冻结正向有功电能数据块" type="Struct"><Field id="monthlyForwardRateCount" name="费率数" type="BIN" length="1"/><Field name="月冻结正向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/><Field name="月冻结正向有功费率电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF" countRef="monthlyForwardRateCount"/></DI>
+        <DI code="0002FF01" name="月冻结反向有功电能数据块" type="Struct"><Field id="monthlyReverseRateCount" name="费率数" type="BIN" length="1"/><Field name="月冻结反向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/><Field name="月冻结反向有功费率电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF" countRef="monthlyReverseRateCount"/></DI>
+
+        <!-- B.1 测量点参数。标识和状态字段使用 BIN，数值字段按附录总则使用 BCD。 -->
+        <DI code="E0800000" name="测量点状态" type="Struct">
+            <Field name="测量点状态" type="BIN" length="1" display="ValidityFlag"/>
+        </DI>
+        <DI code="E0800001" name="测量点性质" type="Struct">
+            <Field name="测量点性质" type="BIN" length="1"
+                   description="01H 485表；02H 模拟量；03H 脉冲量；04H 计算值；05H 交流采样；22H 充电桩；23H 空调；25H 基站；26H 储能；27H 光伏"/>
+        </DI>
+        <DI code="E0800002" name="测量点地址" type="Struct">
+            <Field name="测量点地址" type="BIN" length="6"/>
+        </DI>
+        <DI code="E0800003" name="测量点通信规约" type="Struct">
+            <Field name="测量点通信规约" type="BIN" length="1"
+                   description="00H DL/T645-1997；01H DL/T645-2007；02H 广东97；03H 广东07；04H 威胜；05H 兰吉尔B；06H 兰吉尔D；07H EDMI；08H ABB；09H 埃托利；0AH EMAIL；0BH CJ/T188；0CH 其他；0DH 量测开关及分支装置；0EH DL/T698.45；0FH Modbus"/>
+        </DI>
+        <DI code="E0800004" name="电能表类型" type="Struct">
+            <Field name="电能表类型" type="BIN" length="1"
+                   description="01H 单相电子表；02H 多功能表；03H 三相电子表；04H 分支装置；05H 智能量测断路器；06H 网关表管理单元；0AH 电能质量监测电能表；16H 单相光伏逆变器；17H 三相光伏逆变器；22H 充电桩；23H 空调；25H 基站；26H 储能；FFH 其他类型"/>
+        </DI>
+        <DI code="E0800005" name="总分类型" type="Struct">
+            <Field name="总分类型" type="BIN" length="1" description="0 用户表；1 总表"/>
+        </DI>
+        <DI code="E0800006" name="重点用户属性" type="Struct">
+            <Field name="重点用户属性" type="BIN" length="1" description="0 普通用户；1 重点用户"/>
+        </DI>
+        <DI code="E0800007" name="拉闸功能" type="Struct">
+            <Field name="拉闸功能" type="BIN" length="1" description="0 不带拉闸；1 带拉闸"/>
+        </DI>
+        <DI code="E0800008" name="最大费率数" type="Struct">
+            <Field name="最大费率数" type="BCD" length="1" fill="FF"/>
+        </DI>
+        <DI code="E0800009" name="测量点对应采集器地址" type="Struct">
+            <Field name="测量点对应采集器地址" type="BIN" length="6"
+                   description="全 00H 表示与终端直接连接；全 FFH 表示不启用采集器地址"/>
+        </DI>
+        <DI code="E080000A" name="测量点端口号" type="Struct">
+            <Field name="测量点端口号" type="BIN" length="1"
+                   description="00H～1EH 为485端口1～31；1FH 载波；20H 无线；21H 光纤；22H 混合；23H～30H 备用；34H 分支监测模组；36H～37H 扩展坞拓扑分支监测模组"/>
+        </DI>
+        <DI code="E080000B" name="测量点端口参数" type="Struct">
+            <Field name="通信波特率" type="BIN" length="1" display="BaudRate300"/>
+            <Field name="校验方式" type="BIN" length="1" display="Parity"/>
+            <Field name="数据位" type="BIN" length="1" display="DataBits"/>
+            <Field name="停止位" type="BIN" length="1" display="StopBits"/>
+        </DI>
+        <DI code="E080000C" name="TA变比" type="Struct">
+            <Field name="TA变比" type="BCD" length="2" byteOrder="little" fill="FF"/>
+        </DI>
+        <DI code="E080000D" name="TV变比" type="Struct">
+            <Field name="TV变比" type="BCD" length="2" byteOrder="little" fill="FF"/>
+        </DI>
+        <DI code="E080000F" name="测量点基础参数集合" type="None"/>
+        <DI code="E0800010" name="测量点接线方式" type="Struct">
+            <Field name="测量点接线方式" type="BIN" length="1"
+                   description="01 单相；03 三相三线；04 三相四线"/>
+        </DI>
+        <DI code="E0800011" name="额定电压" type="Struct">
+            <Field name="额定电压" type="BCD" length="2" byteOrder="little"
+                   format="NNN.N" fill="FF" unit="V" description="二次侧"/>
+        </DI>
+        <DI code="E0800012" name="额定电流" type="Struct">
+            <Field name="额定电流" type="BCD" length="3" byteOrder="little"
+                   format="NNN.NNN" fill="FF" unit="A" description="折算到二次侧"/>
+        </DI>
+        <DI code="E0800013" name="用户申报容量" type="Struct">
+            <Field name="用户申报容量" type="BCD" length="2" byteOrder="little"
+                   format="NN.NN" fill="FF" unit="kVA" description="折算到二次侧"/>
+        </DI>
+        <DI code="E0800014" name="变压器容量" type="Struct">
+            <Field name="变压器容量" type="BCD" length="2" byteOrder="little"
+                   format="NN.NN" fill="FF" unit="kVA" description="折算到二次侧"/>
+        </DI>
+        <DI code="E080001F" name="测量点额定参数集合" type="None"/>
+        <DI code="E0800021" name="电能表通信密码" type="Struct">
+            <Field name="电能表通信密码" type="BIN" length="8"
+                   description="不足 8 字节时低位补 0"/>
+        </DI>
+        <DI code="E0800022" name="电能表通信用户名" type="Struct">
+            <Field name="电能表通信用户名" type="ASCII" length="8"
+                   description="不足 8 字节时低位补 0"/>
+        </DI>
+        <DI code="E080002F" name="电能表通信认证参数集合" type="None"/>
+        <DI code="E0800050" name="表号" type="Struct">
+            <Field name="表号" type="BIN" length="6"/>
+        </DI>
+        <DI code="E0800051" name="户号" type="Struct">
+            <Field name="户号" type="BCD" length="20" fill="FF"/>
+        </DI>
+
+        <!-- B.2 电能质量监测参数。 -->
+        <DI code="E0800100" name="电流不平衡度阈值" type="Struct"><Field name="电流不平衡度阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省：三相三线 30%，三相四线 50%"/></DI>
+        <DI code="E0800101" name="电流不平衡度恢复阈值" type="Struct"><Field name="电流不平衡度恢复阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省：三相三线 25%，三相四线 40%"/></DI>
+        <DI code="E0800102" name="合格电压上限" type="Struct"><Field name="合格电压上限" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" description="二次值；缺省为额定电压 1.07 倍"/></DI>
+        <DI code="E0800103" name="合格电压下限" type="Struct"><Field name="合格电压下限" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" description="二次值；缺省为额定电压 0.93 倍"/></DI>
+        <DI code="E0800104" name="电流过流阈值" type="Struct"><Field name="电流过流阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" description="相对额定值比例，缺省 1.3"/></DI>
+        <DI code="E0800105" name="负荷过载阈值" type="Struct"><Field name="负荷过载阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" description="相对额定值比例，缺省 1.2"/></DI>
+        <DI code="E0800106" name="负荷过载恢复阈值" type="Struct"><Field name="负荷过载恢复阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" description="相对额定值比例，缺省 0.95"/></DI>
+        <DI code="E0800107" name="零相电流报警阈值" type="Struct"><Field name="零相电流报警阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省为参比电流 25%"/></DI>
+        <DI code="E0800108" name="零相电流报警恢复阈值" type="Struct"><Field name="零相电流报警恢复阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省为参比电流 15%"/></DI>
+        <DI code="E0800109" name="电流过流恢复阈值" type="Struct"><Field name="电流过流恢复阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="相对额定值比例，缺省 1.0"/></DI>
+        <DI code="E080010A" name="电压不平衡度阈值" type="Struct"><Field name="电压不平衡度阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省 1.3"/></DI>
+        <DI code="E080010B" name="电压不平衡度恢复阈值" type="Struct"><Field name="电压不平衡度恢复阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省 1.3"/></DI>
+        <DI code="E080010C" name="失压失流断相判断阈值" type="Struct">
+            <Field name="启动电压" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省为额定电压 78%"/>
+            <Field name="返回电压" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省为额定电压 85%"/>
+            <Field name="启动电流" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省为参比电流 0.5%"/>
+            <Field name="返回电流" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省为参比电流 5%"/>
+        </DI>
+        <DI code="E080010F" name="基础电能质量阈值集合" type="None"/>
+
+        <DI code="E0800200" name="电压畸变率阈值" type="Struct"><Field name="电压畸变率阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省 5%"/></DI>
+        <DI code="E0800201" name="电流畸变率阈值" type="Struct"><Field name="电流畸变率阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省 5%"/></DI>
+        <DI code="E0800202" name="电压畸变率报警恢复阈值" type="Struct"><Field name="电压畸变率报警恢复阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省 3%"/></DI>
+        <DI code="E0800203" name="电流畸变率报警恢复阈值" type="Struct"><Field name="电流畸变率报警恢复阈值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%" description="缺省 3%"/></DI>
+        <DI code="E0800205" name="功率因数区段定值" type="Struct">
+            <Field name="功率因数定值1" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/>
+            <Field name="功率因数定值2" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/>
+            <Field name="功率因数定值3" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/>
+            <Field name="功率因数定值4" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/>
+            <Field name="功率因数定值5" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/>
+            <Field name="功率因数定值6" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/>
+            <Field name="功率因数定值7" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/>
+            <Field name="功率因数定值8" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"/>
+            <Field name="功率因数定值9" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF"
+                   description="定值应依次递增且不大于 1；相邻定值相等时对应区段累计时间为 0min"/>
+        </DI>
+        <DI code="E0800206" name="监测谐波次数" type="Struct"><Field name="监测谐波次数" type="BCD" length="1" fill="FF" description="缺省 19"/></DI>
+        <DI code="E0800207" name="电压偏差上限" type="Struct"><Field name="电压偏差上限" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%"/></DI>
+        <DI code="E0800208" name="电压偏差下限" type="Struct"><Field name="电压偏差下限" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%"/></DI>
+        <DI code="E0800209" name="频率偏差上限" type="Struct"><Field name="频率偏差上限" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%"/></DI>
+        <DI code="E080020A" name="频率偏差下限" type="Struct"><Field name="频率偏差下限" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF" unit="%"/></DI>
+        <DI code="E080020B" name="电压长闪限值" type="Struct"><Field name="电压长闪限值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF"/></DI>
+        <DI code="E080020C" name="电压短闪限值" type="Struct"><Field name="电压短闪限值" type="BCD" length="2" byteOrder="little" format="NN.NN" fill="FF"/></DI>
+        <DI code="E080020D" name="无功补偿告警发生阈值" type="Struct"><Field name="无功补偿告警发生阈值" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF" description="总功率因数缺省 0.80"/></DI>
+        <DI code="E080020E" name="无功补偿告警恢复阈值" type="Struct"><Field name="无功补偿告警恢复阈值" type="BCD" length="2" byteOrder="little" format="N.NNN" fill="FF" description="总功率因数缺省 0.90"/></DI>
+        <DI code="E080020F" name="通道通信时间超时阈值" type="Struct"><Field name="通道通信时间超时阈值" type="BCD" length="4" byteOrder="little" fill="FF" unit="秒"/></DI>
+        <DI code="E0800210" name="电压暂降阈值" type="Struct"><Field name="电压暂降阈值" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="%" description="缺省 90%"/></DI>
+        <DI code="E0800211" name="电压暂升阈值" type="Struct"><Field name="电压暂升阈值" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="%" description="缺省 140%"/></DI>
+        <DI code="E0800212" name="电压短时中断阈值" type="Struct"><Field name="电压短时中断阈值" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="%" description="缺省 10%"/></DI>
+        <DI code="E0800213" name="迟滞电压阈值" type="Struct"><Field name="迟滞电压阈值" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="%" description="缺省 2%"/></DI>
+        <DI code="E0800214" name="电压跌落录波持续时间阈值" type="Struct"><Field name="电压跌落录波持续时间阈值" type="BCD" length="1" fill="FF" unit="ms" description="缺省 10ms"/></DI>
+        <DI code="E0800215" name="故障发生后录波持续时间" type="Struct"><Field name="故障发生后录波持续时间" type="BCD" length="1" fill="FF" description="单位秒；缺省 5 秒"/></DI>
+        <DI code="E0800216" name="故障恢复后录波持续时间" type="Struct"><Field name="故障恢复后录波持续时间" type="BCD" length="1" fill="FF" description="单位秒；缺省 5 秒"/></DI>
+        <DI code="E0800217" name="电压暂态异常有效值记录时刻" type="Struct"><Field name="电压暂态异常有效值记录时刻" type="BCD" length="1" fill="FF" description="单位秒；异常发生后记录，缺省 5 秒"/></DI>
+        <DI code="E0800218" name="电压暂态恢复有效值记录时刻" type="Struct"><Field name="电压暂态恢复有效值记录时刻" type="BCD" length="1" fill="FF" description="单位秒；异常恢复后记录，缺省 5 秒"/></DI>
+
+        <DI code="E0020107" name="最高制冷温度" type="Struct"><Field name="最高制冷温度" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="℃"/></DI>
+        <DI code="E0020108" name="最低制冷温度" type="Struct"><Field name="最低制冷温度" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="℃"/></DI>
+        <DI code="E0020109" name="最高制热温度" type="Struct"><Field name="最高制热温度" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="℃"/></DI>
+        <DI code="E002010A" name="最低制热温度" type="Struct"><Field name="最低制热温度" type="BCD" length="2" byteOrder="little" format="NNN.N" fill="FF" unit="℃"/></DI>
+
+        <!-- B.3 资产管理参数。FF 项只登记集合语义。 -->
+        <DI code="E0800301" name="电能表通信地址" type="Struct"><Field name="电能表通信地址" type="BIN" length="6"/></DI>
+        <DI code="E0800302" name="电能表表号" type="Struct"><Field name="电能表表号" type="BIN" length="6"/></DI>
+        <DI code="E0800303" name="电能表资产管理编码" type="Struct"><Field name="电能表资产管理编码" type="ASCII" length="32"/></DI>
+        <DI code="E0800304" name="电能表额定电压" type="Struct"><Field name="电能表额定电压" type="ASCII" length="6"/></DI>
+        <DI code="E0800305" name="电能表额定电流或基本电流" type="Struct"><Field name="电能表额定电流或基本电流" type="ASCII" length="6"/></DI>
+        <DI code="E0800306" name="电能表最大电流" type="Struct"><Field name="电能表最大电流" type="ASCII" length="6"/></DI>
+        <DI code="E0800307" name="电能表有功准确度等级" type="Struct"><Field name="电能表有功准确度等级" type="ASCII" length="4"/></DI>
+        <DI code="E0800308" name="电能表无功准确度等级" type="Struct"><Field name="电能表无功准确度等级" type="ASCII" length="4"/></DI>
+        <DI code="E0800309" name="电表有功常数" type="Struct"><Field name="电表有功常数" type="BCD" length="3" byteOrder="little" fill="FF" unit="imp/kWh"/></DI>
+        <DI code="E080030A" name="电表无功常数" type="Struct"><Field name="电表无功常数" type="BCD" length="3" byteOrder="little" fill="FF" unit="imp/kvarh"/></DI>
+        <DI code="E080030B" name="电表型号" type="Struct"><Field name="电表型号" type="ASCII" length="10"/></DI>
+        <DI code="E080030C" name="电表生产日期" type="Struct"><Field name="电表生产日期" type="ASCII" length="10"/></DI>
+        <DI code="E080030D" name="电表协议版本号" type="Struct"><Field name="电表协议版本号" type="ASCII" length="16"/></DI>
+        <DI code="E080030E" name="电表客户编号" type="Struct"><Field name="电表客户编号" type="BIN" length="6"/></DI>
+        <DI code="E08003FF" name="电能表信息集合" type="None"/>
+
+        <DI code="E0800401" name="模块资产编号" type="Struct"><Field name="模块资产编号" type="ASCII" length="32"/></DI>
+        <DI code="E0800402" name="模块厂商代码" type="Struct"><Field name="模块厂商代码" type="ASCII" length="2"/></DI>
+        <DI code="E0800403" name="模块软件版本信息" type="Struct"><Field name="模块软件版本信息" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E0800404" name="模块Bootloader版本号" type="Struct"><Field name="模块Bootloader版本号" type="BIN" length="1"/></DI>
+        <DI code="E0800405" name="模块芯片厂商代码" type="Struct"><Field name="模块芯片厂商代码" type="ASCII" length="2"/></DI>
+        <DI code="E0800406" name="模块固件发布日期" type="Struct"><Field name="模块固件发布日期" type="BIN" length="3"/></DI>
+        <DI code="E0800407" name="模块出厂MAC地址" type="Struct"><Field name="模块出厂MAC地址" type="BIN" length="6"/></DI>
+        <DI code="E0800408" name="模块硬件版本信息" type="Struct"><Field name="模块硬件版本信息" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E0800409" name="模块硬件发布日期" type="Struct"><Field name="模块硬件发布日期" type="BIN" length="3"/></DI>
+        <DI code="E080040A" name="芯片软件版本号" type="Struct"><Field name="芯片软件版本号" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E080040B" name="芯片软件发布日期" type="Struct"><Field name="芯片软件发布日期" type="BIN" length="3"/></DI>
+        <DI code="E080040C" name="芯片硬件版本号" type="Struct"><Field name="芯片硬件版本号" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E080040D" name="芯片硬件发布日期" type="Struct"><Field name="芯片硬件发布日期" type="BIN" length="3"/></DI>
+        <DI code="E080040E" name="模块应用程序版本号" type="Struct"><Field name="模块应用程序版本号" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E08004FF" name="通信模块信息集合" type="None"/>
+
+        <DI code="E0800500" name="采集器资产编号" type="Struct"><Field name="采集器资产编号" type="ASCII" length="32"/></DI>
+        <DI code="E0800501" name="采集器厂商代码" type="Struct"><Field name="采集器厂商代码" type="ASCII" length="2"/></DI>
+        <DI code="E0800502" name="采集器型号" type="Struct"><Field name="采集器型号" type="ASCII" length="10"/></DI>
+        <DI code="E0800503" name="采集器生产日期" type="Struct"><Field name="采集器生产日期" type="ASCII" length="3"/></DI>
+        <DI code="E0800504" name="采集器模块软件版本信息" type="Struct"><Field name="采集器模块软件版本信息" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E0800505" name="采集器Bootloader版本号" type="Struct"><Field name="采集器Bootloader版本号" type="BIN" length="1"/></DI>
+        <DI code="E0800506" name="采集器芯片厂商代码" type="Struct"><Field name="采集器芯片厂商代码" type="ASCII" length="2"/></DI>
+        <DI code="E0800507" name="采集器模块固件发布日期" type="Struct"><Field name="采集器模块固件发布日期" type="BIN" length="3"/></DI>
+        <DI code="E0800508" name="采集器模块出厂MAC地址" type="Struct"><Field name="采集器模块出厂MAC地址" type="BIN" length="6"/></DI>
+        <DI code="E0800509" name="采集器模块硬件版本信息" type="Struct"><Field name="采集器模块硬件版本信息" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E080050A" name="采集器模块硬件发布日期" type="Struct"><Field name="采集器模块硬件发布日期" type="BIN" length="3"/></DI>
+        <DI code="E080050B" name="采集器芯片软件版本号" type="Struct"><Field name="采集器芯片软件版本号" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E080050C" name="采集器芯片软件发布日期" type="Struct"><Field name="采集器芯片软件发布日期" type="BIN" length="3"/></DI>
+        <DI code="E080050D" name="采集器芯片硬件版本号" type="Struct"><Field name="采集器芯片硬件版本号" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E080050E" name="采集器芯片硬件发布日期" type="Struct"><Field name="采集器芯片硬件发布日期" type="BIN" length="3"/></DI>
+        <DI code="E080050F" name="采集器应用程序版本号" type="Struct"><Field name="采集器应用程序版本号" type="BCD" length="2" byteOrder="little" fill="FF"/></DI>
+        <DI code="E08005FF" name="采集器信息集合" type="None"/>
+
+        <!-- C.1 终端特有数据。表中未特别说明的 NN 均保持 BCD。 -->
+        <DI code="E1800001" name="终端状态字" type="Struct"><Field name="终端状态字" type="BS" length="2" description="状态位定义参见 C.5.1"><Bit index="0" name="计量柜门" zero="闭" one="开"/><Bit index="1" name="端子盖门" zero="闭" one="开"/><Bit index="2" name="本体门" zero="闭" one="开"/><Bit index="3" name="第一轮开关" zero="分" one="合"/><Bit index="4" name="第二轮开关" zero="分" one="合"/><Bit index="5" name="第三轮开关" zero="分" one="合"/><Bit index="6" name="第四轮开关" zero="分" one="合"/><Bit index="8" name="电控" zero="解除" one="投入"/><Bit index="9" name="功控" zero="解除" one="投入"/><Bit index="10" name="遥控" zero="解除" one="投入"/><Bit index="11" name="遥控第一轮开关" zero="分" one="合"/><Bit index="12" name="遥控第二轮开关" zero="分" one="合"/><Bit index="13" name="遥控第三轮开关" zero="分" one="合"/><Bit index="14" name="遥控第四轮开关" zero="分" one="合"/><Bit index="15" name="保电" zero="解除" one="投入"/></Field></DI>
+        <DI code="E1800002" name="最大脉冲量路数" type="Struct"><Field name="最大脉冲量路数" type="BCD" length="1"/></DI>
+        <DI code="E1800003" name="串行通信端口数量" type="Struct"><Field name="串行通信端口数量" type="BCD" length="1"/></DI>
+        <DI code="E1800004" name="支持最大测量点数" type="Struct"><Field name="支持最大测量点数" type="BCD" length="2" byteOrder="little"/></DI>
+        <DI code="E1800005" name="测量点总数" type="Struct"><Field name="测量点总数" type="BCD" length="2" byteOrder="little"/></DI>
+        <DI code="E1800006" name="终端普通用户表总数" type="Struct"><Field name="终端普通用户表总数" type="BCD" length="2" byteOrder="little"/></DI>
+        <DI code="E1800007" name="终端多功能表总数" type="Struct"><Field name="终端多功能表总数" type="BCD" length="2" byteOrder="little"/></DI>
+        <DI code="E1800008" name="终端重点户电能表总数" type="Struct"><Field name="终端重点户电能表总数" type="BCD" length="2" byteOrder="little"/></DI>
+        <DI code="E1800009" name="终端抄表状态信息" type="Struct">
+            <Field name="要抄电表总块数" type="BCD" length="2" byteOrder="little"/>
+            <Field name="抄表成功块数" type="BCD" length="2" byteOrder="little"/>
+            <Field name="抄表开始时间" type="YYMMDDhhmmss" length="6"/>
+            <Field name="抄表结束时间" type="YYMMDDhhmmss" length="6"/>
+        </DI>
+        <DI code="E1800010" name="本日线损率" type="Struct"><Field name="本日线损率" type="BCD" length="3" format="NNNN.NN" sign="leading-bit" unit="%" description="协议格式 0SNN.NN，S 为符号"/></DI>
+        <DI code="E1800011" name="当前日通信流量" type="Struct"><Field name="当前日通信流量" type="BCD" length="2" byteOrder="little" unit="kB"/></DI>
+        <DI code="E1800012" name="冻结日通信流量" type="Struct"><Field name="冻结日通信流量" type="BCD" length="2" byteOrder="little" unit="kB"/></DI>
+        <DI code="E1800013" name="当前月通信流量" type="Struct"><Field name="当前月通信流量" type="BCD" length="3" byteOrder="little" unit="kB"/></DI>
+        <DI code="E1800014" name="冻结月通信流量" type="Struct"><Field name="冻结月通信流量" type="BCD" length="3" byteOrder="little" unit="kB"/></DI>
+        <DI code="E1800015" name="信号强度" type="Struct"><Field name="信号强度" type="BCD" length="1" description="0～31"/></DI>
+        <DI code="E1800016" name="当前月终端复位次数" type="Struct"><Field name="当前月终端复位次数" type="BCD" length="2" byteOrder="little"/></DI>
+        <DI code="E1800017" name="冻结月终端复位次数" type="Struct"><Field name="冻结月终端复位次数" type="BCD" length="2" byteOrder="little"/></DI>
+        <DI code="E1800020" name="重点户电能表测量点号" type="Struct">
+            <Field name="重点户电能表1测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表2测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表3测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表4测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表5测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/>
+            <Field name="重点户电能表6测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表7测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表8测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表9测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表10测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/>
+            <Field name="重点户电能表11测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表12测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表13测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表14测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表15测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/>
+            <Field name="重点户电能表16测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表17测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表18测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表19测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/><Field name="重点户电能表20测量点号" type="BCD" length="2" byteOrder="little" fill="FF"/>
+        </DI>
+        <DI code="E1800021" name="测量点参数MD5校验码" type="Struct"><Field name="测量点参数MD5校验码" type="BCD" length="16" fill="FF"/></DI>
+        <DI code="E1800022" name="拓扑关系摘要信息" type="Struct"><Field name="拓扑关系CRC32校验" type="BIN" length="4" byteOrder="little"/></DI>
+        <DI code="E1800023" name="拓扑关系详细信息" type="Struct">
+            <Field name="总记录数" type="BIN" length="1"/>
+            <Field id="frameRecordCount" name="本帧记录数" type="BIN" length="1"/>
+            <Field name="起始记录序号" type="BIN" length="1"/>
+            <Field name="拓扑记录" type="Struct" countRef="frameRecordCount">
+                <Field name="节点地址" type="BIN" length="6"/>
+                <Field id="childCount" name="子节点数量" type="BIN" length="1"/>
+                <Field name="子节点地址" type="BIN" length="6" countRef="childCount"/>
+            </Field>
+        </DI>
+        <DI code="E1800026" name="搜表结果" type="Struct">
+            <Field name="总记录数量" type="BIN" length="2" byteOrder="little"/>
+            <Field id="searchRecordCount" name="本帧记录数量" type="BIN" length="2" byteOrder="little"/>
+            <Field name="本帧起始记录序号" type="BIN" length="2" byteOrder="little"/>
+            <Field name="搜表记录" type="Struct" countRef="searchRecordCount">
+                <Field name="测量点号" type="BCD" length="2" byteOrder="little"/>
+                <Field name="节点地址" type="BIN" length="6"/>
+                <Field name="搜表结果" type="BIN" length="1"/>
+            </Field>
+        </DI>
+        <DI code="E1800030" name="系统运行信息" type="Struct">
+            <Field name="CPU温度" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="℃"/>
+            <Field name="CPU使用率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" description="协议格式 ONNN.NN"/>
+            <Field name="内存占用率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%"/>
+            <Field name="磁盘使用率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" description="协议格式 ONNN.NN"/>
+        </DI>
+        <DI code="E1800031" name="终端资源使用信息" type="Struct">
+            <Field name="内存使用数量" type="BCD" length="3" byteOrder="little" unit="MB"/>
+            <Field name="磁盘使用数量" type="BCD" length="3" byteOrder="little" unit="MB"/>
+            <Field name="运行时间" type="BCD" length="4" byteOrder="little" unit="s"/>
+        </DI>
+        <DI code="E1800032" name="终端APP列表信息" type="Struct">
+            <Field id="appInfoCount" name="APP数量" type="BIN" length="1"/>
+            <Field name="APP记录" type="Struct" countRef="appInfoCount">
+                <Field name="APP名称" type="ASCII" length="8"/>
+                <Field name="APP版本号" type="ASCII" length="8"/>
+                <Field name="APP厂家代码" type="ASCII" length="2"/>
+                <Field name="APP CPU占用率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" description="协议格式 ONNN.NN"/>
+                <Field name="APP运行状态" type="BIN" length="1" display="AppRunState" description="1：运行；2：停止；3：异常"/>
+                <Field name="APP虚拟内存大小" type="BCD" length="4" byteOrder="little" unit="kB"/>
+            </Field>
+        </DI>
+        <DI code="E1800033" name="台区户变关系识别状态" type="Struct"><Field name="台区识别状态" type="BCD" length="1" description="0：未识别、识别完成或识别停止；1：识别中"/><Field name="剩余时长" type="BCD" length="2" byteOrder="little" unit="min"/></DI>
+        <DI code="E1800034" name="台区户变关系识别结果" type="Struct"><Field id="districtNodeCount" name="台区节点总数量" type="BCD" length="2" byteOrder="little"/><Field name="台区识别记录" type="Struct" countRef="districtNodeCount"><Field name="节点地址" type="BIN" length="6"/><Field name="台区识别结果" type="BIN" length="1" description="0：属于本台区；1：不属于本台区；2：无法通信；3：无法判断；4：不支持"/></Field></DI>
+        <DI code="E1800035" name="非本台区户变关系识别结果" type="Struct"><Field id="foreignNodeCount" name="非本台区节点总数量" type="BCD" length="2" byteOrder="little"/><Field name="非本台区记录" type="Struct" countRef="foreignNodeCount"><Field name="节点地址" type="BIN" length="6"/><Field name="应属台区主节点地址" type="BIN" length="6"/></Field></DI>
+        <DI code="E1800036" name="多余节点搜表识别结果" type="Struct"><Field id="extraNodeCount" name="节点总数量" type="BCD" length="2" byteOrder="little"/><Field name="多余节点记录" type="Struct" countRef="extraNodeCount"><Field name="从节点地址" type="BIN" length="6"/><Field name="台区识别结果" type="BIN" length="1"/><Field name="应属台区主节点地址" type="BIN" length="6"/></Field></DI>
+        <DI code="E1800040" name="终端需量计量参数" type="Struct"><Field name="需量周期" type="BCD" length="1" unit="min"/><Field name="滑差时间" type="BCD" length="1" unit="min"/></DI>
+        <DI code="E1800050" name="负荷控制回路断线检测结果" type="ServiceDefined"/>
+        <DI code="E1800051" name="负荷控制状态字" type="Struct"><Field name="负荷控制状态字" type="BS" length="4" description="低两字节为遥信1～12轮，另两字节为遥控1～12轮，定义参见 C.5.2"><Bit index="3" name="遥信第一轮" zero="分" one="合"/><Bit index="4" name="遥信第二轮" zero="分" one="合"/><Bit index="5" name="遥信第三轮" zero="分" one="合"/><Bit index="6" name="遥信第四轮" zero="分" one="合"/><Bit index="8" name="遥信第五轮" zero="分" one="合"/><Bit index="15" name="遥信第十二轮" zero="分" one="合"/><Bit index="19" name="遥控第一轮" zero="分" one="合"/><Bit index="24" name="遥控第五轮" zero="分" one="合"/><Bit index="31" name="保电" zero="解除" one="投入"/></Field></DI>
+        <DI code="E1800070" name="APP异常信息" type="Struct"><Field id="abnormalAppCount" name="APP数量" type="BIN" length="1"/><Field name="APP异常记录" type="Struct" countRef="abnormalAppCount"><Field name="APP名称" type="ASCII" length="32"/><Field name="APP拉起次数" type="BCD" length="2" byteOrder="little"/></Field></DI>
+        <DI code="E1800071" name="APP验签信息" type="Struct"><Field id="signatureAppCount" name="APP数量" type="BIN" length="1"/><Field name="APP验签记录" type="Struct" countRef="signatureAppCount"><Field name="APP名称" type="ASCII" length="32"/><Field name="签名类型" type="BIN" length="1" description="0：临时签名；1：正式签名；2：未知"/><Field name="签名有效期" type="YYMMDD" length="3"/></Field></DI>
+        <DI code="E1800100" name="当前负荷监测总加的功率值" type="Struct"><Field name="当前负荷监测总加的功率值" type="BCD" length="4" byteOrder="little" format="NNNN.NNNN" unit="kW"/></DI>
+
+        <!-- C.2 测量点当前数据代表项和集合项。 -->
+        <DI code="00000000" name="当前组合有功总电能" type="Struct"><Field name="当前组合有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00010000" name="当前正向有功总电能" type="Struct"><Field name="当前正向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020000" name="当前反向有功总电能" type="Struct"><Field name="当前反向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00030000" name="当前组合无功1总电能" type="Struct"><Field name="当前组合无功1总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="00040000" name="当前组合无功2总电能" type="Struct"><Field name="当前组合无功2总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="0001FF00" name="当前正向有功电能数据块" type="Struct">
+            <Field id="currentRateCount" name="费率数" type="BIN" length="1"/>
+            <Field name="当前正向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/>
+            <Field name="当前正向有功费率电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF" countRef="currentRateCount"/>
+        </DI>
+        <DI code="02010100" name="A相电压" type="Struct"><Field name="A相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="02010200" name="B相电压" type="Struct"><Field name="B相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="02010300" name="C相电压" type="Struct"><Field name="C相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="02020100" name="A相电流" type="Struct"><Field name="A相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" sign="leading-bit" unit="A" fill="FF"/></DI>
+        <DI code="02020200" name="B相电流" type="Struct"><Field name="B相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" sign="leading-bit" unit="A" fill="FF"/></DI>
+        <DI code="02020300" name="C相电流" type="Struct"><Field name="C相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" sign="leading-bit" unit="A" fill="FF"/></DI>
+        <DI code="02030000" name="瞬时总有功功率" type="Struct"><Field name="瞬时总有功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kW" fill="FF"/></DI>
+        <DI code="02030100" name="瞬时A相有功功率" type="Struct"><Field name="瞬时A相有功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kW" fill="FF"/></DI>
+        <DI code="02030200" name="瞬时B相有功功率" type="Struct"><Field name="瞬时B相有功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kW" fill="FF"/></DI>
+        <DI code="02030300" name="瞬时C相有功功率" type="Struct"><Field name="瞬时C相有功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kW" fill="FF"/></DI>
+        <DI code="02040000" name="瞬时总无功功率" type="Struct"><Field name="瞬时总无功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kvar" fill="FF"/></DI>
+        <DI code="02040100" name="瞬时A相无功功率" type="Struct"><Field name="瞬时A相无功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kvar" fill="FF"/></DI>
+        <DI code="02040200" name="瞬时B相无功功率" type="Struct"><Field name="瞬时B相无功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kvar" fill="FF"/></DI>
+        <DI code="02040300" name="瞬时C相无功功率" type="Struct"><Field name="瞬时C相无功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kvar" fill="FF"/></DI>
+        <DI code="02050000" name="瞬时总视在功率" type="Struct"><Field name="瞬时总视在功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" unit="kVA" fill="FF"/></DI>
+        <DI code="02060000" name="总功率因数" type="Struct"><Field name="总功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" sign="leading-bit" fill="FF"/></DI>
+        <DI code="02060100" name="A相功率因数" type="Struct"><Field name="A相功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" sign="leading-bit" fill="FF"/></DI>
+        <DI code="02060200" name="B相功率因数" type="Struct"><Field name="B相功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" sign="leading-bit" fill="FF"/></DI>
+        <DI code="02060300" name="C相功率因数" type="Struct"><Field name="C相功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" sign="leading-bit" fill="FF"/></DI>
+        <DI code="02070100" name="A相电压相位角" type="Struct"><Field name="A相电压相位角" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="°" fill="FF"/></DI>
+        <DI code="02070200" name="B相电压相位角" type="Struct"><Field name="B相电压相位角" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="°" fill="FF"/></DI>
+        <DI code="02070300" name="C相电压相位角" type="Struct"><Field name="C相电压相位角" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="°" fill="FF"/></DI>
+        <DI code="02070400" name="A相电流相位角" type="Struct"><Field name="A相电流相位角" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="°" fill="FF"/></DI>
+        <DI code="02070500" name="B相电流相位角" type="Struct"><Field name="B相电流相位角" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="°" fill="FF"/></DI>
+        <DI code="02070600" name="C相电流相位角" type="Struct"><Field name="C相电流相位角" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="°" fill="FF"/></DI>
+        <DI code="02800001" name="零线电流" type="Struct"><Field name="零线电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/></DI>
+        <DI code="02800002" name="电网频率" type="Struct"><Field name="电网频率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="Hz" fill="FF"/></DI>
+        <DI code="04000102" name="时间" type="Struct"><Field name="时间" type="hhmmss" length="3" byteOrder="little"/></DI>
+
+        <!-- C.2 谐波含有率数据块：总谐波以及 2～21 次谐波，共 21 个值。 -->
+        <DI code="020A01FF" name="A相电压谐波含有率数据块" type="Struct">
+            <Field name="A相电压总谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压2次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压3次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压4次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压5次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压6次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压7次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压8次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压9次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压10次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压11次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压12次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压13次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压14次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压15次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压16次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压17次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压18次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压19次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压20次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压21次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+        </DI>
+        <DI code="020A02FF" name="B相电压谐波含有率数据块" type="Struct">
+            <Field name="B相电压总谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压2次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压3次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压4次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压5次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压6次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压7次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压8次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压9次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压10次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压11次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压12次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压13次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压14次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压15次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压16次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压17次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压18次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压19次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压20次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压21次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+        </DI>
+        <DI code="020A03FF" name="C相电压谐波含有率数据块" type="Struct">
+            <Field name="C相电压总谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压2次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压3次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压4次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压5次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压6次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压7次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压8次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压9次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压10次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压11次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压12次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压13次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压14次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压15次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压16次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压17次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压18次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压19次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压20次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压21次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+        </DI>
+        <DI code="020B01FF" name="A相电流谐波含有率数据块" type="Struct">
+            <Field name="A相电流总谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流2次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流3次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流4次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流5次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流6次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流7次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流8次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流9次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流10次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流11次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流12次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流13次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流14次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流15次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流16次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流17次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流18次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流19次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流20次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="A相电流21次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+        </DI>
+        <DI code="020B02FF" name="B相电流谐波含有率数据块" type="Struct">
+            <Field name="B相电流总谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流2次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流3次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流4次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流5次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流6次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流7次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流8次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流9次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流10次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流11次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流12次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流13次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流14次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流15次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流16次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流17次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流18次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流19次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流20次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="B相电流21次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+        </DI>
+        <DI code="020B03FF" name="C相电流谐波含有率数据块" type="Struct">
+            <Field name="C相电流总谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流2次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流3次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流4次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流5次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流6次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流7次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流8次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流9次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流10次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流11次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流12次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流13次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流14次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流15次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流16次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流17次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流18次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流19次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流20次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+            <Field name="C相电流21次谐波含有率" type="BCD" length="2" byteOrder="little" format="NN.NN" unit="%" fill="FF"/>
+        </DI>
+
+        <!-- Terminal3.log 任务 2 的当前电能、费率和最大需量。 -->
+        <DI code="00010100" name="当前正向有功费率1电能" type="Struct"><Field name="当前正向有功费率1电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00010200" name="当前正向有功费率2电能" type="Struct"><Field name="当前正向有功费率2电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00010300" name="当前正向有功费率3电能" type="Struct"><Field name="当前正向有功费率3电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00010400" name="当前正向有功费率4电能" type="Struct"><Field name="当前正向有功费率4电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020100" name="当前反向有功费率1电能" type="Struct"><Field name="当前反向有功费率1电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020200" name="当前反向有功费率2电能" type="Struct"><Field name="当前反向有功费率2电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020300" name="当前反向有功费率3电能" type="Struct"><Field name="当前反向有功费率3电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020400" name="当前反向有功费率4电能" type="Struct"><Field name="当前反向有功费率4电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00050000" name="当前第一象限无功总电能" type="Struct"><Field name="当前第一象限无功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="00060000" name="当前第二象限无功总电能" type="Struct"><Field name="当前第二象限无功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="00070000" name="当前第三象限无功总电能" type="Struct"><Field name="当前第三象限无功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="00080000" name="当前第四象限无功总电能" type="Struct"><Field name="当前第四象限无功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="01010000" name="当前正向有功总最大需量及发生时间" type="Struct"><Field name="当前正向有功总最大需量" type="BCD" length="3" byteOrder="little" format="NN.NNNN" unit="kW" fill="FF"/><Field name="当前正向有功总最大需量发生时间" type="YYMMDDhhmm" length="5" byteOrder="little"/></DI>
+        <DI code="01020000" name="当前反向有功总最大需量及发生时间" type="Struct"><Field name="当前反向有功总最大需量" type="BCD" length="3" byteOrder="little" format="NN.NNNN" unit="kW" fill="FF"/><Field name="当前反向有功总最大需量发生时间" type="YYMMDDhhmm" length="5" byteOrder="little"/></DI>
+
+        <!-- Terminal3.log 任务 3 的月冻结电能、费率和最大需量。 -->
+        <DI code="00010001" name="月冻结正向有功总电能" type="Struct"><Field name="月冻结正向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00010101" name="月冻结正向有功费率1电能" type="Struct"><Field name="月冻结正向有功费率1电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00010201" name="月冻结正向有功费率2电能" type="Struct"><Field name="月冻结正向有功费率2电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00010301" name="月冻结正向有功费率3电能" type="Struct"><Field name="月冻结正向有功费率3电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00010401" name="月冻结正向有功费率4电能" type="Struct"><Field name="月冻结正向有功费率4电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00030001" name="月冻结组合无功1总电能" type="Struct"><Field name="月冻结组合无功1总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="00020001" name="月冻结反向有功总电能" type="Struct"><Field name="月冻结反向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020101" name="月冻结反向有功费率1电能" type="Struct"><Field name="月冻结反向有功费率1电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020201" name="月冻结反向有功费率2电能" type="Struct"><Field name="月冻结反向有功费率2电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020301" name="月冻结反向有功费率3电能" type="Struct"><Field name="月冻结反向有功费率3电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00020401" name="月冻结反向有功费率4电能" type="Struct"><Field name="月冻结反向有功费率4电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00040001" name="月冻结组合无功2总电能" type="Struct"><Field name="月冻结组合无功2总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="00000101" name="月冻结组合有功费率1电能" type="Struct"><Field name="月冻结组合有功费率1电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00000201" name="月冻结组合有功费率2电能" type="Struct"><Field name="月冻结组合有功费率2电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00000301" name="月冻结组合有功费率3电能" type="Struct"><Field name="月冻结组合有功费率3电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="00000401" name="月冻结组合有功费率4电能" type="Struct"><Field name="月冻结组合有功费率4电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+        <DI code="01010001" name="月冻结正向有功总最大需量及发生时间" type="Struct"><Field name="月冻结正向有功总最大需量" type="BCD" length="3" byteOrder="little" format="NN.NNNN" unit="kW" fill="FF"/><Field name="月冻结正向有功总最大需量发生时间" type="YYMMDDhhmm" length="5" byteOrder="little"/></DI>
+        <DI code="01020001" name="月冻结反向有功总最大需量及发生时间" type="Struct"><Field name="月冻结反向有功总最大需量" type="BCD" length="3" byteOrder="little" format="NN.NNNN" unit="kW" fill="FF"/><Field name="月冻结反向有功总最大需量发生时间" type="YYMMDDhhmm" length="5" byteOrder="little"/></DI>
+
+        <!-- Terminal3.log 任务 4～8 的日/月统计数据。 -->
+        <DI code="E1008030" name="日停电总次数" type="Struct"><Field name="日停电总次数" type="BCD" length="3" byteOrder="little" unit="次" fill="FF"/></DI>
+        <DI code="E1008031" name="日停电总时间" type="Struct"><Field name="日停电总时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/></DI>
+        <DI code="E100C030" name="月停电总次数" type="Struct"><Field name="月停电总次数" type="BCD" length="3" byteOrder="little" unit="次" fill="FF"/></DI>
+        <DI code="E100C031" name="月停电总时间" type="Struct"><Field name="月停电总时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/></DI>
+
+        <DI code="E1008010" name="日电压合格率统计数据" type="Struct"><Field name="电压监测时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/><Field name="电压合格率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" fill="FF"/><Field name="电压超限率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" fill="FF"/><Field name="电压超上限时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/><Field name="电压超下限时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/><Field name="最高电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/><Field name="最高电压出现时间" type="MMDDhhmm" length="4" byteOrder="little"/><Field name="最低电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/><Field name="最低电压出现时间" type="MMDDhhmm" length="4" byteOrder="little"/></DI>
+        <DI code="E1008011" name="日A相电压合格率统计数据" type="Struct">
+            <Field name="A相电压监测时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="A相电压合格率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压超限率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" fill="FF"/>
+            <Field name="A相电压超上限时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="A相电压超下限时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="A相最高电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/>
+            <Field name="A相最高电压出现时间" type="MMDDhhmm" length="4" byteOrder="little"/>
+            <Field name="A相最低电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/>
+            <Field name="A相最低电压出现时间" type="MMDDhhmm" length="4" byteOrder="little"/>
+        </DI>
+        <DI code="E1008012" name="日B相电压合格率统计数据" type="Struct">
+            <Field name="B相电压监测时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="B相电压合格率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压超限率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" fill="FF"/>
+            <Field name="B相电压超上限时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="B相电压超下限时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="B相最高电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/>
+            <Field name="B相最高电压出现时间" type="MMDDhhmm" length="4" byteOrder="little"/>
+            <Field name="B相最低电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/>
+            <Field name="B相最低电压出现时间" type="MMDDhhmm" length="4" byteOrder="little"/>
+        </DI>
+        <DI code="E1008013" name="日C相电压合格率统计数据" type="Struct">
+            <Field name="C相电压监测时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="C相电压合格率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压超限率" type="BCD" length="3" byteOrder="little" format="NNNN.NN" unit="%" fill="FF"/>
+            <Field name="C相电压超上限时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="C相电压超下限时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="C相最高电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/>
+            <Field name="C相最高电压出现时间" type="MMDDhhmm" length="4" byteOrder="little"/>
+            <Field name="C相最低电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/>
+            <Field name="C相最低电压出现时间" type="MMDDhhmm" length="4" byteOrder="little"/>
+        </DI>
+        <DI code="E1008041" name="日失压数据" type="Struct">
+            <Field name="总失压次数" type="BCD" length="3" byteOrder="little" unit="次" fill="FF"/>
+            <Field name="A相失压次数" type="BCD" length="3" byteOrder="little" unit="次" fill="FF"/>
+            <Field name="B相失压次数" type="BCD" length="3" byteOrder="little" unit="次" fill="FF"/>
+            <Field name="C相失压次数" type="BCD" length="3" byteOrder="little" unit="次" fill="FF"/>
+            <Field name="总失压累计时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="A相失压累计时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="B相失压累计时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="C相失压累计时间" type="BCD" length="3" byteOrder="little" unit="min" fill="FF"/>
+            <Field name="失压正向有功总电能增量" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/>
+            <Field name="失压反向有功总电能增量" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/>
+            <Field name="失压组合无功1总电能增量" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/>
+            <Field name="失压组合无功2总电能增量" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/>
+        </DI>
+
+        <DI code="E100C010" name="月电压合格率统计数据" type="Struct"><Field name="月电压统计内容" type="Blob" length="27" description="字段顺序同 E1008010H；台体数据为 FF 无数据填充"/></DI>
+        <DI code="E100C011" name="月A相电压合格率统计数据" type="Struct"><Field name="月A相电压统计内容" type="Blob" length="27" description="字段顺序同 E1008010H；台体数据为 FF 无数据填充"/></DI>
+        <DI code="E100C012" name="月B相电压合格率统计数据" type="Struct"><Field name="月B相电压统计内容" type="Blob" length="27" description="字段顺序同 E1008010H；台体数据为 FF 无数据填充"/></DI>
+        <DI code="E100C013" name="月C相电压合格率统计数据" type="Struct"><Field name="月C相电压统计内容" type="Blob" length="27" description="字段顺序同 E1008010H；台体数据为 FF 无数据填充"/></DI>
+
+        <DI code="E1008015" name="日A相电流极值统计数据" type="Struct"><Field name="最高A相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/><Field name="最高A相电流出现时间" type="MMDDhhmm" length="4" byteOrder="little"/><Field name="最低A相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/><Field name="最低A相电流出现时间" type="MMDDhhmm" length="4" byteOrder="little"/></DI>
+        <DI code="E1008016" name="日B相电流极值统计数据" type="Struct"><Field name="最高B相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/><Field name="最高B相电流出现时间" type="MMDDhhmm" length="4" byteOrder="little"/><Field name="最低B相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/><Field name="最低B相电流出现时间" type="MMDDhhmm" length="4" byteOrder="little"/></DI>
+        <DI code="E1008017" name="日C相电流极值统计数据" type="Struct"><Field name="最高C相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/><Field name="最高C相电流出现时间" type="MMDDhhmm" length="4" byteOrder="little"/><Field name="最低C相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/><Field name="最低C相电流出现时间" type="MMDDhhmm" length="4" byteOrder="little"/></DI>
+        <DI code="E1008018" name="日有功功率极值统计数据" type="Struct"><Field name="最高有功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kW" fill="FF"/><Field name="最高有功功率出现时间" type="MMDDhhmm" length="4" byteOrder="little"/><Field name="最低有功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kW" fill="FF"/><Field name="最低有功功率出现时间" type="MMDDhhmm" length="4" byteOrder="little"/></DI>
+        <DI code="E1008019" name="日无功功率极值统计数据" type="Struct"><Field name="最高无功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kvar" fill="FF"/><Field name="最高无功功率出现时间" type="MMDDhhmm" length="4" byteOrder="little"/><Field name="最低无功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kvar" fill="FF"/><Field name="最低无功功率出现时间" type="MMDDhhmm" length="4" byteOrder="little"/></DI>
+        <DI code="E100801A" name="日功率因数极值统计数据" type="Struct"><Field name="最高功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" sign="leading-bit" fill="FF"/><Field name="最高功率因数出现时间" type="MMDDhhmm" length="4" byteOrder="little"/><Field name="最低功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" sign="leading-bit" fill="FF"/><Field name="最低功率因数出现时间" type="MMDDhhmm" length="4" byteOrder="little"/></DI>
+        <DI code="E100801D" name="日零序电流极值统计数据" type="Struct"><Field name="最高零序电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/><Field name="最高零序电流出现时间" type="MMDDhhmm" length="4" byteOrder="little"/><Field name="最低零序电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" unit="A" fill="FF"/><Field name="最低零序电流出现时间" type="MMDDhhmm" length="4" byteOrder="little"/></DI>
+        <DI code="04000403" name="资产管理编码" type="Struct"><Field name="资产管理编码" type="ASCII" length="32"/></DI>
+        <DI code="04000501" name="电表运行状态字1" type="Struct"><Field name="电表运行状态字1" type="BS" length="2"><Bit index="1" name="需量积算方式" zero="滑差" one="区间"/><Bit index="2" name="时钟电池" zero="正常" one="欠压"/><Bit index="3" name="停电抄表电池" zero="正常" one="欠压"/><Bit index="4" name="有功功率方向" zero="正向" one="反向"/><Bit index="5" name="无功功率方向" zero="正向" one="反向"/></Field></DI>
+        <DI code="04000502" name="电表运行状态字2" type="Struct"><Field name="电表运行状态字2" type="BS" length="2"/></DI>
+        <DI code="04000503" name="电表运行状态字3" type="Struct"><Field name="电表运行状态字3" type="BS" length="2"/></DI>
+        <DI code="04000504" name="电表运行状态字4" type="Struct"><Field name="电表运行状态字4" type="BS" length="2"/></DI>
+        <DI code="04000505" name="电表运行状态字5" type="Struct"><Field name="电表运行状态字5" type="BS" length="2"/></DI>
+        <DI code="04000506" name="电表运行状态字6" type="Struct"><Field name="电表运行状态字6" type="BS" length="2"/></DI>
+        <DI code="04000507" name="电表运行状态字7" type="Struct"><Field name="电表运行状态字7" type="BS" length="2"/></DI>
+        <DI code="040005FF" name="电表运行状态字数据块" type="ServiceDefined"/>
+
+        <!-- C.6 测量点负荷记录。X 仍为 BCD 数字占位符。 -->
+        <DI code="06100101" name="测量点负荷记录A相电压" type="Struct"><Field name="A相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="06100102" name="测量点负荷记录B相电压" type="Struct"><Field name="B相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="06100103" name="测量点负荷记录C相电压" type="Struct"><Field name="C相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="061001FF" name="测量点负荷记录电压数据块" type="Struct"><Field name="A相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/><Field name="B相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/><Field name="C相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="06100201" name="测量点负荷记录A相电流" type="Struct"><Field name="A相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" sign="leading-bit" unit="A" fill="FF"/></DI>
+        <DI code="06100300" name="测量点负荷记录总有功功率" type="Struct"><Field name="总有功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kW" fill="FF"/></DI>
+        <DI code="06100400" name="测量点负荷记录总无功功率" type="Struct"><Field name="总无功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kvar" fill="FF"/></DI>
+        <DI code="06100500" name="测量点负荷记录总功率因数" type="Struct"><Field name="总功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" sign="leading-bit" fill="FF"/></DI>
+        <DI code="06100601" name="测量点负荷记录正向有功总电能" type="Struct"><Field name="正向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+
+        <!-- C.7 宽带载波模块负荷记录。 -->
+        <DI code="06120101" name="宽带载波模块负荷记录A相电压" type="Struct"><Field name="A相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="06120102" name="宽带载波模块负荷记录B相电压" type="Struct"><Field name="B相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="06120103" name="宽带载波模块负荷记录C相电压" type="Struct"><Field name="C相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="061201FF" name="宽带载波模块负荷记录电压数据块" type="Struct"><Field name="A相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/><Field name="B相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/><Field name="C相电压" type="BCD" length="2" byteOrder="little" format="NNN.N" unit="V" fill="FF"/></DI>
+        <DI code="06120201" name="宽带载波模块负荷记录A相电流" type="Struct"><Field name="A相电流" type="BCD" length="3" byteOrder="little" format="NNN.NNN" sign="leading-bit" unit="A" fill="FF"/></DI>
+        <DI code="06120300" name="宽带载波模块负荷记录总有功功率" type="Struct"><Field name="总有功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kW" fill="FF"/></DI>
+        <DI code="06120400" name="宽带载波模块负荷记录总无功功率" type="Struct"><Field name="总无功功率" type="BCD" length="3" byteOrder="little" format="NN.NNNN" sign="leading-bit" unit="kvar" fill="FF"/></DI>
+        <DI code="06120500" name="宽带载波模块负荷记录总功率因数" type="Struct"><Field name="总功率因数" type="BCD" length="2" byteOrder="little" format="N.NNN" sign="leading-bit" fill="FF"/></DI>
+        <DI code="06120601" name="宽带载波模块负荷记录正向有功总电能" type="Struct"><Field name="正向有功总电能" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/></DI>
+
+        <DI code="E0000300" name="有效的普通任务总数" type="Struct"><Field name="有效的普通任务总数" type="BCD" length="1"/></DI>
+        <DI code="E00003FE" name="普通任务参数集合" type="ServiceDefined"/>
+        <DI code="E00003FF" name="普通任务有效性" type="Struct"><Field name="普通任务有效性" type="BS" length="32" description="正序传输；bit=0 有效，bit=1 无效"/></DI>
+
+        <DI code="E00003XX"
+            name="普通任务号"
+            type="Struct">
+            <Field name="有效性标志"
+                   type="BIN"
+                   length="1"
+                   display="ValidityFlag"
+                   description="0：无效；1：有效"/>
+            <Field name="上报基准时间"
+                   type="YYMMDDhhmm"
+                   length="5"/>
+            <Field name="定时上报周期单位"
+                   type="BIN"
+                   length="1"
+                   display="PeriodUnit"
+                   description="0~3 依次表示分、时、日、月"/>
+            <Field name="定时上报周期"
+                   type="BIN"
+                   length="1"
+                   description="终端以设定的时间开始上报，并按定时上报周期循环；0 表示不上报"/>
+            <Field name="数据结构方式"
+                   type="BIN"
+                   length="1"
+                   display="DataStructureMode"
+                   description="0：自描述格式组织数据；1：按任务定义的数据格式组织数据"/>
+            <Field name="采样基准时间"
+                   type="YYMMDDhhmm"
+                   length="5"/>
+            <Field name="定时采样周期单位"
+                   type="BIN"
+                   length="1"
+                   display="PeriodUnit"
+                   description="0~3 依次表示分、时、日、月"/>
+            <Field name="定时采样周期"
+                   type="BIN"
+                   length="1"
+                   description="终端以设定的时间开始采集，并按定时采样周期循环"/>
+            <Field name="数据抽取倍率"
+                   type="BIN"
+                   length="1"
+                   description="按照此倍率抽取数据上送；如抽取倍率为 2，表示采样 2 点、上送最近的 1 点"/>
+            <Field name="执行次数"
+                   type="BIN"
+                   length="2"
+                   byteOrder="little"
+                   description="0 表示永远执行；非 0 表示任务执行次数"/>
+            <Field id="pointCount"
+                   name="信息点标识组数 n"
+                   type="BIN"
+                   length="1"/>
+            <Field name="信息点标识"
+                   type="BIN"
+                   length="2"
+                   display="DA"
+                   countRef="pointCount"
+                   description="信息点标识参见 6.1.3"/>
+            <Field id="diCount"
+                   name="数据标识编码组数 m"
+                   type="BIN"
+                   length="1"
+                   productRef="pointCount"
+                   productMaxExclusive="256"
+                   description="n×m 的值应小于 256"/>
+            <Field name="数据标识编码"
+                   type="BIN"
+                   length="4"
+                   byteOrder="little"
+                   display="DI"
+                   countRef="diCount"
+                   description="数据标识编码参见 6.1.4"/>
+        </DI>
+
+        <DI code="E0000400" name="有效的中继任务总数" type="Struct"><Field name="有效的中继任务总数" type="BCD" length="1"/></DI>
+        <DI code="E00004FE" name="中继任务参数集合" type="ServiceDefined"/>
+        <DI code="E00004FF" name="中继任务有效性" type="Struct"><Field name="中继任务有效性" type="BS" length="32" description="正序传输；bit=0 有效，bit=1 无效"/></DI>
+        <DI code="E00004XX" name="中继任务号" type="Struct">
+            <Field name="有效性标志" type="BIN" length="1" display="ValidityFlag"/>
+            <Field name="上报基准时间" type="YYMMDDhhmm" length="5"/>
+            <Field name="定时上报周期单位" type="BIN" length="1" display="PeriodUnit"/>
+            <Field name="定时上报周期" type="BIN" length="1"/>
+            <Field name="采样基准时间" type="YYMMDDhhmm" length="5"/>
+            <Field name="定时采样周期单位" type="BIN" length="1" display="PeriodUnit"/>
+            <Field name="定时采样周期" type="BIN" length="1"/>
+            <Field name="数据抽取倍率" type="BIN" length="1"/>
+            <Field name="中继类型" type="BIN" length="1"/>
+            <Field name="执行次数" type="BIN" length="2" byteOrder="little"/>
+            <Field name="端口号" type="BIN" length="1"/>
+            <Field name="通信波特率" type="BIN" length="1" display="BaudRate300"/>
+            <Field name="校验方式" type="BIN" length="1" display="Parity"/>
+            <Field name="数据位" type="BIN" length="1" display="DataBits"/>
+            <Field name="停止位" type="BIN" length="1" display="StopBits"/>
+            <Field name="超时时间" type="BIN" length="1"/>
+            <Field id="relayMessageLength" name="中继报文长度" type="BIN" length="1"/>
+            <Field name="中继报文内容" type="BIN" lengthRef="relayMessageLength"/>
+        </DI>
+
+        <DI code="E0001500" name="有效的表端任务总数" type="Struct"><Field name="有效的表端任务总数" type="BCD" length="1"/></DI>
+        <DI code="E00015FE" name="表端任务参数集合" type="ServiceDefined"/>
+        <DI code="E00015FF" name="表端任务有效性" type="Struct"><Field name="表端任务有效性" type="BS" length="32" description="正序传输；bit=0 有效，bit=1 无效"/></DI>
+        <DI code="E00015XX" name="表端任务号" type="Struct">
+            <Field name="有效性标志" type="BIN" length="1" display="ValidityFlag"/><Field name="上报基准时间" type="YYMMDDhhmm" length="5"/><Field name="定时上报周期单位" type="BIN" length="1" display="PeriodUnit"/><Field name="定时上报周期" type="BIN" length="1"/><Field name="数据结构方式" type="BIN" length="1" display="DataStructureMode"/><Field name="采样基准时间" type="YYMMDDhhmm" length="5"/><Field name="表端定时采样周期单位" type="BIN" length="1" display="PeriodUnit"/><Field name="表端定时采样周期" type="BIN" length="1"/><Field name="数据抽取倍率" type="BIN" length="1"/><Field name="终端查询基准时间" type="YYMMDDhhmm" length="5"/><Field name="终端定时查询周期单位" type="BIN" length="1" display="PeriodUnit"/><Field name="终端定时查询周期" type="BIN" length="1"/><Field name="执行次数" type="BIN" length="2" byteOrder="little"/>
+            <Field id="meterTaskPointCount" name="信息点标识组数 n" type="BIN" length="1"/><Field name="信息点标识" type="BIN" length="2" display="DA" countRef="meterTaskPointCount"/><Field id="meterTaskDiCount" name="数据标识编码组数 m" type="BIN" length="1" productRef="meterTaskPointCount" productMaxExclusive="256"/><Field name="数据标识编码" type="BIN" length="4" byteOrder="little" display="DI" countRef="meterTaskDiCount"/>
+        </DI>
+
+        <DI code="E0001600" name="有效数据推送任务总数" type="None"/>
+        <DI code="E00016FE" name="数据推送任务参数集合" type="ServiceDefined"/>
+        <DI code="E00016FF" name="数据推送任务有效性" type="Struct"><Field name="数据推送任务有效性" type="BS" length="32" description="正序传输；bit=0 有效，bit=1 无效"/></DI>
+        <DI code="E00016XX" name="数据推送任务号" type="Struct">
+            <Field name="有效性标志" type="BIN" length="1" display="ValidityFlag"/><Field name="推送基准时间" type="YYMMDDhhmm" length="5"/><Field name="定时推送周期单位" type="BIN" length="1" display="PeriodUnit"/><Field name="定时推送周期" type="BIN" length="1"/><Field name="数据结构方式" type="BIN" length="1" display="DataStructureMode"/><Field name="采样基准时间" type="YYMMDDhhmm" length="5"/><Field name="定时采样周期单位" type="BIN" length="1" display="PeriodUnit"/><Field name="定时采样周期" type="BIN" length="1"/><Field name="数据抽取倍率" type="BIN" length="1"/><Field name="执行次数" type="BIN" length="2" byteOrder="little"/><Field name="数据推送端口" type="BIN" length="2" byteOrder="little"/>
+            <Field id="pushTaskPointCount" name="信息点标识组数 n" type="BIN" length="1"/><Field name="信息点标识" type="BIN" length="2" display="DA" countRef="pushTaskPointCount"/><Field id="pushTaskDiCount" name="数据标识编码组数 m" type="BIN" length="1" productRef="pushTaskPointCount" productMaxExclusive="256"/><Field name="数据标识编码" type="BIN" length="4" byteOrder="little" display="DI" countRef="pushTaskDiCount"/>
+        </DI>
+
+        <!-- 附录 D：告警标识。具备唯一固定边界的 ARD1 在此展开，其余复杂 ARD 保留原文。 -->
+        <DI code="E2000001" name="计量装置门开闭" type="ServiceDefined"/>
+        <DI code="E2000003" name="电压逆相序" type="ServiceDefined"/>
+        <DI code="E2000004" name="电流不平衡" type="ServiceDefined"/>
+        <DI code="E2000005" name="电压不平衡" type="ServiceDefined"/>
+        <DI code="E2000006" name="零序电流偏大" type="ServiceDefined"/>
+        <DI code="E2000007" name="A相TA二次侧短路" type="ServiceDefined"/>
+        <DI code="E2000008" name="B相TA二次侧短路" type="ServiceDefined"/>
+        <DI code="E2000009" name="C相TA二次侧短路" type="ServiceDefined"/>
+        <DI code="E200000A" name="A相TA二次侧开路" type="ServiceDefined"/>
+        <DI code="E200000B" name="B相TA二次侧开路" type="ServiceDefined"/>
+        <DI code="E200000C" name="C相TA二次侧开路" type="ServiceDefined"/>
+        <DI code="E200000D" name="A相潮流反向" type="ServiceDefined"/>
+        <DI code="E200000E" name="B相潮流反向" type="ServiceDefined"/>
+        <DI code="E200000F" name="C相潮流反向" type="ServiceDefined"/>
+        <DI code="E2000010" name="A相电流过流" type="ServiceDefined"/>
+        <DI code="E2000011" name="B相电流过流" type="ServiceDefined"/>
+        <DI code="E2000012" name="C相电流过流" type="ServiceDefined"/>
+        <DI code="E2000013" name="A相电流失流" type="ServiceDefined"/>
+        <DI code="E2000014" name="B相电流失流" type="ServiceDefined"/>
+        <DI code="E2000015" name="C相电流失流" type="ServiceDefined"/>
+        <DI code="E2000016" name="A相电压失压" type="ServiceDefined"/>
+        <DI code="E2000017" name="B相电压失压" type="ServiceDefined"/>
+        <DI code="E2000018" name="C相电压失压" type="ServiceDefined"/>
+        <DI code="E2000019" name="全失压" type="ServiceDefined"/>
+        <DI code="E200001A" name="A相电压过压" type="ServiceDefined"/>
+        <DI code="E200001B" name="B相电压过压" type="ServiceDefined"/>
+        <DI code="E200001C" name="C相电压过压" type="ServiceDefined"/>
+        <DI code="E200001D" name="A相电压断相" type="ServiceDefined"/>
+        <DI code="E200001E" name="B相电压断相" type="ServiceDefined"/>
+        <DI code="E200001F" name="C相电压断相" type="ServiceDefined"/>
+        <DI code="E2000020" name="A相电压畸变" type="ServiceDefined"/>
+        <DI code="E2000021" name="B相电压畸变" type="ServiceDefined"/>
+        <DI code="E2000022" name="C相电压畸变" type="ServiceDefined"/>
+        <DI code="E2000023" name="A相电流畸变" type="ServiceDefined"/>
+        <DI code="E2000024" name="B相电流畸变" type="ServiceDefined"/>
+        <DI code="E2000025" name="C相电流畸变" type="ServiceDefined"/>
+        <DI code="E2000026" name="无功过补偿" type="ServiceDefined"/>
+        <DI code="E2000027" name="无功欠补偿" type="ServiceDefined"/>
+        <DI code="E2000028" name="功率超定值" type="ServiceDefined"/>
+        <DI code="E2000029" name="负荷过载" type="ServiceDefined"/>
+        <DI code="E200002A" name="超合同容量用电" type="ServiceDefined"/>
+        <DI code="E200002B" name="剩余电费不足" type="ServiceDefined"/>
+        <DI code="E200002C" name="示度下降" type="ServiceDefined"/>
+        <DI code="E200002D" name="电能表飞走" type="ServiceDefined"/>
+        <DI code="E200002E" name="电能表停走" type="ServiceDefined"/>
+        <DI code="E200002F" name="电能表通讯失败" type="Struct">
+            <Field name="告警状态" type="BIN" length="1" display="AlarmState"/>
+            <Field name="告警发生时间" type="YYMMDDhhmmss" length="6"/>
+        </DI>
+        <DI code="E2000030" name="差动告警" type="ServiceDefined"/>
+        <DI code="E2000031" name="最大需量手动复零" type="ServiceDefined"/>
+        <DI code="E2000032" name="时钟电池电压过低" type="Struct"><Field name="告警状态" type="BIN" length="1" display="AlarmState"/><Field name="告警发生时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2000033" name="设备掉电" type="ServiceDefined"/>
+        <DI code="E2000034" name="设备上电" type="ServiceDefined"/>
+        <DI code="E2000035" name="电能表编程时间更改" type="ServiceDefined"/>
+        <DI code="E2000036" name="电能表时段或费率更改" type="Struct"><Field name="告警状态" type="BIN" length="1" display="AlarmState"/><Field name="告警发生时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2000037" name="电能表脉冲常数更改" type="ServiceDefined"/>
+        <DI code="E2000038" name="计量互感器倍率更改" type="ServiceDefined"/>
+        <DI code="E2000039" name="遥信变位" type="ServiceDefined"/>
+        <DI code="E200003A" name="月通信流量越限" type="ServiceDefined"/>
+        <DI code="E200003B" name="继电器变位" type="ServiceDefined"/>
+        <DI code="E200003C" name="电能表拉合闸失败" type="ServiceDefined"/>
+        <DI code="E200003D" name="抄表失败" type="ServiceDefined"/>
+        <DI code="E200003E" name="电能表时钟异常" type="ServiceDefined"/>
+        <DI code="E200003F" name="电能表校时失败" type="Struct"><Field name="告警状态" type="BIN" length="1" display="AlarmState"/><Field name="告警发生时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2000040" name="电能表A、B、C相失压总次数" type="ServiceDefined"/>
+        <DI code="E2000041" name="电能表A、B、C相失流总次数" type="ServiceDefined"/>
+        <DI code="E2000042" name="电能表A、B、C相潮流反向总次数" type="ServiceDefined"/>
+        <DI code="E2000043" name="电能表编程总次数" type="ServiceDefined"/>
+        <DI code="E2000044" name="A相电压偏差越限" type="ServiceDefined"/>
+        <DI code="E2000045" name="B相电压偏差越限" type="ServiceDefined"/>
+        <DI code="E2000046" name="C相电压偏差越限" type="ServiceDefined"/>
+        <DI code="E2000047" name="频率偏差越限" type="ServiceDefined"/>
+        <DI code="E2000048" name="A相闪变越限" type="ServiceDefined"/>
+        <DI code="E2000049" name="B相闪变越限" type="ServiceDefined"/>
+        <DI code="E200004A" name="C相闪变越限" type="ServiceDefined"/>
+        <DI code="E200004C" name="发现未知电表" type="ServiceDefined"/>
+        <DI code="E200004D" name="表端钮盒开启告警" type="ServiceDefined"/>
+        <DI code="E200004E" name="表盖开启告警" type="ServiceDefined"/>
+        <DI code="E200004F" name="费率参数表编程次数更改" type="ServiceDefined"/>
+        <DI code="E2000050" name="阶梯表编程次数更改" type="ServiceDefined"/>
+        <DI code="E2000051" name="异常插卡告警" type="ServiceDefined"/>
+        <DI code="E2000052" name="非法插卡告警" type="ServiceDefined"/>
+        <DI code="E2000053" name="恒定磁场干扰告警" type="Struct"><Field name="告警状态" type="BIN" length="1" display="AlarmState"/><Field name="告警发生时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2000054" name="负荷开关误动作告警" type="Struct"><Field name="告警状态" type="BIN" length="1" display="AlarmState"/><Field name="告警发生时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2000055" name="电源异常告警" type="Struct"><Field name="告警状态" type="BIN" length="1" display="AlarmState"/><Field name="告警发生时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2000056" name="备用电池异常告警" type="ServiceDefined"/>
+        <DI code="E2000057" name="SIM卡更换告警" type="ServiceDefined"/>
+        <DI code="E2000058" name="电表通信模块更换告警" type="ServiceDefined"/>
+        <DI code="E2000060" name="安全监测告警" type="ServiceDefined"/>
+        <DI code="E2000061" name="测量点参数变更" type="ServiceDefined"/>
+        <DI code="E2000062" name="终端模块更换告警" type="ServiceDefined"/>
+        <DI code="E2000063" name="拓扑信息变更" type="ServiceDefined"/>
+        <DI code="E2000064" name="电能表计量芯片故障" type="ServiceDefined"/>
+        <DI code="E2000065" name="文件传输情况告警" type="ServiceDefined"/>
+        <DI code="E2000066" name="低压故障告警" type="ServiceDefined"/>
+        <DI code="E2000067" name="负荷控制回路断线告警" type="ServiceDefined"/>
+        <DI code="E2000068" name="负荷控制告警" type="ServiceDefined"/>
+        <DI code="E2000070" name="操作系统异常告警" type="ServiceDefined"/>
+        <DI code="E2000071" name="微应用异常告警" type="ServiceDefined"/>
+        <DI code="E2000072" name="微应用验签告警" type="ServiceDefined"/>
+        <DI code="E200007A" name="电流逆相序" type="ServiceDefined"/>
+        <DI code="E200007B" name="零线电流异常" type="ServiceDefined"/>
+        <DI code="E2000080" name="安全管理告警" type="ServiceDefined"/>
+        <DI code="E2000081" name="A相电压质量异常告警" type="ServiceDefined"/>
+        <DI code="E2000082" name="B相电压质量异常告警" type="ServiceDefined"/>
+        <DI code="E2000083" name="C相电压质量异常告警" type="ServiceDefined"/>
+        <DI code="E2000084" name="电表管理单元透传上送告警" type="ServiceDefined"/>
+        <DI code="E2000085" name="A相终端暂态电压异常告警" type="ServiceDefined"/>
+        <DI code="E2000086" name="B相终端暂态电压异常告警" type="ServiceDefined"/>
+        <DI code="E2000087" name="C相终端暂态电压异常告警" type="ServiceDefined"/>
+        <DI code="E200009A" name="入网设备台区识别告警" type="ServiceDefined"/>
+        <DI code="E20010FF" name="读所有主动上送未成功的告警数据" type="ServiceDefined"/>
+        <DI code="E200FFFF" name="所有告警类型" type="ServiceDefined"/>
+
+        <!-- 附录 E：事件标识和代表性 ERD 结构。 -->
+        <DI code="E2010001" name="编程记录" type="Struct">
+            <Field name="编程时间" type="YYMMDDhhmmss" length="6"/>
+            <Field name="通信通道" type="BIN" length="1"/>
+            <Field id="programmedDiCount" name="编程数据标识组数" type="BIN" length="1"/>
+            <Field name="编程数据" type="ReferencedDataItems" countRef="programmedDiCount"/>
+        </DI>
+        <DI code="E2010002" name="最大需量结算日自动复零" type="Struct"><Field name="最大需量清零时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2010003" name="最大需量手动复零" type="Struct"><Field name="最大需量清零时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2010004" name="A相失压记录" type="Struct"><Field name="开始时间" type="YYMMDDhhmmss" length="6"/><Field name="结束时间" type="YYMMDDhhmmss" length="6"/><Field name="正向有功总电能量增量" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/><Field name="反向有功总电能量增量" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kWh" fill="FF"/><Field name="组合无功1总电能量增量" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/><Field name="组合无功2总电能量增量" type="BCD" length="4" byteOrder="little" format="NNNNNN.NN" unit="kvarh" fill="FF"/></DI>
+        <DI code="E2010005" name="B相失压记录" type="ServiceDefined"/>
+        <DI code="E2010006" name="C相失压记录" type="ServiceDefined"/>
+        <DI code="E2010007" name="A相失流记录" type="ServiceDefined"/>
+        <DI code="E2010008" name="B相失流记录" type="ServiceDefined"/>
+        <DI code="E2010009" name="C相失流记录" type="ServiceDefined"/>
+        <DI code="E201000A" name="掉电/上电记录" type="ServiceDefined"/>
+        <DI code="E201000B" name="A相断相记录" type="ServiceDefined"/>
+        <DI code="E201000C" name="B相断相记录" type="ServiceDefined"/>
+        <DI code="E201000D" name="C相断相记录" type="ServiceDefined"/>
+        <DI code="E201000E" name="控制事件记录" type="ServiceDefined"/>
+        <DI code="E201000F" name="电量清零记录" type="ServiceDefined"/>
+        <DI code="E2010010" name="校时记录" type="ServiceDefined"/>
+        <DI code="E2010011" name="表端钮盒开启记录" type="ServiceDefined"/>
+        <DI code="E2010012" name="表盖开启记录" type="ServiceDefined"/>
+        <DI code="E2010013" name="消息认证错误记录" type="ServiceDefined"/>
+        <DI code="E2010014" name="参数变更记录" type="ServiceDefined"/>
+        <DI code="E2010015" name="计量门箱开闭记录" type="ServiceDefined"/>
+        <DI code="E2010016" name="恒定磁场干扰记录" type="ServiceDefined"/>
+        <DI code="E2010017" name="负荷开关误动作记录" type="ServiceDefined"/>
+        <DI code="E2010018" name="电源异常记录" type="ServiceDefined"/>
+        <DI code="E2010019" name="电能表广播校时记录" type="Struct"><Field name="电表广播校时发生时间" type="YYMMDDhhmmss" length="6"/></DI>
+        <DI code="E2010020" name="终端安全事件" type="Struct"><Field name="安全事件时间" type="YYMMDDhhmmss" length="6"/><Field name="事件类型" type="BIN" length="1" display="SecurityEventType"/></DI>
+        <DI code="E2010021" name="终端模块更换" type="Struct"><Field name="安全事件时间" type="YYMMDDhhmmss" length="6"/><Field name="槽位号" type="BIN" length="1" description="模块号1～5按安装位置从左至右"/><Field name="变更前槽位功能模块信息" type="Blob" length="63" description="E0000B08H 单个模块信息，原文保留"/><Field name="变更后槽位功能模块信息" type="Blob" length="63" description="E0000B08H 单个模块信息，原文保留"/></DI>
+        <DI code="E20100FF" name="所有类型事件记录" type="ServiceDefined"/>
+
+        <!-- 附录 G：文件传输。方向相关且无法由单一 DI 结构唯一表达的内容保留原文。 -->
+        <DI code="E3010001" name="文件传输启动" type="Struct"><Field name="文件性质" type="BIN" length="2" byteOrder="little" display="FileNature"/><Field name="文件总段数" type="BIN" length="2" byteOrder="little"/><Field name="文件大小" type="BIN" length="4" byteOrder="little"/><Field name="文件名称" type="ASCII" length="32"/><Field name="总校验" type="BIN" length="2" byteOrder="little" description="CRC16-CCITT"/></DI>
+        <DI code="E3010002" name="传输文件内容" type="ServiceDefined"/>
+        <DI code="E3010003" name="查询文件信息" type="ServiceDefined"/>
+        <DI code="E3010004" name="查询录波文件信息" type="Struct"><Field name="文件名称" type="ASCII" length="64"/><Field name="文件大小" type="BIN" length="4" byteOrder="little" required="false"/><Field name="总校验" type="BIN" length="2" byteOrder="little" description="CRC16-CCITT" required="false"/><Field name="文件总段数" type="BIN" length="2" byteOrder="little" required="false"/><Field name="文件段长度" type="BIN" length="2" byteOrder="little" required="false"/></DI>
+        <DI code="E3010005" name="读取录波文件内容" type="ServiceDefined"/>
+        <DI code="E3010006" name="设置待升级电表地址列表" type="Struct"><Field name="待升级电表测量点列表" type="BS" length="256" description="正序传输，第一个字节 bit0 对应测量点1"/></DI>
+
+        <!-- 附录 H：上下行结构不同，由 AFN10 服务解析器按方向组合。 -->
+        <DI code="E3020001" name="一字节长度中继转发" type="ServiceDefined"/>
+        <DI code="E3020002" name="两字节长度中继转发" type="ServiceDefined"/>
+
+        <!-- A.7、A.20、O.1、P.1：只解析边界，密文、证书和厂商数据均保持原文。 -->
+        <DI code="E0010181" name="主站请求终端安全信息" type="ServiceDefined"/>
+        <DI code="E0010281" name="主站请求终端证书信息" type="Struct"><Field id="terminalCertificateLength" name="终端证书长度" type="BIN" length="2" byteOrder="little"/><Field name="终端证书" type="Blob" lengthRef="terminalCertificateLength" description="证书原文"/></DI>
+        <DI code="E0010381" name="主站请求主站证书信息" type="Struct"><Field id="masterCertificateLength" name="主站证书长度" type="BIN" length="2" byteOrder="little"/><Field name="主站证书" type="Blob" lengthRef="masterCertificateLength" description="证书原文"/></DI>
+        <DI code="E0010182" name="主站发起会话协商" type="Struct"><Field id="sessionCipherLength" name="会话密文长度" type="BIN" length="2" byteOrder="little"/><Field name="会话密文" type="Blob" lengthRef="sessionCipherLength" description="密文原文"/><Field name="签名数据" type="Blob" length="64" description="64 字节签名原文"/></DI>
+        <DI code="E0010183" name="对称密钥更新请求" type="ServiceDefined"/>
+        <DI code="E0010184" name="终端证书及私钥更新" type="ServiceDefined"/>
+        <DI code="E0010185" name="主站证书更新" type="ServiceDefined"/>
+        <DI code="E0010186" name="置离线计数器" type="ServiceDefined"/>
+        <DI code="E0010187" name="转加密授权" type="ServiceDefined"/>
+        <DI code="E0010188" name="电量初始化" type="ServiceDefined"/>
+        <DI code="E0010189" name="电量开户/充值" type="ServiceDefined"/>
+        <DI code="E001018A" name="电量退费" type="ServiceDefined"/>
+        <DI code="E001018B" name="参数信息更新" type="ServiceDefined"/>
+        <DI code="E001018C" name="模式切换--本地切远程" type="ServiceDefined"/>
+        <DI code="E001018D" name="会话协商确认" type="ServiceDefined"/>
+        <DI code="E001018E" name="下发安全管理策略" type="ServiceDefined"/>
+        <DI code="E001018F" name="数据安全传输/下发安全管理白名单" type="Struct"><Field id="secureDataLength" name="数据长度" type="BIN" length="2" byteOrder="little"/><Field name="数据密文" type="Blob" lengthRef="secureDataLength" description="密文，按原文保留"/></DI>
+        <DI code="E00101A1" name="主站请求终端安全信息2025版" type="ServiceDefined"/>
+        <DI code="E00101A2" name="主站请求APP验签证书1信息" type="ServiceDefined"/>
+        <DI code="E00101A3" name="主站请求APP验签证书2信息" type="ServiceDefined"/>
+        <DI code="E00101A4" name="主站请求APP验签证书3信息" type="ServiceDefined"/>
+        <DI code="E00101A5" name="主站请求APP验签证书4信息" type="ServiceDefined"/>
+        <DI code="E00101A6" name="主站请求TESAM附加信息" type="ServiceDefined"/>
+        <DI code="E00101A7" name="主站更新APP验签证书1" type="ServiceDefined"/>
+        <DI code="E00101A8" name="主站更新APP验签证书2" type="ServiceDefined"/>
+        <DI code="E00101A9" name="主站更新APP验签证书3" type="ServiceDefined"/>
+        <DI code="E00101AA" name="主站更新APP验签证书4" type="ServiceDefined"/>
+
+        <DI code="E0002000" name="用户自定义数据" type="Struct"><Field name="厂商编码" type="Blob" length="2" description="CCCC，厂商编码原文"/><Field name="厂商自定义数据" type="Blob" length="-1" description="厂商私有内容，不展开"/></DI>
+
+        <DI code="E0010190" name="数据转加密报文" type="Struct">
+            <Field name="任务编号" type="BIN" length="4" byteOrder="little"/>
+            <Field id="plainLength" name="任务数据明文长度" type="BIN" length="2" byteOrder="little"/>
+            <Field name="任务数据明文" type="Blob" lengthRef="plainLength" description="明文原文"/>
+            <Field id="cipherLength" name="任务数据密文长度" type="BIN" length="2" byteOrder="little"/>
+            <Field name="任务数据密文" type="Blob" lengthRef="cipherLength" description="密文原文"/>
+            <Field name="离线计数器密文" type="Blob" length="20" description="20 字节密文原文"/>
+            <Field name="本次配置电表总数量" type="BIN" length="2" byteOrder="little"/>
+            <Field id="frameMeterCount" name="本帧配置电表数量" type="BIN" length="2" byteOrder="little"/>
+            <Field name="本帧起始电表序号" type="BIN" length="2" byteOrder="little"/>
+            <Field name="电表密钥记录" type="Struct" countRef="frameMeterCount"><Field name="电表表号" type="Blob" length="6"/><Field name="身份认证密钥密文" type="Blob" length="32" description="密文原文"/><Field name="任务密钥密文" type="Blob" length="32" description="密文原文"/></Field>
+        </DI>
+        <DI code="E0010191" name="终端查询电表转加密任务执行状态" type="Struct"><Field name="任务编号" type="BIN" length="4" byteOrder="little"/><Field name="设备总数量" type="BIN" length="2" byteOrder="little"/><Field name="已成功设备数量" type="BIN" length="2" byteOrder="little"/><Field id="successMeterCount" name="本帧配置电表数量" type="BIN" length="2" byteOrder="little"/><Field name="本帧起始电表序号" type="BIN" length="2" byteOrder="little"/><Field name="已成功电表表号" type="Blob" length="6" countRef="successMeterCount"/></DI>
+    </DIs>
+</ProtCsgUpstreamConfig>

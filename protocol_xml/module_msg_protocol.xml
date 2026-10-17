@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Module协议接口定义配置文件 -->
+<!--
+    DT (Data Type) 结构说明:
+    DT 为 2 字节 (16 bits)。
+    Bit 15-12: DTA1 (功能模组标识)。对应本文件中的 dta1。
+    Bit 11-8:  DTA2 (读写属性标识)。
+    Bit 7-0:   DTB  (数据单元标识)。
+
+    本文件中的 dt 对应 DT 的低 12 位 (DTA2 + DTB)。
+    例如: DT = 0x0203
+    DTA1 = 0x0 -> dta1="0x0"
+    DTA2 = 0x2, DTB = 0x03 -> dt="0x203"
+-->
+<module_msg_protocol version="v1.0.0" date="2026-02-11">
+  <!-- =============================================== -->
+  <!-- DTA1=0H 通用信息类 -->
+  <!-- =============================================== -->
+  <interface_group dta1="0x0" name="通用信息类" description="通用信息类 (DTA1=0H)">
+
+    <!-- 0x0000 模组信息 (DTA2=0, DTB=00) -->
+    <interface dt="0x0000" name="模组信息">
+      <response format="sequence">
+        <field name="模组设备型号" type="visible-string"/>
+        <field name="模组设备ID" type="visible-string"/>
+        <field name="厂商代码" type="visible-string" size="4"/>
+        <field name="软件版本号" type="visible-string" size="4"/>
+        <field name="软件版本日期" type="visible-string" size="6"/>
+        <field name="硬件版本号" type="visible-string" size="4"/>
+        <field name="硬件版本日期" type="visible-string" size="6"/>
+        <field name="厂商扩展信息" type="visible-string" size="8"/>
+      </response>
+    </interface>
+
+    <!-- 0x0001 链路协商信息 (DTA2=0, DTB=01) -->
+    <interface dt="0x0001" name="链路协商信息">
+      <request format="sequence">
+        <field name="协议版本号" type="long-unsigned"/>
+        <field name="模组设备型号" type="visible-string"/>
+        <field name="模组设备ID" type="visible-string"/>
+        <field name="最大发送缓冲区长度" type="long-unsigned"/>
+        <field name="最大接收缓冲区长度" type="long-unsigned"/>
+        <field name="并发传输窗口数" type="unsigned"/>
+        <field name="虚拟通道工作模式" type="sequence_of">
+            <field name="通道配置" type="sequence">
+                <field name="接口类型" type="enum">
+                    <enum_value value="1" name="CDC-ACM"/>
+                    <enum_value value="2" name="CDC-ECM"/>
+                    <enum_value value="3" name="HID"/>
+                </field>
+                <field name="功能配置" type="enum">
+                    <enum_value value="0" name="管理通道"/>
+                    <enum_value value="1" name="远程通信"/>
+                    <enum_value value="2" name="HPLC/HDC 通信"/>
+                    <enum_value value="3" name="RS-485 通信"/>
+                    <enum_value value="4" name="遥信脉冲"/>
+                    <enum_value value="5" name="CAN 通信"/>
+                    <enum_value value="6" name="M-Bus 通信"/>
+                    <enum_value value="7" name="控制"/>
+                    <enum_value value="8" name="模拟量采集"/>
+                    <enum_value value="9" name="PT100"/>
+                    <enum_value value="10" name="RS232 通信"/>
+                    <enum_value value="11" name="回路巡检"/>
+                    <enum_value value="12" name="负荷辨识"/>
+                    <enum_value value="13" name="RS-485&amp;遥信"/>
+                </field>
+            </field>
+        </field>
+      </request>
+      <response format="sequence">
+        <field name="协议版本号" type="long-unsigned"/>
+        <field name="模组设备型号" type="visible-string"/>
+        <field name="模组设备ID" type="visible-string"/>
+        <field name="最大发送缓冲区长度" type="long-unsigned"/>
+        <field name="最大接收缓冲区长度" type="long-unsigned"/>
+        <field name="并发传输窗口数" type="unsigned"/>
+        <field name="虚拟通道工作模式" type="sequence_of">
+            <field name="通道配置" type="sequence">
+                <field name="接口类型" type="enum">
+                    <enum_value value="1" name="CDC-ACM"/>
+                    <enum_value value="2" name="CDC-ECM"/>
+                    <enum_value value="3" name="HID"/>
+                </field>
+                <field name="功能配置" type="enum">
+                    <enum_value value="0" name="管理通道"/>
+                    <enum_value value="1" name="远程通信"/>
+                    <enum_value value="2" name="HPLC/HDC 通信"/>
+                    <enum_value value="3" name="RS-485 通信"/>
+                    <enum_value value="4" name="遥信脉冲"/>
+                    <enum_value value="5" name="CAN 通信"/>
+                    <enum_value value="6" name="M-Bus 通信"/>
+                    <enum_value value="7" name="控制"/>
+                    <enum_value value="8" name="模拟量采集"/>
+                    <enum_value value="9" name="PT100"/>
+                    <enum_value value="10" name="RS232 通信"/>
+                    <enum_value value="11" name="回路巡检"/>
+                    <enum_value value="12" name="负荷辨识"/>
+                    <enum_value value="13" name="RS-485&amp;遥信"/>
+                </field>
+            </field>
+        </field>
+      </response>
+    </interface>
+
+    <!-- 0x0002 协议版本 (DTA2=0, DTB=02) -->
+    <interface dt="0x0002" name="协议版本">
+        <response format="sequence">
+            <field name="协议版本" type="long-unsigned"/>
+        </response>
+    </interface>
+
+    <!-- 0x0003 电源状态 (DTA2=0, DTB=03) -->
+    <interface dt="0x0003" name="电源状态">
+        <response format="sequence">
+            <field name="电源状态" type="enum">
+                <enum_value value="0" name="上电"/>
+                <enum_value value="1" name="掉电"/>
+            </field>
+        </response>
+    </interface>
+
+    <!-- 0x0004 文件传输状态 (DTA2=0, DTB=04) -->
+    <interface dt="0x0004" name="文件传输状态">
+        <response format="sequence">
+            <field name="总包数" type="double-long-unsigned"/>
+            <field name="包传输状态" type="bit-string"/>
+        </response>
+    </interface>
+
+    <!-- 0x0006 启动时间 (DTA2=0, DTB=06) -->
+    <interface dt="0x0006" name="启动时间">
+        <response format="sequence">
+            <field name="启动时间" type="date_time"/>
+        </response>
+    </interface>
+
+    <!-- 0x0100 时钟 (DTA2=1, DTB=00) -->
+    <interface dt="0x0100" name="时钟">
+        <request format="sequence">
+             <field name="时钟" type="date_time"/>
+        </request>
+        <response format="sequence">
+             <field name="时钟" type="date_time"/>
+        </response>
+    </interface>
+
+    <!-- 0x0200 硬件初始化 (DTA2=2, DTB=00) -->
+    <interface dt="0x0200" name="硬件初始化">
+        <request format="null"/>
+        <response format="null"/>
+    </interface>
+
+    <!-- 0x0201 参数初始化 (DTA2=2, DTB=01) -->
+    <interface dt="0x0201" name="参数初始化">
+        <request format="null"/>
+        <response format="null"/>
+    </interface>
+
+    <!-- 0x0202 数据初始化 (DTA2=2, DTB=02) -->
+    <interface dt="0x0202" name="数据初始化">
+        <request format="null"/>
+        <response format="null"/>
+    </interface>
+
+    <!-- 0x0203 文件传输 (DTA2=2, DTB=03) -->
+    <interface dt="0x0203" name="文件传输">
+        <request format="sequence">
+            <field name="文件标识" type="unsigned"/>
+            <field name="段序号" type="double-long-unsigned"/>
+            <field name="总段数" type="double-long-unsigned"/>
+            <field name="文件数据" type="octet-string"/>
+        </request>
+        <response format="sequence">
+            <field name="文件标识" type="unsigned"/>
+            <field name="段序号" type="double-long-unsigned"/>
+            <field name="总段数" type="double-long-unsigned"/>
+            <field name="文件数据" type="octet-string"/>
+        </response>
+    </interface>
+
+  </interface_group>
+
+  <!-- =============================================== -->
+  <!-- DTA1=4H 遥信脉冲信息类 -->
+  <!-- =============================================== -->
+  <interface_group dta1="0x4" name="遥信脉冲信息类" description="遥信脉冲模块 (DTA1=4H)">
+
+    <!-- 0x4000 遥信状态 (DTA2=0, DTB=00) -->
+    <interface dt="0x000" name="遥信状态">
+      <response format="sequence">
+        <field name="遥信状态" type="bit-string"/>
+        <field name="遥信变位状态" type="bit-string"/>
+        <field name="遥信变位时间" type="sequence_of">
+            <field name="变位时间" type="date_time"/>
+        </field>
+      </response>
+    </interface>
+
+    <!-- 0x4001 上一次脉冲计数和时间 (DTA2=0, DTB=01) -->
+    <interface dt="0x001" name="上一次脉冲计数和时间">
+      <response format="sequence">
+        <field name="脉冲计数列表" type="sequence_of">
+            <field name="脉冲计数" type="sequence">
+                <field name="脉冲个数" type="double-long-unsigned"/>
+                <field name="统计时间" type="double-long-unsigned" description="单位: ms"/>
+            </field>
+        </field>
+      </response>
+    </interface>
+
+    <!-- 0x4002 脉冲计数及统计时间 (DTA2=0, DTB=02) -->
+    <interface dt="0x002" name="脉冲计数及统计时间">
+      <response format="sequence">
+        <field name="脉冲计数列表" type="sequence_of">
+            <field name="脉冲计数" type="sequence">
+                <field name="脉冲个数" type="double-long-unsigned"/>
+                <field name="统计时间H" type="double-long-unsigned" description="单位: s"/>
+                <field name="统计时间L" type="long-unsigned" description="单位: ms"/>
+                <field name="启动时间" type="date_time"/>
+            </field>
+        </field>
+      </response>
+    </interface>
+
+    <!-- 0x4100 遥信脉冲功能配置 (DTA2=1, DTB=00) -->
+    <interface dt="0x100" name="遥信脉冲功能配置">
+      <request format="sequence">
+          <field name="遥信脉冲功能配置" type="bit-string" description="bit0表示第1路, 0:遥信, 1:脉冲"/>
+      </request>
+      <response format="sequence">
+          <field name="遥信脉冲功能配置" type="bit-string" description="bit0表示第1路, 0:遥信, 1:脉冲"/>
+      </response>
+    </interface>
+
+    <!-- 0x4101 遥信防抖时间 (DTA2=1, DTB=01) -->
+    <interface dt="0x101" name="遥信防抖时间">
+      <request format="sequence">
+          <field name="遥信防抖时间" type="long-unsigned" description="单位: ms"/>
+      </request>
+      <response format="sequence">
+          <field name="遥信防抖时间" type="long-unsigned" description="单位: ms"/>
+      </response>
+    </interface>
+
+  </interface_group>
+</module_msg_protocol>

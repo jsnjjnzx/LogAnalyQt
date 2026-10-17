@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    HPLC技术应用手册V2.7 - Q/GDW 376.2协议扩展配置文件
+    本文件基于Q/GDW 1376.2-2012标准，包含V2.7版本所有新增协议内容
+    涵盖新增功能：相位拓扑识别、台区自动识别、ID统一标识管理、档案自动同步、通信性能监测等
+
+    AFN: 应用功能码 (Application Function Number)
+    Fn:  数据单元标识 (Function Number)，使用位组合方式表示
+         - F1-F8对应DT1的D0-D7位
+         - F9-F16对应DT2的D0-D7位
+
+    type属性说明:
+    - Blob: 二进制数据块，不进行结构化解析
+    - Struct: 结构化数据，可进一步定义字段
+    - None: 无数据单元
+    direction属性: 可选，表示报文方向（down:下行, up:上行）
+-->
+<Prot3762Config version="v1.0.0" date="2026-02-11">
+    <!-- AFN=00H 确认/否认 -->
+    <AFN code="00" name="确认/否认">
+        <Fn code="F1" name="确认" type="Struct">
+            <Field name="信道状态" type="BS" length="2" description="16位位组合，表示1-15信道状态和命令状态；D0-D7:命令状态(0:未处理,1:已处理)和1-7信道状态(0:忙,1:闲)；D8-D15:8-15信道状态(0:忙,1:闲)"/>
+            <Field name="等待时间" type="BIN" length="2" description="单位秒"/>
+        </Fn>
+        <Fn code="F2" name="否认" type="Struct">
+            <Field name="错误状态字" type="BIN" length="1" description="0:通信超时,1:无效数据单元,2:长度错,3:校验错误,4:信息类不存在,5:格式错误,6:表号重复,7:表号不存在,8:电表应用层无应答,9:主节点忙,10:主节点不支持此命令,11:从节点不应答,12:从节点不在网内,13-255:备用"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=01H 初始化 -->
+    <AFN code="01" name="初始化">
+        <Fn code="F1" name="硬件初始化" type="None"/>
+        <Fn code="F2" name="参数区初始化" type="None"/>
+        <Fn code="F3" name="数据区初始化" type="None"/>
+    </AFN>
+    <!-- AFN=02H 数据转发 -->
+    <AFN code="02" name="数据转发">
+        <Fn code="F1" name="转发通信协议数据帧" direction="down" type="Struct">
+            <Field id="protocolType" name="通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H:DL/T698.45;04H-FFH:保留"/>
+            <Field name="报文长度L" type="BIN" length="1" description="通信协议的原始报文数据总长度"/>
+            <Field name="报文内容" type="Blob" length="-1" nestedProtocolRef="protocolType" description="通信协议的原始报文数据"/>
+        </Fn>
+        <Fn code="F1" name="转发通信协议数据帧" direction="up" type="Struct">
+            <Field id="protocolType" name="通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H:DL/T698.45;04H-FFH:预留协议"/>
+            <Field name="报文长度L" type="BIN" length="1" description="通信协议的原始报文数据总长度"/>
+            <Field name="报文内容" type="Blob" length="-1" nestedProtocolRef="protocolType" description="通信协议的原始报文数据"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=03H 查询数据 - V2.7新增ID管理功能 -->
+    <AFN code="03" name="查询数据">
+        <Fn code="F1" name="厂商代码和版本信息" type="None"/>
+        <Fn code="F2" name="噪声值" type="None"/>
+        <Fn code="F3" name="从节点侦听信息" type="Struct">
+            <Field name="开始节点指针" type="BIN" length="1" description="指节点侦听列表中的指针位置，0为第一个指针"/>
+            <Field name="读取节点的数量" type="BIN" length="1" description="读取节点的数量N≤16"/>
+        </Fn>
+        <Fn code="F4" name="主节点地址" type="None"/>
+        <Fn code="F5" name="主节点状态字和通信速率" type="None"/>
+        <Fn code="F6" name="主节点干扰状态" type="Struct">
+            <Field name="持续时间" type="BIN" length="1" description="指等待查询执行的时间，单位min"/>
+        </Fn>
+        <Fn code="F7" name="读取从节点监控最大超时时间" type="None"/>
+        <Fn code="F8" name="查询无线通信参数" type="None"/>
+        <Fn code="F9" name="通信延时相关的广播时长查询" type="Struct">
+            <Field id="protocolType" name="通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007"/>
+            <Field name="报文长度L" type="BIN" length="1" description="需要计算通信下行延时的报文长度"/>
+            <Field name="报文内容" type="Blob" length="-1" nestedProtocolRef="protocolType" description="需要计算通信下行延时的具体报文内容"/>
+        </Fn>
+        <Fn code="F10" name="本地通信模块运行模式信息" type="None"/>
+        <Fn code="F11" name="本地通信模块AFN索引" type="Struct">
+            <Field name="AFN功能码" type="BIN" length="1" description="要查询的AFN功能码"/>
+        </Fn>
+        <!-- F12: 查询本地主节点通信模块ID信息 (V2.7新增) -->
+        <Fn code="F12" name="查询本地主节点通信模块ID信息" direction="down" type="None"/>
+        <Fn code="F12" name="查询本地主节点通信模块ID信息" direction="up" type="Struct">
+            <Field name="模块厂商代码" type="ASCII" length="2" description="2字节ASCII码，如LH"/>
+            <Field name="模块ID长度" type="BIN" length="1" description="模块ID号长度，最长50字节"/>
+            <Field name="模块ID格式" type="BIN" length="1" description="00H:组合格式;01H:BCD;02H:BIN;03H:ASCII"/>
+            <Field name="模块ID" type="Blob" length="-1" description="对应模块ID格式的具体内容"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=04H 链路接口检测 -->
+    <AFN code="04" name="链路接口检测">
+        <Fn code="F1" name="发送测试" type="Struct">
+            <Field name="持续时间" type="BIN" length="1" description="单位为s，0表示停止发送"/>
+        </Fn>
+        <Fn code="F2" name="从节点点名" type="None"/>
+        <Fn code="F3" name="本地通信模块报文通信测试" type="Struct">
+            <Field name="测试通信速率" type="BIN" length="1" description="需要进行通信测试信道通信速率"/>
+            <Field name="目标地址" type="BCD" length="6" description="指定测试节点的通信地址"/>
+            <Field id="protocolType" name="通信协议类型" type="BIN" length="1" description="待测试的通信报文协议类型"/>
+            <Field name="报文长度L" type="BIN" length="1" description="待测试的报文长度"/>
+            <Field name="报文内容" type="Blob" length="-1" nestedProtocolRef="protocolType" description="待测试的报文具体内容"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=05H 控制命令 - V2.7新增台区识别控制 -->
+    <AFN code="05" name="控制命令">
+        <Fn code="F1" name="设置主节点地址" type="Struct">
+            <Field name="主节点地址" type="BCD" length="6" description="主节点MAC地址"/>
+        </Fn>
+        <Fn code="F2" name="允许/禁止从节点上报" type="Struct">
+            <Field name="事件上报状态标志" type="BIN" length="1" description="0:禁止;1:允许"/>
+        </Fn>
+        <Fn code="F3" name="启动广播" type="Struct">
+            <Field id="protocolType" name="控制字" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H:相位识别功能;04H-FFH:保留"/>
+            <Field name="报文长度L" type="BIN" length="1" description="通信协议的原始报文数据总长度"/>
+            <Field name="报文内容" type="Blob" length="-1" nestedProtocolRef="protocolType" description="通信协议的原始报文数据"/>
+        </Fn>
+        <Fn code="F4" name="设置从节点监控最大超时时间" type="Struct">
+            <Field name="最大超时时间" type="BIN" length="1" description="单位秒"/>
+        </Fn>
+        <Fn code="F5" name="设置无线通信参数" type="Struct">
+            <Field name="无线信道组" type="BIN" length="1" description="0~63;64~253:保留;254:自动选择;255:保持不变"/>
+            <Field name="无线主节点发射功率" type="BIN" length="1" description="00:最高发射功率;01:次高发射功率;02:次低发射功率;03:最低发射功率;04~254:保留;255:保持不变"/>
+        </Fn>
+        <!-- F6: 允许/禁止台区识别 (V2.7新增) -->
+        <Fn code="F6" name="允许/禁止台区识别" type="Struct">
+            <Field name="台区识别使能标志" type="BIN" length="1" description="0:禁止;1:允许"/>
+        </Fn>
+        <!-- F200: 允许/禁止拒绝节点信息上报 (V2.7新增) -->
+        <Fn code="F200" name="允许/禁止拒绝节点信息上报" type="Struct">
+            <Field name="拒绝节点上报使能标志" type="BIN" length="1" description="0:禁止;1:允许(默认为0)"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=06H 主动上报 - V2.7新增事件上报类型 -->
+    <AFN code="06" name="主动上报">
+        <Fn code="F1" name="上报从节点信息" type="Struct">
+            <Field name="上报从节点的数量n" type="BIN" length="1" description="本次上报的从节点数量"/>
+            <Field name="从节点地址" type="BCD" length="6" description="从节点MAC地址"/>
+            <Field name="从节点通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H-FFH:保留"/>
+            <Field name="从节点序号" type="BIN" length="2" description="从节点在路由表中的序号"/>
+        </Fn>
+        <Fn code="F2" name="上报抄读数据" type="Struct">
+            <Field name="从节点序号" type="BIN" length="2" description="从节点在路由表中的序号"/>
+            <Field name="通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H-FFH:保留"/>
+            <Field name="当前报文本地通信上行时长" type="BIN" length="2" description="单位秒"/>
+            <Field name="报文长度L" type="BIN" length="1" description="通信协议的原始报文数据总长度"/>
+            <Field name="报文内容" type="Blob" length="-1" description="通信协议的原始报文数据"/>
+        </Fn>
+        <Fn code="F3" name="上报路由工况变动信息" type="Struct">
+            <Field name="路由工作任务变动类型" type="BIN" length="1" description="1:抄表任务结束;2:搜表任务结束;其他:保留"/>
+        </Fn>
+        <Fn code="F4" name="上报从节点信息及设备类型" type="Struct">
+            <Field name="上报从节点的数量n" type="BIN" length="1" description="本次上报的从节点数量"/>
+            <Field name="从节点通信地址" type="BCD" length="6" description="从节点MAC地址"/>
+            <Field name="从节点通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H-FFH:保留"/>
+            <Field name="从节点序号" type="BIN" length="2" description="从节点在路由表中的序号"/>
+            <Field name="从节点设备类型" type="BIN" length="1" description="00H:采集器;01H:电能表;02H-FFH:保留"/>
+            <Field name="从节点下接从节点数量M" type="BIN" length="1" description="采集器下接485表总数量"/>
+            <Field name="本报文传输的节点数量m" type="BIN" length="1" description="本次上报的下接从节点数量"/>
+            <Field name="下接从节点通信地址" type="BCD" length="6" description="采集器下的485电表通信地址"/>
+            <Field name="下接从节点通信协议类型" type="BIN" length="1" description="同从节点通信协议类型"/>
+        </Fn>
+        <!-- F5: 上报从节点事件 (V2.7新增) -->
+        <Fn code="F5" name="上报从节点事件" type="Struct">
+            <Field name="从节点设备类型" type="BIN" length="1" description="00H:采集器;01H:电能表;02H:高速载波通信单元;03H:窄带载波通信单元;04H:微功率无线通信单元;05H:双模通信单元"/>
+            <Field name="通信协议类型" type="BIN" length="1" description="00H:保留;01H:DL/T645-1997;02H:DL/T645-2007;03H:DL/T698.45;04H:从节点停复电事件;05H:拒绝节点信息上报"/>
+            <Field name="报文长度L" type="BIN" length="1" description="通信协议的状态字原始报文数据总长度"/>
+            <Field name="报文内容" type="Blob" length="-1" description="通信协议的状态字原始报文数据"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=07H-0FH 备用 -->
+    <AFN code="07" name="备用"/>
+    <AFN code="08" name="备用"/>
+    <AFN code="09" name="备用"/>
+    <AFN code="0A" name="备用"/>
+    <AFN code="0B" name="备用"/>
+    <AFN code="0C" name="备用"/>
+    <AFN code="0D" name="备用"/>
+    <AFN code="0E" name="备用"/>
+    <AFN code="0F" name="备用"/>
+    <!-- AFN=10H 路由查询 - V2.7新增网络信息查询功能 -->
+    <AFN code="10" name="路由查询">
+        <Fn code="F1" name="从节点数量" type="None"/>
+        <Fn code="F2" name="从节点信息" type="Struct">
+            <Field name="从节点起始序号" type="BIN" length="2" description="起始序号"/>
+            <Field name="从节点数量" type="BIN" length="1" description="查询的从节点数量"/>
+        </Fn>
+        <Fn code="F3" name="指定从节点的上一级中继路由信息" type="Struct">
+            <Field name="从节点地址" type="BCD" length="6" description="指定从节点的MAC地址"/>
+        </Fn>
+        <Fn code="F4" name="路由运行状态" type="None"/>
+        <Fn code="F5" name="未抄读成功的从节点信息" type="Struct">
+            <Field name="从节点起始序号" type="BIN" length="2" description="起始序号"/>
+            <Field name="从节点数量" type="BIN" length="1" description="查询的从节点数量"/>
+        </Fn>
+        <Fn code="F6" name="主动注册的从节点信息" type="Struct">
+            <Field name="从节点起始序号" type="BIN" length="2" description="起始序号"/>
+            <Field name="从节点数量" type="BIN" length="1" description="查询的从节点数量"/>
+        </Fn>
+        <!-- F7: 查询从节点ID号信息 (V2.7新增) -->
+        <Fn code="F7" name="查询从节点ID号信息" type="Struct">
+            <Field name="从节点起始序号" type="BIN" length="2" description="起始序号"/>
+            <Field name="从节点数量" type="BIN" length="1" description="查询的从节点数量"/>
+        </Fn>
+        <!-- F9: 查询网络规模 (V2.7新增) -->
+        <Fn code="F9" name="查询网络规模" type="Struct">
+            <Field name="网络规模" type="BIN" length="2" description="单位：节点数量"/>
+        </Fn>
+        <!-- F31: 查询相线信息 (V2.7新增) -->
+        <Fn code="F31" name="查询相线信息" direction="down" type="Struct">
+            <Field name="节点起始序号" type="BIN" length="2" description="起始序号"/>
+            <Field name="节点数量n" type="BIN" length="1" description="查询的节点数量"/>
+        </Fn>
+        <Fn code="F31" name="查询相线信息" direction="up" type="Struct">
+            <Field name="节点总数量" type="BIN" length="2" description="总节点数量"/>
+            <Field name="节点起始序号" type="BIN" length="2" description="本次应答起始序号"/>
+            <Field name="本次应答的节点数量n" type="BIN" length="1" description="本次应答节点数量"/>
+            <Field name="节点地址" type="BIN" length="6" description="节点MAC地址"/>
+            <Field name="节点相位信息" type="BS" length="2" description="相位信息位组合格式"/>
+        </Fn>
+        <!-- F111: 查询多网络信息 (V2.7新增) -->
+        <Fn code="F111" name="查询多网络信息" type="Struct">
+            <Field name="多网络节点总数量n" type="BIN" length="1" description="邻居网络数量"/>
+            <Field name="本节点网络标识号" type="BIN" length="3" description="3字节网络标识号(NID)"/>
+            <Field name="本节点主节点地址" type="BIN" length="6" description="主节点地址"/>
+            <Field name="邻居节点网络标识号" type="BIN" length="3" description="邻居网络标识号，可重复"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=11H 路由设置 - V2.7新增主动注册控制 -->
+    <AFN code="11" name="路由设置">
+        <Fn code="F1" name="添加从节点" type="Struct">
+            <Field name="从节点的数量n" type="BIN" length="1" description="要添加的从节点数量"/>
+            <Field name="从节点地址" type="BCD" length="6" description="从节点MAC地址"/>
+            <Field name="从节点通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H-FFH:保留"/>
+        </Fn>
+        <Fn code="F2" name="删除从节点" type="Struct">
+            <Field name="从节点的数量n" type="BIN" length="1" description="要删除的从节点数量"/>
+            <Field name="从节点地址" type="BCD" length="6" description="从节点MAC地址"/>
+        </Fn>
+        <Fn code="F3" name="设置从节点固定中继路径" type="Struct">
+            <Field name="从节点地址" type="BCD" length="6" description="目标从节点MAC地址"/>
+            <Field name="中继级别n" type="BIN" length="1" description="中继级别"/>
+            <Field name="中继从节点地址" type="BCD" length="6" description="中继节点MAC地址"/>
+        </Fn>
+        <Fn code="F4" name="设置工作模式" type="Struct">
+            <Field name="工作模式" type="BS" length="1" description="位组合，包括纠错编码、注册允许状态、工作状态等"/>
+            <Field name="通信速率" type="BS" length="2" description="包含速率单位标识和通信速率值"/>
+        </Fn>
+        <!-- F5: 激活从节点主动注册 (V2.7更新) -->
+        <Fn code="F5" name="激活从节点主动注册" type="Struct">
+            <Field name="开始时间" type="BCD" length="6" description="格式为秒分时日月年"/>
+            <Field name="持续时间" type="BIN" length="2" description="单位：分钟"/>
+            <Field name="从节点重发次数" type="BIN" length="1" description="重发次数"/>
+            <Field name="随机等待时间片个数" type="BIN" length="1" description="时间片指150ms"/>
+        </Fn>
+        <Fn code="F6" name="终止从节点主动注册" type="None"/>
+    </AFN>
+    <!-- AFN=12H 路由控制 -->
+    <AFN code="12" name="路由控制">
+        <Fn code="F1" name="重启" type="None"/>
+        <Fn code="F2" name="暂停" type="None"/>
+        <Fn code="F3" name="恢复" type="None"/>
+    </AFN>
+    <!-- AFN=13H 路由数据转发 - V2.7新增相位识别功能 -->
+    <AFN code="13" name="路由数据转发">
+        <Fn code="F1" name="监控从节点" direction="down" type="Struct">
+            <Field id="protocolType" name="通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H:DL/T698.45;04H-FFH:保留"/>
+            <Field name="通信延时相关性标志" type="BIN" length="1" description="00H:无关;01H:相关;其他保留"/>
+            <Field id="nodeCount" name="从节点附属节点数量n" type="BIN" length="1" description="附属节点数量，为0时无后续地址"/>
+            <Field name="从节点附属节点地址" type="BCD" length="6" countRef="nodeCount" description="附属节点MAC地址，数量由n决定"/>
+            <Field name="报文长度L" type="BIN" length="1" description="通信协议的原始报文数据总长度"/>
+            <Field name="报文内容" type="Blob" length="-1" nestedProtocolRef="protocolType" description="通信协议的原始报文数据"/>
+        </Fn>
+        <Fn code="F1" name="监控从节点" direction="up" type="Struct">
+            <Field name="当前报文本地通信上行时长" type="BIN" length="2" description="单位秒"/>
+            <Field id="protocolType" name="通信协议类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H:DL/T698.45;04H-FFH:保留"/>
+            <Field name="报文长度L" type="BIN" length="1" description="通信协议的原始报文数据总长度"/>
+            <Field name="报文内容" type="Blob" length="-1" nestedProtocolRef="protocolType" description="通信协议的原始报文数据"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=14H 路由数据抄读 - V2.7新增相位识别结果查询 -->
+    <AFN code="14" name="路由数据抄读">
+        <!-- F1: 路由请求抄读内容 - 相位识别相关 (V2.7更新) -->
+        <Fn code="F1" name="路由请求抄读内容" direction="up" type="Struct">
+            <Field name="通信相位" type="BIN" length="1" description="0:未知相;1-3:第1-3相"/>
+            <Field name="从节点地址" type="BCD" length="6" description="从节点MAC地址"/>
+            <Field name="从节点序号" type="BIN" length="2" description="从节点序号"/>
+        </Fn>
+        <Fn code="F1" name="路由请求抄读内容" direction="down" type="Struct">
+            <Field name="抄读标志" type="BIN" length="1" description="00H:抄读失败;01H:抄读成功;02H:可以抄读"/>
+            <Field name="通信延时相关性标志" type="BIN" length="1" description="01H:相关;00H:无关;02H-FFH:保留"/>
+            <Field name="数据长度L" type="BIN" length="1" description="数据标识的长度"/>
+            <Field name="数据内容" type="Blob" length="-1" description="DL/T 645通信协议的数据"/>
+            <Field name="从节点附属节点数量n" type="BIN" length="1" description="附属节点数量"/>
+            <Field name="从节点附属节点地址" type="BCD" length="6" description="附属节点MAC地址"/>
+        </Fn>
+        <Fn code="F2" name="路由请求集中器时钟" direction="up" type="None"/>
+        <Fn code="F2" name="路由请求集中器时钟" direction="down" type="Struct">
+            <Field name="当前时间" type="BCD" length="6" description="格式为秒分时日月年"/>
+        </Fn>
+        <Fn code="F3" name="请求依通信延时修正通信数据" direction="up" type="Struct">
+            <Field name="从节点地址" type="BCD" length="6" description="待通信的目的节点"/>
+            <Field name="预计延迟时间" type="BIN" length="2" description="单位秒"/>
+            <Field name="抄读信息长度L" type="BIN" length="1" description="抄读数据长度"/>
+            <Field name="抄读数据内容" type="Blob" length="-1" description="抄读数据内容"/>
+        </Fn>
+        <Fn code="F3" name="请求依通信延时修正通信数据" direction="down" type="Struct">
+            <Field name="数据长度L" type="BIN" length="1" description="数据长度"/>
+            <Field name="数据内容" type="Blob" length="-1" description="修订后的DL/T645通信协议数据"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=15H 文件传输 - V2.7新增升级相关功能 -->
+    <AFN code="15" name="文件传输">
+        <!-- F1: 文件传输方式1 - 升级文件传输 (V2.7更新) -->
+        <Fn code="F1" name="文件传输方式1" type="Struct">
+            <Field name="文件标识" type="BIN" length="1" description="00H:清除下装文件;03H:本地通信模块升级文件;其他:保留"/>
+            <Field name="文件属性" type="BIN" length="1" description="00H:起始/中间帧;01H:结束帧"/>
+            <Field name="文件指令" type="BIN" length="1" description="00H:报文方式下装;01H-FFH:备用"/>
+            <Field name="总段数n" type="BIN" length="2" description="文件总段数"/>
+            <Field name="第i段标识" type="BIN" length="2" description="i=0~n，段标识或偏移"/>
+            <Field name="第i段数据长度Lf" type="BIN" length="2" description="段数据长度"/>
+            <Field name="文件数据" type="Blob" length="-1" description="报文方式下装时的文件内容"/>
+        </Fn>
+    </AFN>
+    <!-- AFN=16H-EFH 备用 -->
+    <AFN code="16" name="备用"/>
+    <!-- 此处可扩展其他备用AFN -->
+    <!-- AFN=F0H 内部调试 -->
+    <AFN code="F0" name="内部调试">
+        <Fn code="F1" name="厂家自定义" type="Blob" description="具体内容由厂家自定义，用于测试和调试"/>
+    </AFN>
+    <!-- AFN=F1H-FFH 备用 -->
+    <AFN code="F1" name="并发抄表命令">
+        <!-- FN=F1H 并发抄表下行命令 -->
+        <Fn code="F1" name="并发抄表下行" direction="down" type="Struct">
+            <Field id="protocolType" name="规约类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H:DL/T698.45;04H~FFH:保留"/>
+            <Field name="保留" type="BIN" length="1" description="保留字段，填00H"/>
+            <Field name="报文长度(L)" type="BIN" length="2" description="规约的原始报文数据总长度(L1+L2+···+LN)"/>
+            <Field name="报文内容(DATA)" type="Blob" length="-1" nestedProtocolRef="protocolType" description="规约的原始报文数据，允许包含多条电表协议帧"/>
+        </Fn>
+        <!-- FN=F1H 并发抄表上行响应 -->
+        <Fn code="F1" name="并发抄表上行" direction="up" type="Struct">
+            <Field id="protocolType" name="规约类型" type="BIN" length="1" description="00H:透明传输;01H:DL/T645-1997;02H:DL/T645-2007;03H:DL/T698.45;04H~FFH:保留"/>
+            <Field name="报文长度(L)" type="BIN" length="2" description="规约的原始报文数据总长度。当电表抄表失败时，报文长度域为0"/>
+            <Field name="报文内容" type="Blob" length="-1" nestedProtocolRef="protocolType" description="成功的读表帧内容，失败时返回空报文"/>
+        </Fn>
+    </AFN>
+    <!-- 此处可扩展其他备用AFN -->
+</Prot3762Config>

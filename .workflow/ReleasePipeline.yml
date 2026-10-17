@@ -1,0 +1,48 @@
+version: '1.0'
+name: loganalyqt-release
+displayName: LogAnalyQt 双平台正式发布
+triggers:
+  trigger: auto
+  push:
+    tags:
+      include:
+        - '^v[0-9]+\.[0-9]+\.[0-9]+$'
+stages:
+  - name: release
+    displayName: 构建并发布 Gitee Release
+    strategy: naturally
+    trigger: auto
+    steps:
+      - step: shell@agent
+        name: release_windows
+        displayName: Windows 构建并创建预发布
+        hostGroupID: loganalyqt-windows
+        script: |
+          $ErrorActionPreference = "Stop"
+          $RunRoot = Join-Path $env:TEMP "loganalyqt-release-$env:GITEE_PIPELINE_BUILD_NUMBER"
+          if (Test-Path $RunRoot) { Remove-Item -Recurse -Force $RunRoot }
+          git clone --no-checkout https://gitee.com/jsnjjnzx/LogAnalyQt.git $RunRoot
+          git -C $RunRoot checkout --detach $env:GITEE_COMMIT
+          $ReleaseTag = git -C $RunRoot tag --points-at $env:GITEE_COMMIT |
+              Where-Object { $_ -match '^v[0-9]+\.[0-9]+\.[0-9]+$' } |
+              Select-Object -First 1
+          if ([string]::IsNullOrWhiteSpace($ReleaseTag)) { throw "当前提交缺少 vX.Y.Z 标签" }
+          Set-Location $RunRoot
+          & .\scripts\ci\run_windows_ci.ps1 -ReleaseTag $ReleaseTag
+      - step: shell@agent
+        name: release_macos
+        displayName: macOS 构建并完成正式发布
+        hostGroupID: loganalyqt-macos
+        script: |
+          set -euo pipefail
+          RUN_ROOT="${TMPDIR:-/tmp}/loganalyqt-release-${GITEE_PIPELINE_BUILD_NUMBER}"
+          rm -rf "$RUN_ROOT"
+          git clone --no-checkout https://gitee.com/jsnjjnzx/LogAnalyQt.git "$RUN_ROOT"
+          git -C "$RUN_ROOT" checkout --detach "$GITEE_COMMIT"
+          RELEASE_TAG=$(git -C "$RUN_ROOT" tag --points-at "$GITEE_COMMIT" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          if [[ -z "$RELEASE_TAG" ]]; then
+            print -u2 "当前提交缺少 vX.Y.Z 标签"
+            exit 1
+          fi
+          cd "$RUN_ROOT"
+          scripts/ci/run_macos_ci.sh --release "$RELEASE_TAG"

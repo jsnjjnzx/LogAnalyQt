@@ -1,0 +1,131 @@
+# This file is used to ignore files which are generated
+# ----------------------------------------------------------------------------
+
+*~
+*.autosave
+*.a
+*.core
+*.moc
+*.o
+*.obj
+*.orig
+*.rej
+*.so
+*.so.*
+*_pch.h.cpp
+*_resource.rc
+*.qm
+.#*
+*.*#
+core
+!core/
+tags
+.DS_Store
+.directory
+*.debug
+Makefile*
+*.prl
+*.app
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+Thumbs.db
+*.res
+*.rc
+!assets/logo.rc
+/.qmake.cache
+/.qmake.stash
+
+# qtcreator generated files
+*.pro.user*
+*.qbs.user*
+CMakeLists.txt.user*
+
+# xemacs temporary files
+*.flc
+
+# Vim temporary files
+.*.swp
+
+# Visual Studio generated files
+*.ib_pdb_index
+*.idb
+*.ilk
+*.pdb
+*.sln
+*.suo
+*.vcproj
+*vcproj.*.*.user
+*.ncb
+*.sdf
+*.opensdf
+*.vcxproj
+*vcxproj.*
+
+# MinGW generated files
+*.Debug
+*.Release
+
+# Python byte code
+*.pyc
+
+# Binaries
+# --------
+*.dll
+
+# Directories with generated files
+.moc/
+.obj/
+.pch/
+.rcc/
+.uic/
+/build*/
+.vscode/
+MultiProtocolParser.zip
+install/
+doc/
+test_build/
+test/
+.cache/
+.agent/
+release_package/log/
+release_package/preset/
+release_package/protocol_xml/
+release_package/LogAnalyQt_v1.6.0.exe
+release_package/
+.superdesign
+25 中国南方电网有限责任公司计量自动化终端技术规范 第5部分：上行通信规约（2026版V1.0）.md
+csg-upstream-appendix-i-envelope-design.md
+Terminal3.log
+
+# Local build products, runtime data, and credentials
+/output/
+/.local-backup/
+/ui-preview/build/
+/ui-preview/evidence/
+/.agents/
+/.codex/
+/.agent/
+/.superdesign/
+/.clangd
+*.log
+/app_crash.txt
+/LogAnalyQt.ini
+/LogAnalyQt.ini.*
+/log/
+/preset/
+/.env
+/.env.*
+!.env.example
+*.p12
+*.pfx
+*.keychain-db
+__pycache__/
+
+# Upstream libssh2 test credentials are not needed by this application build
+/third_party/libssh2/tests/
+# Generated local QA evidence (keep the written acceptance records)
+/validation/**/*.png
+/validation/**/*.jpg
+/validation/**/*.jpeg
+/validation/**/*.txt

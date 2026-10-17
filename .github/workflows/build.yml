@@ -1,0 +1,115 @@
+name: Build Windows and macOS
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      QT_STATIC_DIR: D:/qt-static/6.5.3
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check version and release tooling
+        run: |
+          python scripts/ci/check_build.py
+          if ($LASTEXITCODE -ne 0) { throw 'Version validation failed' }
+          python -m unittest tests.test_release_automation tests.test_ci_packages -v
+          if ($LASTEXITCODE -ne 0) { throw 'Release tooling tests failed' }
+      - name: Install Qt test tools and MinGW
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.5.3'
+          arch: win64_mingw
+          tools: 'tools_mingw,qt.tools.win64_mingw1120'
+          cache: 'true'
+      - name: Locate MinGW
+        shell: pwsh
+        run: |
+          $Mingw = Get-ChildItem "$env:IQTA_TOOLS" -Directory -Filter 'mingw1120*' | Select-Object -First 1
+          if (-not $Mingw) { throw 'MinGW 11.2 not installed' }
+          "MINGW_DIR=$($Mingw.FullName)" >> $env:GITHUB_ENV
+      - name: Restore static Qt
+        id: qt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.QT_STATIC_DIR }}
+          key: windows-2022-qt-6.5.3-mingw1120-static-${{ hashFiles('scripts/ci/build_static_qt.ps1') }}
+      - name: Build static Qt on cache miss
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: ./scripts/ci/build_static_qt.ps1 -InstallDir $env:QT_STATIC_DIR -MingwDir $env:MINGW_DIR
+      - name: Save static Qt before building the application
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.QT_STATIC_DIR }}
+          key: ${{ steps.qt-cache.outputs.cache-primary-key }}
+      - name: Build, test and package
+        shell: pwsh
+        run: |
+          ./scripts/package_single.ps1 -BuildTests
+          if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+          python scripts/ci/check_build.py --packages release_package --platform windows
+          if ($LASTEXITCODE -ne 0) { throw 'Windows package validation failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LogAnalyQt-Windows-x64
+          path: |
+            release_package/*_Windows_x64.exe
+            release_package/*_Windows_x64.exe.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check version and release tooling
+        run: |
+          python3 scripts/ci/check_build.py
+          python3 -m unittest tests.test_release_automation tests.test_ci_packages -v
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.5.3'
+          arch: clang_64
+          cache: 'true'
+      - name: Build, test and package
+        run: |
+          test "$(uname -m)" = arm64
+          RUN_TESTS=1 scripts/package_macos.sh
+          python3 scripts/ci/check_build.py --packages release_package --platform macos
+          hdiutil verify release_package/*.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LogAnalyQt-macOS-arm64
+          path: |
+            release_package/*_macOS_arm64.dmg
+            release_package/*_macOS_arm64.dmg.sha256
+            release_package/*_macOS_arm64_update.zip
+            release_package/*_macOS_arm64_update.zip.sha256
+          if-no-files-found: error
+          retention-days: 7

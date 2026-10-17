@@ -1,0 +1,1386 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DL/T 645-2007 多功能电能表通信规约 数据标识编码表
+
+    Structure:
+    <DI code="HexCode" name="Description" len="DataLength" format="Format" unit="Unit" rw="Read/Write"/>
+
+    Format Legend:
+    - X: 整数位 (Decimal digit)
+    - N: 小数位 (Decimal digit with implied point position)
+    - .: 实际小数点 (Decimal point)
+    - YY: 年 (Year)
+    - MM: 月 (Month)
+    - DD: 日 (Day)
+    - WW: 星期 (Week)
+    - hh: 时 (Hour)
+    - mm: 分 (Minute)
+    - ss: 秒 (Second)
+    - Hex: 十六进制字符串
+-->
+<Prot645Config version="v1.0.3" date="2026-02-11">
+    <!-- ========================================== -->
+    <!-- 00xx 电能数据标识 (Energy Data) -->
+    <!-- ========================================== -->
+    <DI_Group code="00" name="电能数据">
+        <!-- 组合有功 (0000) -->
+        <DI code="00000000" name="(当前)组合有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="00000100" name="(当前)组合有功费率1电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="00000200" name="(当前)组合有功费率2电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="00000300" name="(当前)组合有功费率3电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="00000400" name="(当前)组合有功费率4电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="0000FF00" name="(当前)组合有功电能数据块" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <!-- 正向有功 (0001) -->
+        <DI code="00010000" name="(当前)正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00010100" name="(当前)正向有功费率1电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00010200" name="(当前)正向有功费率2电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00010300" name="(当前)正向有功费率3电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00010400" name="(当前)正向有功费率4电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="0001FF00" name="(当前)正向有功电能数据块" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <!-- 反向有功 (0002) -->
+        <DI code="00020000" name="(当前)反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00020100" name="(当前)反向有功费率1电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00020200" name="(当前)反向有功费率2电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00020300" name="(当前)反向有功费率3电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00020400" name="(当前)反向有功费率4电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="0002FF00" name="(当前)反向有功电能数据块" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <!-- 组合无功1 (0003) -->
+        <DI code="00030000" name="(当前)组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="00030100" name="(当前)组合无功1费率1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="0003FF00" name="(当前)组合无功1电能数据块" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <!-- 组合无功2 (0004) -->
+        <DI code="00040000" name="(当前)组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="00040100" name="(当前)组合无功2费率1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="0004FF00" name="(当前)组合无功2电能数据块" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <!-- 第一象限无功 (0005) -->
+        <DI code="00050000" name="(当前)第一象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00050100" name="(当前)第一象限无功费率1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="0005FF00" name="(当前)第一象限无功电能数据块" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <!-- 第二象限无功 (0006) -->
+        <DI code="00060000" name="(当前)第二象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00060100" name="(当前)第二象限无功费率1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="0006FF00" name="(当前)第二象限无功电能数据块" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <!-- 第三象限无功 (0007) -->
+        <DI code="00070000" name="(当前)第三象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00070100" name="(当前)第三象限无功费率1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="0007FF00" name="(当前)第三象限无功电能数据块" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <!-- 第四象限无功 (0008) -->
+        <DI code="00080000" name="(当前)第四象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00080100" name="(当前)第四象限无功费率1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="0008FF00" name="(当前)第四象限无功电能数据块" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <!-- 正向视在 (0009) -->
+        <DI code="00090000" name="(当前)正向视在总电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="00090100" name="(当前)正向视在费率1电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="0009FF00" name="(当前)正向视在电能数据块" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <!-- 反向视在 (000A) -->
+        <DI code="000A0000" name="(当前)反向视在总电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="000A0100" name="(当前)反向视在费率1电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="000AFF00" name="(当前)反向视在电能数据块" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <!-- 结算周期数据 (000B) -->
+        <DI code="000B0000" name="当前结算周期组合有功总累计用电量" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="000B0001" name="上1结算周期组合有功总累计用电量" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <!-- 月度数据 (000C) -->
+        <DI code="000C0000" name="当前月度组合有功总累计用电量" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="000C0001" name="上1月度组合有功总累计用电量" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <!-- 年结算周期数据 (000D) -->
+        <DI code="000D0000" name="当前日期时间当前年结算周期组合有功总累计用电量" len="8" format="YYMMDDhhXXXXXX.XX" unit="年月日时,kWh" rw="R" sign="true"/>
+        <DI code="000D0001" name="上1次年结算日结算时间上1年结算周期组合有功总累计用电量" len="8" format="YYMMDDhhXXXXXX.XX" unit="年月日时,kWh" rw="R" sign="true"/>
+        <!-- 精确电能数据 (0060-0061) -->
+        <DI code="00600000" name="(当前)正向有功总精确电能" len="5" format="XXXXXX.XXXX" unit="kWh" rw="R"/>
+        <DI code="00610000" name="(当前)反向有功总精确电能" len="5" format="XXXXXX.XXXX" unit="kWh" rw="R"/>
+        <!-- 关联总电能等 (0080-0086) -->
+        <DI code="00800000" name="(当前)关联总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00810000" name="(当前)正向有功基波总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00820000" name="(当前)反向有功基波总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00830000" name="(当前)正向有功谐波总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00840000" name="(当前)反向有功谐波总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00850000" name="(当前)铜损有功总电能补偿量" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00860000" name="(当前)铁损有功总电能补偿量" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <!-- A相电能数据 (0015-001E, 0094-009A) -->
+        <DI code="00150000" name="(当前)A相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00160000" name="(当前)A相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00170000" name="(当前)A相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="00180000" name="(当前)A相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="00190000" name="(当前)A相第一象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="001A0000" name="(当前)A相第二象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="001B0000" name="(当前)A相第三象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="001C0000" name="(当前)A相第四象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="001D0000" name="(当前)A相正向视在电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="001E0000" name="(当前)A相反向视在电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="00940000" name="(当前)A相关联电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00950000" name="(当前)A相正向有功基波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00960000" name="(当前)A相反向有功基波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00970000" name="(当前)A相正向有功谐波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00980000" name="(当前)A相反向有功谐波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00990000" name="(当前)A相铜损有功电能补偿量" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="009A0000" name="(当前)A相铁损有功电能补偿量" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <!-- B相电能数据 (0029-0032, 00A8-00AE) -->
+        <DI code="00290000" name="(当前)B相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="002A0000" name="(当前)B相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="002B0000" name="(当前)B相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="002C0000" name="(当前)B相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="002D0000" name="(当前)B相第一象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="002E0000" name="(当前)B相第二象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="002F0000" name="(当前)B相第三象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00300000" name="(当前)B相第四象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00310000" name="(当前)B相正向视在电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="00320000" name="(当前)B相反向视在电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="00A80000" name="(当前)B相关联电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00A90000" name="(当前)B相正向有功基波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00AA0000" name="(当前)B相反向有功基波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00AB0000" name="(当前)B相正向有功谐波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00AC0000" name="(当前)B相反向有功谐波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00AD0000" name="(当前)B相铜损有功电能补偿量" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00AE0000" name="(当前)B相铁损有功电能补偿量" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <!-- C相电能数据 (003D-0046, 00BC-00C2) -->
+        <DI code="003D0000" name="(当前)C相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="003E0000" name="(当前)C相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="003F0000" name="(当前)C相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="00400000" name="(当前)C相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="00410000" name="(当前)C相第一象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00420000" name="(当前)C相第二象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00430000" name="(当前)C相第三象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00440000" name="(当前)C相第四象限无功电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00450000" name="(当前)C相正向视在电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="00460000" name="(当前)C相反向视在电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="00BC0000" name="(当前)C相关联电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00BD0000" name="(当前)C相正向有功基波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00BE0000" name="(当前)C相反向有功基波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00BF0000" name="(当前)C相正向有功谐波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00C00000" name="(当前)C相反向有功谐波电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00C10000" name="(当前)C相铜损有功电能补偿量" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00C20000" name="(当前)C相铁损有功电能补偿量" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <!-- 上1结算日数据 (DI0=01) -->
+        <DI code="00000001" name="(上1结算日)组合有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="00000101" name="(上1结算日)正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00000201" name="(上1结算日)反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="00000301" name="(上1结算日)组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="00000401" name="(上1结算日)组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="00000501" name="(上1结算日)第一象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00000601" name="(上1结算日)第二象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00000701" name="(上1结算日)第三象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00000801" name="(上1结算日)第四象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="00000901" name="(上1结算日)正向视在总电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="00000A01" name="(上1结算日)反向视在总电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <!-- 上12结算日数据 (DI0=0C) -->
+        <DI code="0000000C" name="(上12结算日)组合有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R" sign="true"/>
+        <DI code="0000010C" name="(上12结算日)正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="0000020C" name="(上12结算日)反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="0000030C" name="(上12结算日)组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="0000040C" name="(上12结算日)组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="0000050C" name="(上12结算日)第一象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="0000060C" name="(上12结算日)第二象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="0000070C" name="(上12结算日)第三象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="0000080C" name="(上12结算日)第四象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="0000090C" name="(上12结算日)正向视在总电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <DI code="00000A0C" name="(上12结算日)反向视在总电能" len="4" format="XXXXXX.XX" unit="kVAh" rw="R"/>
+        <!-- 当前和12个结算日数据块 (DI0=FF) -->
+        <DI code="0000ZZFF" name="某项当前和12个结算日电能数据块" len="52" format="XXXXXX.XX" unit="kWh" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 01xx 最大需量及发生时间 (Max Demand) -->
+    <!-- ========================================== -->
+    <DI_Group code="01" name="最大需量及发生时间">
+        <!-- 正向有功最大需量 (0101) -->
+        <DI code="01010000" name="(当前)正向有功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="01010100" name="(当前)正向有功费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="0101FF00" name="(当前)正向有功最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <!-- 反向有功最大需量 (0102) -->
+        <DI code="01020000" name="(当前)反向有功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="01020100" name="(当前)反向有功费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="0102FF00" name="(当前)反向有功最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <!-- 组合无功1最大需量 (0103) -->
+        <DI code="01030000" name="(当前)组合无功1总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="01030100" name="(当前)组合无功1费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="0103FF00" name="(当前)组合无功1最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <!-- 组合无功2最大需量 (0104) -->
+        <DI code="01040000" name="(当前)组合无功2总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="01040100" name="(当前)组合无功2费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="0104FF00" name="(当前)组合无功2最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <!-- 第一象限无功最大需量 (0105) -->
+        <DI code="01050000" name="(当前)第一象限无功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01050100" name="(当前)第一象限无功费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="0105FF00" name="(当前)第一象限无功最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <!-- 第二象限无功最大需量 (0106) -->
+        <DI code="01060000" name="(当前)第二象限无功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01060100" name="(当前)第二象限无功费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="0106FF00" name="(当前)第二象限无功最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <!-- 第三象限无功最大需量 (0107) -->
+        <DI code="01070000" name="(当前)第三象限无功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01070100" name="(当前)第三象限无功费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="0107FF00" name="(当前)第三象限无功最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <!-- 第四象限无功最大需量 (0108) -->
+        <DI code="01080000" name="(当前)第四象限无功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01080100" name="(当前)第四象限无功费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="0108FF00" name="(当前)第四象限无功最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <!-- 正向视在最大需量 (0109) -->
+        <DI code="01090000" name="(当前)正向视在总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <DI code="01090100" name="(当前)正向视在费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <DI code="0109FF00" name="(当前)正向视在最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <!-- 反向视在最大需量 (010A) -->
+        <DI code="010A0000" name="(当前)反向视在总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <DI code="010A0100" name="(当前)反向视在费率1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <DI code="010AFF00" name="(当前)反向视在最大需量及发生时间数据块" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <!-- A相最大需量 (0115-011E) -->
+        <DI code="01150000" name="(当前)A相正向有功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="01160000" name="(当前)A相反向有功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="01170000" name="(当前)A相组合无功1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="01180000" name="(当前)A相组合无功2最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="01190000" name="(当前)A相第一象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="011A0000" name="(当前)A相第二象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="011B0000" name="(当前)A相第三象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="011C0000" name="(当前)A相第四象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="011D0000" name="(当前)A相正向视在最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <DI code="011E0000" name="(当前)A相反向视在最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <!-- B相最大需量 (0129-0132) -->
+        <DI code="01290000" name="(当前)B相正向有功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="012A0000" name="(当前)B相反向有功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="012B0000" name="(当前)B相组合无功1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="012C0000" name="(当前)B相组合无功2最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="012D0000" name="(当前)B相第一象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="012E0000" name="(当前)B相第二象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="012F0000" name="(当前)B相第三象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01300000" name="(当前)B相第四象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01310000" name="(当前)B相正向视在最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <DI code="01320000" name="(当前)B相反向视在最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <!-- C相最大需量 (013D-0146) -->
+        <DI code="013D0000" name="(当前)C相正向有功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="013E0000" name="(当前)C相反向有功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="013F0000" name="(当前)C相组合无功1最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="01400000" name="(当前)C相组合无功2最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R" sign="true"/>
+        <DI code="01410000" name="(当前)C相第一象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01420000" name="(当前)C相第二象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01430000" name="(当前)C相第三象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01440000" name="(当前)C相第四象限无功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kvar,年月日时分" rw="R"/>
+        <DI code="01450000" name="(当前)C相正向视在最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <DI code="01460000" name="(当前)C相反向视在最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kVA,年月日时分" rw="R"/>
+        <!-- 上1结算日最大需量 (DI0=01) -->
+        <DI code="01010001" name="(上1结算日)正向有功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="01020001" name="(上1结算日)反向有功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <!-- 上12结算日最大需量 (DI0=0C) -->
+        <DI code="0101000C" name="(上12结算日)正向有功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <DI code="0102000C" name="(上12结算日)反向有功总最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW,年月日时分" rw="R"/>
+        <!-- 当前和12个结算日最大需量数据块 (DI0=FF) -->
+        <DI code="01ZZZZFF" name="某项当前和12个结算日最大需量及发生时间数据块" len="104" format="XX.XXXXYYMMDDhhmm" unit="kW/kvar/kVA,年月日时分" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 02xx 变量数据 (Variables) -->
+    <!-- ========================================== -->
+    <DI_Group code="02" name="变量数据">
+        <!-- 0201 电压 -->
+        <DI code="02010100" name="A相电压" len="2" format="XXX.X" unit="V" rw="R"/>
+        <DI code="02010200" name="B相电压" len="2" format="XXX.X" unit="V" rw="R"/>
+        <DI code="02010300" name="C相电压" len="2" format="XXX.X" unit="V" rw="R"/>
+        <DI code="0201FF00" name="电压数据块" len="6" format="XXX.X" unit="V" rw="R"/>
+        <!-- 0202 电流 -->
+        <DI code="02020100" name="A相电流" len="3" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <DI code="02020200" name="B相电流" len="3" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <DI code="02020300" name="C相电流" len="3" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <DI code="0202FF00" name="电流数据块" len="9" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <!-- 0203 瞬时有功功率 -->
+        <DI code="02030000" name="瞬时总有功功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="02030100" name="瞬时A相有功功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="02030200" name="瞬时B相有功功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="02030300" name="瞬时C相有功功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="0203FF00" name="瞬时有功功率数据块" len="12" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <!-- 0204 瞬时无功功率 -->
+        <DI code="02040000" name="瞬时总无功功率" len="3" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <DI code="02040100" name="瞬时A相无功功率" len="3" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <DI code="02040200" name="瞬时B相无功功率" len="3" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <DI code="02040300" name="瞬时C相无功功率" len="3" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <DI code="0204FF00" name="瞬时无功功率数据块" len="12" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <!-- 0205 瞬时视在功率 -->
+        <DI code="02050000" name="瞬时总视在功率" len="3" format="XX.XXXX" unit="kVA" rw="R" sign="true"/>
+        <DI code="02050100" name="瞬时A相视在功率" len="3" format="XX.XXXX" unit="kVA" rw="R" sign="true"/>
+        <DI code="02050200" name="瞬时B相视在功率" len="3" format="XX.XXXX" unit="kVA" rw="R" sign="true"/>
+        <DI code="02050300" name="瞬时C相视在功率" len="3" format="XX.XXXX" unit="kVA" rw="R" sign="true"/>
+        <DI code="0205FF00" name="瞬时视在功率数据块" len="12" format="XX.XXXX" unit="kVA" rw="R" sign="true"/>
+        <!-- 0206 功率因数 -->
+        <DI code="02060000" name="总功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="02060100" name="A相功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="02060200" name="B相功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="02060300" name="C相功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="0206FF00" name="功率因数数据块" len="8" format="X.XXX" unit="" rw="R" sign="true"/>
+        <!-- 0207 相角 -->
+        <DI code="02070100" name="A相角" len="2" format="XXX.X" unit="度" rw="R"/>
+        <DI code="02070200" name="B相角" len="2" format="XXX.X" unit="度" rw="R"/>
+        <DI code="02070300" name="C相角" len="2" format="XXX.X" unit="度" rw="R"/>
+        <DI code="0207FF00" name="相角数据块" len="6" format="XXX.X" unit="度" rw="R"/>
+        <!-- 0208 电压波形失真度 -->
+        <DI code="02080100" name="A相电压波形失真度" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="02080200" name="B相电压波形失真度" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="02080300" name="C相电压波形失真度" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="0208FF00" name="电压波形失真度数据块" len="6" format="XX.XX" unit="%" rw="R"/>
+        <!-- 0209 电流波形失真度 -->
+        <DI code="02090100" name="A相电流波形失真度" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="02090200" name="B相电流波形失真度" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="02090300" name="C相电流波形失真度" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="0209FF00" name="电流波形失真度数据块" len="6" format="XX.XX" unit="%" rw="R"/>
+        <!-- 020A 电压谐波含量 -->
+        <DI code="020A0101" name="A相电压1次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020A0115" name="A相电压21次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020A01FF" name="A相电压谐波含量数据块" len="42" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020A0201" name="B相电压1次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020A0215" name="B相电压21次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020A02FF" name="B相电压谐波含量数据块" len="42" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020A0301" name="C相电压1次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020A0315" name="C相电压21次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020A03FF" name="C相电压谐波含量数据块" len="42" format="XX.XX" unit="%" rw="R"/>
+        <!-- 020B 电流谐波含量 -->
+        <DI code="020B0101" name="A相电流1次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020B0115" name="A相电流21次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020B01FF" name="A相电流谐波含量数据块" len="42" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020B0201" name="B相电流1次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020B0215" name="B相电流21次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020B02FF" name="B相电流谐波含量数据块" len="42" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020B0301" name="C相电流1次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020B0315" name="C相电流21次谐波含量" len="2" format="XX.XX" unit="%" rw="R"/>
+        <DI code="020B03FF" name="C相电流谐波含量数据块" len="42" format="XX.XX" unit="%" rw="R"/>
+        <!-- 0280 其他变量数据 -->
+        <DI code="02800001" name="零线电流" len="3" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <DI code="02800002" name="电网频率" len="2" format="XX.XX" unit="Hz" rw="R"/>
+        <DI code="02800003" name="一分钟有功总平均功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="02800004" name="当前有功需量" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="02800005" name="当前无功需量" len="3" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <DI code="02800006" name="当前视在需量" len="3" format="XX.XXXX" unit="kVA" rw="R" sign="true"/>
+        <DI code="02800007" name="表内温度" len="2" format="XXX.X" unit="℃" rw="R" sign="true"/>
+        <DI code="02800008" name="时钟电池电压" len="2" format="XX.XX" unit="V" rw="R"/>
+        <DI code="02800009" name="停电抄表电池电压" len="2" format="XX.XX" unit="V" rw="R"/>
+        <DI code="0280000A" name="内部电池工作时间" len="4" format="XXXXXXXX" unit="分" rw="R"/>
+        <DI code="0280000B" name="当前阶梯电价" len="4" format="XXXX.XXXX" unit="元/kWh" rw="R"/>
+        <DI code="0280000C" name="零线功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="0280000E" name="火线电流" len="3" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <DI code="0280000F" name="火线有功功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="02800010" name="火线功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="02800020" name="当前电价" len="4" format="XXXX.XXXX" unit="元/kWh" rw="R"/>
+        <DI code="02800021" name="当前费率电价" len="4" format="XXXX.XXXX" unit="元/kWh" rw="R"/>
+        <DI code="02800022" name="身份认证时效剩余时间" len="2" format="XXXX" unit="分钟" rw="R"/>
+        <DI code="02800023" name="红外认证时效剩余时间" len="1" format="XX" unit="分钟" rw="R"/>
+        <DI code="02800024" name="本月总电压合格时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+		<DI code="02800025" name="STA温度" len="2" format="XXX.X" unit="℃" rw="R" sign="true"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 03xx 事件记录 (Events) -->
+    <!-- ========================================== -->
+    <DI_Group code="03" name="事件记录">
+        <!-- 0301 失压记录 -->
+        <DI code="03010000" name="A相失压总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03010101" name="(上1次)A相失压记录" len="44" format="YYMMDDhhmmss..." unit="" rw="R"/>
+        <DI code="0301010A" name="(上10次)A相失压记录" len="44" format="YYMMDDhhmmss..." unit="" rw="R"/>
+        <DI code="03010201" name="(上1次)B相失压记录" len="44" format="YYMMDDhhmmss..." unit="" rw="R"/>
+        <DI code="03010301" name="(上1次)C相失压记录" len="44" format="YYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 0302 欠压记录 -->
+        <DI code="03020000" name="A相欠压总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03020101" name="(上1次)A相欠压记录" len="44" format="YYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 0303 过压记录 -->
+        <DI code="03030000" name="A相过压总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03030101" name="(上1次)A相过压记录" len="44" format="YYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 0304 断相记录 -->
+        <DI code="03040000" name="A相断相总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03040101" name="(上1次)A相断相记录" len="44" format="YYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 0305 全失压记录 -->
+        <DI code="03050000" name="全失压总次数,总累计时间" len="6" format="XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03050001" name="(上1次)全失压记录" len="15" format="YYMMDDhhmmssXXX.XXXYYMMDDhhmmss" unit="" rw="R"/>
+        <!-- 0306 辅助电源失电记录 -->
+        <DI code="03060000" name="辅助电源失电总次数,总累计时间" len="6" format="XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03060001" name="(上1次)辅助电源失电记录" len="12" format="YYMMDDhhmmssYYMMDDhhmmss" unit="" rw="R"/>
+        <!-- 0307 电压逆相序记录 -->
+        <DI code="03070000" name="电压逆相序总次数,总累计时间" len="6" format="XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03070001" name="(上1次)电压逆相序记录" len="76" format="YYMMDDhhmmssYYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 0308 电流逆相序记录 -->
+        <DI code="03080000" name="电流逆相序总次数,总累计时间" len="6" format="XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03080001" name="(上1次)电流逆相序记录" len="76" format="YYMMDDhhmmssYYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 0309 电压不平衡记录 -->
+        <DI code="03090000" name="电压不平衡总次数,总累计时间" len="6" format="XXXXXX" unit="次,分" rw="R"/>
+        <DI code="03090001" name="(上1次)电压不平衡记录" len="76" format="YYMMDDhhmmssYYMMDDhhmmssXX.XX..." unit="" rw="R"/>
+        <!-- 030A 电流不平衡记录 -->
+        <DI code="030A0000" name="电流不平衡总次数,总累计时间" len="6" format="XXXXXX" unit="次,分" rw="R"/>
+        <DI code="030A0001" name="(上1次)电流不平衡记录" len="76" format="YYMMDDhhmmssYYMMDDhhmmssXX.XX..." unit="" rw="R"/>
+        <!-- 030B 失流记录 -->
+        <DI code="030B0000" name="A相失流总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="030B0101" name="(上1次)A相失流记录" len="132" format="YYMMDDhhmmssYYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 030C 过流记录 -->
+        <DI code="030C0000" name="A相过流总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="030C0101" name="(上1次)A相过流记录" len="132" format="YYMMDDhhmmssYYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 030D 断流记录 -->
+        <DI code="030D0000" name="A相断流总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="030D0101" name="(上1次)A相断流记录" len="132" format="YYMMDDhhmmssYYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 030E 潮流反向记录 -->
+        <DI code="030E0000" name="A相潮流反向总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="030E0101" name="(上1次)A相潮流反向记录" len="72" format="YYMMDDhhmmssYYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 030F 过载记录 -->
+        <DI code="030F0000" name="A相过载总次数,总累计时间" len="12" format="XXXXXX,XXXXXX" unit="次,分" rw="R"/>
+        <DI code="030F0101" name="(上1次)A相过载记录" len="72" format="YYMMDDhhmmssYYMMDDhhmmss..." unit="" rw="R"/>
+        <!-- 0310 电压合格率记录 -->
+        <DI code="03100000" name="本月电压合格率总统计数据" len="28" format="XXXXXX XXXX.XX XXXX.XX XXXXXX XXXXXX XXX.X MMDDhhmm XXX.X MMDDhhmm" unit="分,%,%,分,分,V,V" rw="R"/>
+        <DI code="03100100" name="A相本月电压合格率统计数据" len="28" format="XXXXXX XXXX.XX XXXX.XX XXXXXX XXXXXX XXX.X MMDDhhmm XXX.X MMDDhhmm" unit="分,%,%,分,分,V,V" rw="R"/>
+        <!-- 0311 掉电记录 -->
+        <DI code="03110000" name="掉电总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03110001" name="(上1次)掉电记录" len="12" format="YYMMDDhhmmssYYMMDDhhmmss" unit="" rw="R"/>
+        <!-- 0312 需量超限记录 -->
+        <DI code="03120000" name="正向有功需量超限总次数" len="18" format="XXXXXX XXXXXX XXXXXX XXXXXX XXXXXX XXXXXX" unit="次" rw="R"/>
+        <DI code="03120101" name="(上1次)正向有功需量超限记录" len="20" format="YYMMDDhhmmssYYMMDDhhmmssXX.XXXXYYMMDDhhmms" unit="kvar" rw="R" sign="true"/>
+        <!-- 0330 编程操作记录 -->
+        <DI code="03300000" name="编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300001" name="(上1次)编程记录" len="50" format="YYMMDDhhmmssC0C1C2C3XXXXXXXX" unit="" rw="R"/>
+        <DI code="03300100" name="电表清零总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300101" name="(上1次)电表清零记录" len="60" format="YYMMDDhhmmssC0C1C2C3..." unit="" rw="R"/>
+        <DI code="03300200" name="需量清零总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300201" name="(上1次)需量清零记录" len="104" format="YYMMDDhhmmssC0C1C2C3XX.XXXXYYMMDDhhmm..." unit="" rw="R"/>
+        <DI code="03300300" name="事件清零总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300301" name="(上1次)事件清零记录" len="14" format="YYMMDDhhmmssC0C1C2C3XXXXXXXX" unit="" rw="R"/>
+        <DI code="03300400" name="校时总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300401" name="(上1次)校时记录" len="16" format="C0C1C2C3YYMMDDhhmmssYYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="03300500" name="时段表编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300501" name="(上1次)时段表编程记录" len="352" format="YYMMDDhhmmssC0C1C2C3hhmmNN..." unit="" rw="R"/>
+        <DI code="03300600" name="时区表编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300601" name="(上1次)时区表编程记录" len="50" format="YYMMDDhhmmssC0C1C2C3MMDDNN..." unit="" rw="R"/>
+        <DI code="03300700" name="周休日编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300701" name="(上1次)周休日编程记录" len="11" format="YYMMDDhhmmssC0C1C2C3XX" unit="" rw="R"/>
+        <DI code="03300800" name="节假日编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300801" name="(上1次)节假日编程记录" len="1022" format="YYMMDDhhmmssC0C1C2C3YYMMDDNN..." unit="" rw="R"/>
+        <DI code="03300900" name="有功组合方式编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300901" name="(上1次)有功组合方式编程记录" len="11" format="YYMMDDhhmmssC0C1C2C3XX" unit="" rw="R"/>
+        <DI code="03300A00" name="无功组合方式1编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300B00" name="无功组合方式2编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300C00" name="结算日编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300C01" name="(上1次)结算日编程记录" len="16" format="YYMMDDhhmmssC0C1C2C3DDhhDDhhDDhh" unit="" rw="R"/>
+        <DI code="03300D00" name="开表盖总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300D01" name="(上1次)开表盖记录" len="56" format="YYMMDDhhmmssYYMMDDhhmmss..." unit="" rw="R"/>
+        <DI code="03300E00" name="开端钮盒总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300F00" name="费率参数表编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03300F01" name="(上1次)费率参数表编程记录" len="138" format="YYMMDDhhmmssC0C1C2C3NNNN.NNNN..." unit="" rw="R"/>
+        <DI code="03301000" name="阶梯表编程总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03301001" name="(上1次)阶梯表编程记录" len="104" format="YYMMDDhhmmssC0C1C2C3NNNNNN.NN..." unit="" rw="R"/>
+        <DI code="03301200" name="密钥更新总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03301201" name="(上1次)密钥更新记录" len="11" format="YYMMDDhhmmssC0C1C2C3HHXXXXXXXX" unit="" rw="R"/>
+        <DI code="03301300" name="异常插卡总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03301301" name="(上1次)异常插卡记录" len="34" format="YYMMDDhhmmssHH...HHHHHHHHHHHHXXXXXXXXXX.XXXXXX.XX" unit="次,元,kWh" rw="R"/>
+        <DI code="03301400" name="非法插卡总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <!-- 0332 购电记录 -->
+        <DI code="03320100" name="(上1次)购电记录" len="21" format="YYMMDDhhmmXXXXXXXXXX.XXXXXX.XXXXXX.XXXXXX.XX" unit="次,kWh,kWh,kWh,kWh" rw="R"/>
+        <DI code="03320A00" name="(上10次)购电记录" len="21" format="YYMMDDhhmmXXXXXXXXXX.XXXXXX.XXXXXX.XXXXXX.XX" unit="次,kWh,kWh,kWh,kWh" rw="R"/>
+        <!-- 0333 购电金额记录 -->
+        <DI code="03330100" name="(上1次)购电金额记录" len="21" format="YYMMDDhhmmXXXXXXXXXX.XXXXXX.XXXXXX.XXXXXX.XX" unit="次,元,元,元,元" rw="R"/>
+        <DI code="03330A00" name="(上10次)购电金额记录" len="21" format="YYMMDDhhmmXXXXXXXXXX.XXXXXX.XXXXXX.XXXXXX.XX" unit="次,元,元,元,元" rw="R"/>
+        <!-- 0334 退费记录 -->
+        <DI code="03340000" name="(上1次)退费记录" len="17" format="YYMMDDhhmmXXXXXXXXXX.XXXXXX.XX" unit="次,元,元" rw="R"/>
+        <DI code="03340A00" name="(上10次)退费记录" len="17" format="YYMMDDhhmmXXXXXXXXXX.XXXXXX.XX" unit="次,元,元" rw="R"/>
+        <!-- 0335 恒定磁场干扰记录 -->
+        <DI code="03350000" name="恒定磁场干扰总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03350001" name="(上1次)恒定磁场干扰记录" len="24" format="YYMMDDhhmmssYYMMDDhhmmssXXXXXX.XXXXXX.XXXXXX.XXXXXX.XX" unit="kWh,kWh,kWh,kWh" rw="R"/>
+        <!-- 0336 负荷开关误动作记录 -->
+        <DI code="03360000" name="负荷开关误动作总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03360001" name="(上1次)负荷开关误动作记录" len="25" format="YYMMDDhhmmssYYMMDDhhmmssXXXXXXXX.XXXXXX.XXXXXX.XXXXXX.XX" unit="kWh,kWh,kWh,kWh" rw="R"/>
+        <!-- 0337 电源异常记录 -->
+        <DI code="03370000" name="电源异常总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="03370001" name="(上1次)电源异常记录" len="16" format="YYMMDDhhmmssYYMMDDhhmmssXXXXXX.XXXXXX.XX" unit="kWh,kWh" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 10xx 失压记录 (Voltage Loss) -->
+    <!-- ========================================== -->
+    <DI_Group code="10" name="失压记录">
+        <!-- 1000 总失压记录 -->
+        <DI code="10000000" name="失压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="10000001" name="失压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <!-- 1001 A相失压记录 -->
+        <DI code="10010000" name="A相失压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="10010001" name="A相失压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="10010101" name="(上1次)A相失压发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="10010102" name="(上1次)A相失压发生时刻正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010103" name="(上1次)A相失压发生时刻反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010104" name="(上1次)A相失压发生时刻组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010105" name="(上1次)A相失压发生时刻组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010106" name="(上1次)A相失压发生时刻A相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010107" name="(上1次)A相失压发生时刻A相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010108" name="(上1次)A相失压发生时刻A相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010109" name="(上1次)A相失压发生时刻A相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1001010A" name="(上1次)A相失压发生时刻A相电压" len="2" format="XXX.X" unit="V" rw="R"/>
+        <DI code="1001010B" name="(上1次)A相失压发生时刻A相电流" len="3" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <DI code="1001010C" name="(上1次)A相失压发生时刻A相有功功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="1001010D" name="(上1次)A相失压发生时刻A相无功功率" len="3" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <DI code="1001010E" name="(上1次)A相失压发生时刻A相功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="1001010F" name="(上1次)A相失压发生时刻B相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010110" name="(上1次)A相失压发生时刻B相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010111" name="(上1次)A相失压发生时刻B相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010112" name="(上1次)A相失压发生时刻B相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010113" name="(上1次)A相失压发生时刻B相电压" len="2" format="XXX.X" unit="V" rw="R"/>
+        <DI code="10010114" name="(上1次)A相失压发生时刻B相电流" len="3" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <DI code="10010115" name="(上1次)A相失压发生时刻B相有功功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="10010116" name="(上1次)A相失压发生时刻B相无功功率" len="3" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <DI code="10010117" name="(上1次)A相失压发生时刻B相功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="10010118" name="(上1次)A相失压发生时刻C相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010119" name="(上1次)A相失压发生时刻C相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1001011A" name="(上1次)A相失压发生时刻C相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1001011B" name="(上1次)A相失压发生时刻C相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1001011C" name="(上1次)A相失压发生时刻C相电压" len="2" format="XXX.X" unit="V" rw="R"/>
+        <DI code="1001011D" name="(上1次)A相失压发生时刻C相电流" len="3" format="XXX.XXX" unit="A" rw="R" sign="true"/>
+        <DI code="1001011E" name="(上1次)A相失压发生时刻C相有功功率" len="3" format="XX.XXXX" unit="kW" rw="R" sign="true"/>
+        <DI code="1001011F" name="(上1次)A相失压发生时刻C相无功功率" len="3" format="XX.XXXX" unit="kvar" rw="R" sign="true"/>
+        <DI code="10010120" name="(上1次)A相失压发生时刻C相功率因数" len="2" format="X.XXX" unit="" rw="R" sign="true"/>
+        <DI code="10010121" name="(上1次)A相失压期间总安时数" len="4" format="XXXXXX.XX" unit="Ah" rw="R"/>
+        <DI code="10010122" name="(上1次)A相失压期间A相安时数" len="4" format="XXXXXX.XX" unit="Ah" rw="R"/>
+        <DI code="10010123" name="(上1次)A相失压期间B相安时数" len="4" format="XXXXXX.XX" unit="Ah" rw="R"/>
+        <DI code="10010124" name="(上1次)A相失压期间C相安时数" len="4" format="XXXXXX.XX" unit="Ah" rw="R"/>
+        <DI code="10010125" name="(上1次)A相失压结束时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="10010126" name="(上1次)A相失压结束时刻正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010127" name="(上1次)A相失压结束时刻反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010128" name="(上1次)A相失压结束时刻组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010129" name="(上1次)A相失压结束时刻组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1001012A" name="(上1次)A相失压结束时刻A相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1001012B" name="(上1次)A相失压结束时刻A相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1001012C" name="(上1次)A相失压结束时刻A相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1001012D" name="(上1次)A相失压结束时刻A相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1001012E" name="(上1次)A相失压结束时刻B相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1001012F" name="(上1次)A相失压结束时刻B相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010130" name="(上1次)A相失压结束时刻B相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010131" name="(上1次)A相失压结束时刻B相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010132" name="(上1次)A相失压结束时刻C相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010133" name="(上1次)A相失压结束时刻C相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="10010134" name="(上1次)A相失压结束时刻C相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="10010135" name="(上1次)A相失压结束时刻C相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1001FF00" name="(上1次)A相失压数据块" len="140" format="Block" unit="" rw="R"/>
+        <!-- 1002 B相失压记录 -->
+        <DI code="10020000" name="B相失压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="10020001" name="B相失压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="10020101" name="(上1次)B相失压发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <!-- 省略B相失压详细记录，格式同A相 -->
+        <DI code="1002FF00" name="(上1次)B相失压数据块" len="140" format="Block" unit="" rw="R"/>
+        <!-- 1003 C相失压记录 -->
+        <DI code="10030000" name="C相失压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="10030001" name="C相失压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="10030101" name="(上1次)C相失压发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <!-- 省略C相失压详细记录，格式同A相 -->
+        <DI code="1003FF00" name="(上1次)C相失压数据块" len="140" format="Block" unit="" rw="R"/>
+        <!-- 10xx 10次记录数据块 -->
+        <DI code="10ZZ0AFF" name="某项10次失压记录数据块" len="1400" format="Block" unit="" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 11xx 欠压记录 (Under Voltage) -->
+    <!-- ========================================== -->
+    <DI_Group code="11" name="欠压记录">
+        <DI code="11010000" name="A相欠压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="11010001" name="A相欠压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="11010101" name="(上1次)A相欠压记录" len="140" format="Block" unit="" rw="R"/>
+        <!-- 格式同失压记录 -->
+        <DI code="11020000" name="B相欠压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="11020001" name="B相欠压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="11030000" name="C相欠压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="11030001" name="C相欠压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 12xx 过压记录 (Over Voltage) -->
+    <!-- ========================================== -->
+    <DI_Group code="12" name="过压记录">
+        <DI code="12010000" name="A相过压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="12010001" name="A相过压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="12010101" name="(上1次)A相过压记录" len="140" format="Block" unit="" rw="R"/>
+        <DI code="12020000" name="B相过压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="12020001" name="B相过压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="12030000" name="C相过压总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="12030001" name="C相过压总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 13xx 断相记录 (Phase Loss) -->
+    <!-- ========================================== -->
+    <DI_Group code="13" name="断相记录">
+        <!-- 13xx 断相记录 -->
+        <DI code="13030000" name="C相断相总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="13030001" name="C相断相总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="13030101" name="(上1次)C相断相记录" len="140" format="Block" unit="" rw="R"/>
+        <DI code="13030AFF" name="某项10次C相断相记录数据块" len="1400" format="Block" unit="" rw="R"/>
+        <!-- 14xx 电压逆相序记录 -->
+        <DI code="14000001" name="电压逆相序总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="14000002" name="电压逆相序总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="14000101" name="(上1次)电压逆相序发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="14000102" name="(上1次)电压逆相序发生时刻正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000103" name="(上1次)电压逆相序发生时刻反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000104" name="(上1次)电压逆相序发生时刻组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="14000105" name="(上1次)电压逆相序发生时刻组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="14000106" name="(上1次)电压逆相序发生时刻A相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000107" name="(上1次)电压逆相序发生时刻A相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000108" name="(上1次)电压逆相序发生时刻A相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="14000109" name="(上1次)电压逆相序发生时刻A相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1400010A" name="(上1次)电压逆相序发生时刻B相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1400010B" name="(上1次)电压逆相序发生时刻B相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1400010C" name="(上1次)电压逆相序发生时刻B相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1400010D" name="(上1次)电压逆相序发生时刻B相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1400010E" name="(上1次)电压逆相序发生时刻C相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1400010F" name="(上1次)电压逆相序发生时刻C相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000110" name="(上1次)电压逆相序发生时刻C相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="14000111" name="(上1次)电压逆相序发生时刻C相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="14000112" name="(上1次)电压逆相序结束时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="14000113" name="(上1次)电压逆相序结束时刻正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000114" name="(上1次)电压逆相序结束时刻反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000115" name="(上1次)电压逆相序结束时刻组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="14000116" name="(上1次)电压逆相序结束时刻组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="14000117" name="(上1次)电压逆相序结束时刻A相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000118" name="(上1次)电压逆相序结束时刻A相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000119" name="(上1次)电压逆相序结束时刻A相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1400011A" name="(上1次)电压逆相序结束时刻A相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1400011B" name="(上1次)电压逆相序结束时刻B相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1400011C" name="(上1次)电压逆相序结束时刻B相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1400011D" name="(上1次)电压逆相序结束时刻B相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1400011E" name="(上1次)电压逆相序结束时刻B相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1400011F" name="(上1次)电压逆相序结束时刻C相正向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000120" name="(上1次)电压逆相序结束时刻C相反向有功电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="14000121" name="(上1次)电压逆相序结束时刻C相组合无功1电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="14000122" name="(上1次)电压逆相序结束时刻C相组合无功2电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="1400FF00" name="(上1次)电压逆相序数据块" len="76" format="Block" unit="" rw="R"/>
+        <!-- 15xx 电流逆相序记录 -->
+        <DI code="15000001" name="电流逆相序总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="15000002" name="电流逆相序总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="15000101" name="(上1次)电流逆相序记录" len="76" format="Block" unit="" rw="R"/>
+        <DI code="15000AFF" name="某项10次电流逆相序记录数据块" len="760" format="Block" unit="" rw="R"/>
+        <!-- 16xx 电压不平衡记录 -->
+        <DI code="16000001" name="电压不平衡总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="16000002" name="电压不平衡总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="16000101" name="(上1次)电压不平衡发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="16000102" name="(上1次)电压不平衡发生时刻正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="16000103" name="(上1次)电压不平衡发生时刻反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="16000104" name="(上1次)电压不平衡发生时刻组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="16000105" name="(上1次)电压不平衡发生时刻组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <!-- 继续添加电压不平衡相关数据项... -->
+        <DI code="16000116" name="(上1次)电压不平衡最大不平衡率" len="3" format="XX.XX" unit="%" rw="R"/>
+        <DI code="16000117" name="(上1次)电压不平衡结束时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="1600FF00" name="(上1次)电压不平衡数据块" len="100" format="Block" unit="" rw="R"/>
+        <!-- 17xx 电流不平衡记录 -->
+        <DI code="17000001" name="电流不平衡总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="17000002" name="电流不平衡总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="17000101" name="(上1次)电流不平衡记录" len="100" format="Block" unit="" rw="R"/>
+        <!-- 18xx 失流记录 -->
+        <DI code="18010001" name="A相失流总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="18010002" name="A相失流总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="18010101" name="(上1次)A相失流发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="18010102" name="(上1次)A相失流发生时刻正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="18010103" name="(上1次)A相失流发生时刻反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <!-- 继续添加A相失流详细记录... -->
+        <DI code="18010AFF" name="A相10次失流记录数据块" len="1320" format="Block" unit="" rw="R"/>
+        <!-- 19xx 过流记录 -->
+        <DI code="19010001" name="A相过流总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="19010002" name="A相过流总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="19010101" name="(上1次)A相过流记录" len="132" format="Block" unit="" rw="R"/>
+        <!-- 1Axx 断流记录 -->
+        <DI code="1A010001" name="A相断流总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="1A010002" name="A相断流总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="1A010101" name="(上1次)A相断流记录" len="132" format="Block" unit="" rw="R"/>
+        <!-- 1Bxx 功率反向记录 -->
+        <DI code="1B010001" name="A相功率反向总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="1B010002" name="A相功率反向总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="1B010101" name="(上1次)A相功率反向发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <!-- 继续添加功率反向相关数据项... -->
+        <!-- 1Cxx 过载记录 -->
+        <DI code="1C010001" name="A相过载总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="1C010002" name="A相过载总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="1C010101" name="(上1次)A相过载记录" len="72" format="Block" unit="" rw="R"/>
+        <!-- 1Dxx 跳闸记录 -->
+        <DI code="1D000001" name="跳闸总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="1D000101" name="(上1次)跳闸发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="1D000102" name="(上1次)跳闸操作者代码" len="4" format="C0C1C2C3" unit="" rw="R"/>
+        <DI code="1D000103" name="(上1次)跳闸时正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1D000104" name="(上1次)跳闸时反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="1D000105" name="(上1次)跳闸时第一象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="1D000106" name="(上1次)跳闸时第二象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="1D000107" name="(上1次)跳闸时第三象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="1D000108" name="(上1次)跳闸时第四象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="1D00FF00" name="(上1次)跳闸记录数据块" len="44" format="Block" unit="" rw="R"/>
+        <!-- 1Exx 合闸记录 -->
+        <DI code="1E000001" name="合闸总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="1E000101" name="(上1次)合闸发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <DI code="1E000102" name="(上1次)合闸操作者代码" len="4" format="C0C1C2C3" unit="" rw="R"/>
+        <DI code="1E00FF00" name="(上1次)合闸记录数据块" len="44" format="Block" unit="" rw="R"/>
+        <!-- 1Fxx 功率因数超下限记录 -->
+        <DI code="1F000001" name="总功率因数超下限总次数" len="3" format="XXXXXX" unit="次" rw="R" sign="true"/>
+        <DI code="1F000002" name="总功率因数超下限总累计时间" len="3" format="XXXXXX" unit="分" rw="R" sign="true"/>
+        <DI code="1F000101" name="(上1次)总功率因数超下限发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R" sign="true"/>
+        <!-- 继续添加功率因数超下限相关数据项... -->
+        <!-- 20xx 电流严重不平衡记录 -->
+        <DI code="20000001" name="电流严重不平衡总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="20000002" name="电流严重不平衡总累计时间" len="3" format="XXXXXX" unit="分" rw="R"/>
+        <DI code="20000101" name="(上1次)电流严重不平衡发生时刻" len="6" format="YYMMDDhhmmss" unit="" rw="R"/>
+        <!-- 继续添加电流严重不平衡相关数据项... -->
+        <!-- 21xx 潮流反向记录 -->
+        <DI code="21000000" name="潮流反向总次数" len="3" format="XXXXXX" unit="次" rw="R"/>
+        <DI code="21000001" name="(上1次)潮流反向记录内容" len="50" format="Block" unit="" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 04xx 参变量数据 (Parameters) -->
+    <!-- ========================================== -->
+    <DI_Group code="04" name="参变量数据">
+        <!-- 0400 基本参变量 -->
+        <DI code="04000101" name="日期及星期" len="4" format="YYMMDDWW" unit="年月日星期" rw="R/W"/>
+        <DI code="04000102" name="时间" len="3" format="hhmmss" unit="时分秒" rw="R/W"/>
+        <DI code="04000103" name="最大需量周期" len="1" format="NN" unit="分" rw="R/W"/>
+        <DI code="04000104" name="滑差时间" len="1" format="NN" unit="分" rw="R/W"/>
+        <DI code="04000105" name="校表脉冲宽度" len="2" format="XXXX" unit="毫秒" rw="R/W"/>
+        <DI code="04000106" name="两套时区表切换时间" len="5" format="YYMMDDhhmm" unit="年月日时分" rw="R/W"/>
+        <DI code="04000107" name="两套日时段切换时间" len="5" format="YYMMDDhhmm" unit="年月日时分" rw="R/W"/>
+        <DI code="04000108" name="两套费率电价切换时间" len="5" format="YYMMDDhhmm" unit="年月日时分" rw="R/W"/>
+        <DI code="04000109" name="两套阶梯切换时间" len="5" format="YYMMDDhhmm" unit="年月日时分" rw="R/W"/>
+        <DI code="0400010C" name="日期、星期及时间" len="7" format="YYMMDDWWhhmmss" unit="年月日星期时分秒" rw="R/W"/>
+        <!-- 0400 设置参变量 -->
+        <DI code="04000201" name="年时区数" len="1" format="NN" unit="个" rw="R/W"/>
+        <DI code="04000202" name="日时段表数" len="1" format="NN" unit="个" rw="R/W"/>
+        <DI code="04000203" name="日时段数" len="1" format="NN" unit="个" rw="R/W"/>
+        <DI code="04000204" name="费率数" len="1" format="NN" unit="个" rw="R/W"/>
+        <DI code="04000205" name="公共假日数" len="2" format="NNNN" unit="个" rw="R/W"/>
+        <DI code="04000206" name="谐波分析次数" len="1" format="NN" unit="次" rw="R/W"/>
+        <DI code="04000207" name="阶梯数" len="1" format="NN" unit="个" rw="R/W"/>
+        <DI code="04000208" name="密钥总条数" len="1" format="HH" unit="个" rw="R/W"/>
+        <!-- 0400 显示参变量 -->
+        <DI code="04000301" name="自动循环显示屏数" len="1" format="NN" unit="个" rw="R/W"/>
+        <DI code="04000302" name="每屏显示时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04000303" name="显示电能小数位数" len="1" format="NN" unit="位" rw="R"/>
+        <DI code="04000304" name="显示功率小数位数" len="1" format="NN" unit="位" rw="R/W"/>
+        <DI code="04000305" name="按键循环显示屏数" len="1" format="NN" unit="个" rw="R"/>
+        <DI code="04000306" name="电流互感器变比" len="3" format="NNNNNN" unit="" rw="R/W"/>
+        <DI code="04000307" name="电压互感器变比" len="3" format="NNNNNN" unit="" rw="R"/>
+        <DI code="04000308" name="上电全显时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <!-- 0400 身份参变量 -->
+        <DI code="04000401" name="通信地址" len="6" format="NNNNNNNNNNNN" unit="" rw="R/W"/>
+        <DI code="04000402" name="表号" len="6" format="NNNNNNNNNNNN" unit="" rw="R"/>
+        <DI code="04000403" name="资产管理编码" len="32" format="ASCII" unit="" rw="R/W"/>
+        <DI code="04000404" name="额定电压" len="6" format="ASCII" unit="" rw="R"/>
+        <DI code="04000405" name="额定电流/基本电流" len="6" format="ASCII" unit="" rw="R"/>
+        <DI code="04000406" name="最大电流" len="6" format="ASCII" unit="" rw="R"/>
+        <DI code="04000407" name="有功准确度等级" len="4" format="ASCII" unit="" rw="R"/>
+        <DI code="04000408" name="无功准确度等级" len="4" format="ASCII" unit="" rw="R"/>
+        <DI code="04000409" name="电表有功常数" len="3" format="XXXXXX" unit="imp/kWh" rw="R"/>
+        <DI code="0400040A" name="电表无功常数" len="3" format="XXXXXX" unit="imp/kvarh" rw="R"/>
+        <DI code="0400040B" name="电表型号" len="10" format="ASCII" unit="" rw="R"/>
+        <DI code="0400040C" name="生产日期" len="10" format="ASCII" unit="" rw="R"/>
+        <DI code="0400040D" name="协议版本号" len="16" format="ASCII" unit="" rw="R"/>
+        <DI code="0400040E" name="客户编号" len="6" format="NNNNNNNNNNNN" unit="" rw="R/W"/>
+        <DI code="0400040F" name="电能表位置信息" len="11" format="XXXX.XXXXXXXX.XXXXXXX.XX" unit="度,度,米" rw="R/W"/>
+        <!-- 0400 状态参变量 -->
+        <DI code="04000501" name="电表运行状态字1" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="04000502" name="电表运行状态字2" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="04000503" name="电表运行状态字3" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="04000504" name="电表运行状态字4" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="04000505" name="电表运行状态字5" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="04000506" name="电表运行状态字6" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="04000507" name="电表运行状态字7" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="04000508" name="密钥状态字" len="4" format="XXXXXXXX" unit="" rw="R"/>
+        <DI code="040005FF" name="电表运行状态字数据块" len="16" format="Block" unit="" rw="R"/>
+        <!-- 0400 组合方式特征字 -->
+        <DI code="04000601" name="有功组合方式特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000602" name="无功组合方式1特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000603" name="无功组合方式2特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <!-- 0400 通信参变量 -->
+        <DI code="04000701" name="调制型红外光口波特率特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000702" name="接触式红外光口波特率特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000703" name="通信口1波特率特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000704" name="通信口2波特率特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000705" name="通信口3波特率特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <!-- 0400 周休日参变量 -->
+        <DI code="04000801" name="周休日特征字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000802" name="周休日采用的日时段表号" len="1" format="NN" unit="" rw="R/W"/>
+        <!-- 0400 记录模式参变量 -->
+        <DI code="04000901" name="负荷记录模式字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000902" name="定时冻结数据模式字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000903" name="瞬时冻结数据模式字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000904" name="约定冻结数据模式字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000905" name="整点冻结数据模式字" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04000906" name="日冻结数据模式字" len="1" format="NN" unit="" rw="R/W"/>
+        <!-- 0400 负荷记录参变量 -->
+        <DI code="04000A01" name="负荷记录起始时间" len="4" format="MMDDhhmm" unit="月日时分" rw="R"/>
+        <DI code="04000A02" name="第1类负荷记录间隔时间" len="2" format="NNNN" unit="分" rw="R"/>
+        <DI code="04000A03" name="第2类负荷记录间隔时间" len="2" format="NNNN" unit="分" rw="R"/>
+        <DI code="04000A04" name="第3类负荷记录间隔时间" len="2" format="NNNN" unit="分" rw="R"/>
+        <DI code="04000A05" name="第4类负荷记录间隔时间" len="2" format="NNNN" unit="分" rw="R"/>
+        <DI code="04000A06" name="第5类负荷记录间隔时间" len="2" format="NNNN" unit="分" rw="R"/>
+        <DI code="04000A07" name="第6类负荷记录间隔时间" len="2" format="NNNN" unit="分" rw="R"/>
+        <!-- 0400 结算日参变量 -->
+        <DI code="04000B01" name="每月第1结算日" len="2" format="DDhh" unit="日时" rw="R/W"/>
+        <DI code="04000B02" name="每月第2结算日" len="2" format="DDhh" unit="日时" rw="R/W"/>
+        <DI code="04000B03" name="每月第3结算日" len="2" format="DDhh" unit="日时" rw="R/W"/>
+        <!-- 0400 密码参变量 -->
+        <DI code="04000C01" name="0级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C02" name="1级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C03" name="2级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C04" name="3级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C05" name="4级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C06" name="5级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C07" name="6级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C08" name="7级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C09" name="8级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="04000C0A" name="9级密码" len="4" format="NNNNNNNN" unit="" rw="W"/>
+        <!-- 0400 补偿系数参变量 -->
+        <DI code="04000D01" name="A相电导系数" len="2" format="N.NNN" unit="" rw="R/W"/>
+        <DI code="04000D02" name="A相电纳系数" len="2" format="N.NNN" unit="" rw="R/W"/>
+        <DI code="04000D03" name="A相电阻系数" len="2" format="N.NNN" unit="" rw="R/W"/>
+        <DI code="04000D04" name="A相电抗系数" len="2" format="N.NNN" unit="" rw="R/W"/>
+        <DI code="04000D05" name="B相电导系数" len="2" format="N.NNN" unit="" rw="R"/>
+        <DI code="04000D06" name="B相电纳系数" len="2" format="N.NNN" unit="" rw="R"/>
+        <DI code="04000D07" name="B相电阻系数" len="2" format="N.NNN" unit="" rw="R"/>
+        <DI code="04000D08" name="B相电抗系数" len="2" format="N.NNN" unit="" rw="R/W"/>
+        <DI code="04000D09" name="C相电导系数" len="2" format="N.NNN" unit="" rw="R"/>
+        <DI code="04000D0A" name="C相电纳系数" len="2" format="N.NNN" unit="" rw="R"/>
+        <DI code="04000D0B" name="C相电阻系数" len="2" format="N.NNN" unit="" rw="R"/>
+        <DI code="04000D0C" name="C相电抗系数" len="2" format="N.NNN" unit="" rw="R/W"/>
+        <!-- 0400 限值参变量 -->
+        <DI code="04000E01" name="正向有功功率上限值" len="3" format="NN.NNNN" unit="kW" rw="R/W" sign="true"/>
+        <DI code="04000E02" name="反向有功功率上限值" len="3" format="NN.NNNN" unit="kW" rw="R/W" sign="true"/>
+        <DI code="04000E03" name="电压上限值" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04000E04" name="电压下限值" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <!-- 0400 电量限值参变量 -->
+        <DI code="04000F01" name="报警电量1限值" len="4" format="XXXXXX.XX" unit="kWh" rw="R/W"/>
+        <DI code="04000F02" name="报警电量2限值" len="4" format="XXXXXX.XX" unit="kWh" rw="R/W"/>
+        <DI code="04000F03" name="囤积电量限值" len="4" format="XXXXXX.XX" unit="kWh" rw="R/W"/>
+        <DI code="04000F04" name="透支电量限值" len="4" format="XXXXXX.XX" unit="kWh" rw="R/W"/>
+        <!-- 0400 金额限值参变量 -->
+        <DI code="04001001" name="报警金额1限值" len="4" format="XXXXXX.XX" unit="元" rw="R/W"/>
+        <DI code="04001002" name="报警金额2限值" len="4" format="XXXXXX.XX" unit="元" rw="R/W"/>
+        <DI code="04001003" name="透支金额限值" len="4" format="XXXXXX.XX" unit="元" rw="R/W"/>
+        <DI code="04001004" name="囤积金额限值" len="4" format="NNNNNN.NN" unit="元" rw="R/W"/>
+        <DI code="04001005" name="合闸允许金额限值" len="4" format="NNNNNN.NN" unit="元" rw="R/W"/>
+        <DI code="04001006" name="退费金额" len="4" format="XXXXXX.XX" unit="元" rw="W"/>
+        <!-- 0400 运行特征参变量 -->
+        <DI code="04001101" name="电表运行特征字1" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="04001104" name="主动上报模式字" len="8" format="XX...XX" unit="" rw="R/W"/>
+        <!-- 0400 冻结时间参变量 -->
+        <DI code="04001201" name="整点冻结起始时间" len="5" format="YYMMDDhhmm" unit="年月日时分" rw="R/W"/>
+        <DI code="04001202" name="整点冻结时间间隔" len="1" format="NN" unit="分钟" rw="R/W"/>
+        <DI code="04001203" name="日冻结时间" len="2" format="hhmm" unit="时分" rw="R/W"/>
+        <DI code="04001204" name="定时冻结时间" len="4" format="MMDDhhmm" unit="月日时分" rw="R"/>
+        <!-- 0400 无线通信参变量 -->
+        <DI code="04001301" name="无线通信在线及信号强弱指示" len="1" format="NN" unit="" rw="R/W"/>
+        <!-- 0400 控制参变量 -->
+        <DI code="04001401" name="跳闸延时时间" len="2" format="NNNN" unit="分钟" rw="R/W"/>
+        <DI code="04001402" name="继电器拉闸控制电流门限值" len="3" format="NNN.NNN" unit="A" rw="R/W"/>
+        <DI code="04001403" name="超拉闸控制电流门限保护延时时间" len="2" format="NNNN" unit="分钟" rw="R/W"/>
+        <DI code="04001404" name="红外认证时效" len="1" format="NN" unit="分钟" rw="R"/>
+        <DI code="04001405" name="主动上报状态字自动复位延时时间" len="1" format="NN" unit="分钟" rw="R"/>
+        <!-- 0400 主动上报状态参变量 -->
+        <DI code="04001501" name="主动上报状态字" len="12" format="BitFieldCount" unit="" rw="R">
+            <!-- Byte0: Bit0~Bit7 -->
+            <Bit pos="0"  name="负荷开关误动或拒动"/>
+            <Bit pos="1"  name="ESAM错误"/>
+            <Bit pos="2"  name="内卡初始化错误"/>
+            <Bit pos="3"  name="时钟电池电压低"/>
+            <Bit pos="4"  name="内部程序错误"/>
+            <Bit pos="5"  name="存储器故障或损坏"/>
+            <Bit pos="6"  name="保留"/>
+            <Bit pos="7"  name="时钟故障"/>
+            <!-- Byte1: Bit8~Bit15 -->
+            <Bit pos="8"  name="停电抄表电池欠压"/>
+            <Bit pos="9"  name="透支状态"/>
+            <Bit pos="10" name="开表盖"/>
+            <Bit pos="11" name="开端钮盖"/>
+            <Bit pos="12" name="恒定磁场干扰"/>
+            <Bit pos="13" name="电源异常"/>
+            <Bit pos="14" name="跳闸成功"/>
+            <Bit pos="15" name="合闸成功"/>
+            <!-- Byte2: Bit16~Bit23 -->
+            <Bit pos="16" name="A相失压"/>
+            <Bit pos="17" name="A相欠压"/>
+            <Bit pos="18" name="A相过压"/>
+            <Bit pos="19" name="A相失流"/>
+            <Bit pos="20" name="A相过流"/>
+            <Bit pos="21" name="A相过载"/>
+            <Bit pos="22" name="A相功率反向"/>
+            <Bit pos="23" name="A相断相"/>
+            <!-- Byte3: Bit24~Bit31 -->
+            <Bit pos="24" name="A相断流"/>
+            <Bit pos="25" name="保留"/>
+            <Bit pos="26" name="保留"/>
+            <Bit pos="27" name="保留"/>
+            <Bit pos="28" name="保留"/>
+            <Bit pos="29" name="保留"/>
+            <Bit pos="30" name="保留"/>
+            <Bit pos="31" name="保留"/>
+            <!-- Byte4: Bit32~Bit39 -->
+            <Bit pos="32" name="B相失压"/>
+            <Bit pos="33" name="B相欠压"/>
+            <Bit pos="34" name="B相过压"/>
+            <Bit pos="35" name="B相失流"/>
+            <Bit pos="36" name="B相过流"/>
+            <Bit pos="37" name="B相过载"/>
+            <Bit pos="38" name="B相功率反向"/>
+            <Bit pos="39" name="B相断相"/>
+            <!-- Byte5: Bit40~Bit47 -->
+            <Bit pos="40" name="B相断流"/>
+            <Bit pos="41" name="保留"/>
+            <Bit pos="42" name="保留"/>
+            <Bit pos="43" name="保留"/>
+            <Bit pos="44" name="保留"/>
+            <Bit pos="45" name="保留"/>
+            <Bit pos="46" name="保留"/>
+            <Bit pos="47" name="保留"/>
+            <!-- Byte6: Bit48~Bit55 -->
+            <Bit pos="48" name="C相失压"/>
+            <Bit pos="49" name="C相欠压"/>
+            <Bit pos="50" name="C相过压"/>
+            <Bit pos="51" name="C相失流"/>
+            <Bit pos="52" name="C相过流"/>
+            <Bit pos="53" name="C相过载"/>
+            <Bit pos="54" name="C相功率反向"/>
+            <Bit pos="55" name="C相断相"/>
+            <!-- Byte7: Bit56~Bit63 -->
+            <Bit pos="56" name="C相断流"/>
+            <Bit pos="57" name="保留"/>
+            <Bit pos="58" name="保留"/>
+            <Bit pos="59" name="保留"/>
+            <Bit pos="60" name="保留"/>
+            <Bit pos="61" name="保留"/>
+            <Bit pos="62" name="保留"/>
+            <Bit pos="63" name="保留"/>
+            <!-- Byte8: Bit64~Bit71 -->
+            <Bit pos="64" name="电压逆相序"/>
+            <Bit pos="65" name="电流逆相序"/>
+            <Bit pos="66" name="电压不平衡"/>
+            <Bit pos="67" name="电流不平衡"/>
+            <Bit pos="68" name="辅助电源失电"/>
+            <Bit pos="69" name="掉电"/>
+            <Bit pos="70" name="需量超限"/>
+            <Bit pos="71" name="总功率因数超下限"/>
+            <!-- Byte9: Bit72~Bit79 (保留) -->
+            <Bit pos="72" name="保留"/>
+            <Bit pos="73" name="保留"/>
+            <Bit pos="74" name="保留"/>
+            <Bit pos="75" name="保留"/>
+            <Bit pos="76" name="保留"/>
+            <Bit pos="77" name="保留"/>
+            <Bit pos="78" name="保留"/>
+            <Bit pos="79" name="保留"/>
+            <!-- Byte10: Bit80~Bit87 (保留) -->
+            <Bit pos="80" name="保留"/>
+            <Bit pos="81" name="保留"/>
+            <Bit pos="82" name="保留"/>
+            <Bit pos="83" name="保留"/>
+            <Bit pos="84" name="保留"/>
+            <Bit pos="85" name="保留"/>
+            <Bit pos="86" name="保留"/>
+            <Bit pos="87" name="保留"/>
+            <!-- Byte11: Bit88~Bit95 (保留) -->
+            <Bit pos="88" name="保留"/>
+            <Bit pos="89" name="保留"/>
+            <Bit pos="90" name="保留"/>
+            <Bit pos="91" name="保留"/>
+            <Bit pos="92" name="保留"/>
+            <Bit pos="93" name="保留"/>
+            <Bit pos="94" name="保留"/>
+            <Bit pos="95" name="保留"/>
+        </DI>
+        <DI code="04001502" name="插卡状态字" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="04001503" name="复位主动上报状态字" len="12" format="XX...XX" unit="" rw="W"/>
+        <!-- 0401 时区表参变量 -->
+        <DI code="04010000" name="第一套时区表数据" len="42" format="MMDDNN...MMDDNN" unit="" rw="R/W"/>
+        <DI code="04010001" name="第一套第1日时段表数据" len="42" format="hhmmNN...hhmmNN" unit="" rw="R/W"/>
+        <DI code="04010002" name="第一套第2日时段表数据" len="42" format="hhmmNN...hhmmNN" unit="" rw="R/W"/>
+        <DI code="04010008" name="第一套第8日时段表数据" len="42" format="hhmmNN...hhmmNN" unit="" rw="R/W"/>
+        <!-- 0402 第二套时区表参变量 -->
+        <DI code="04020000" name="第二套时区表数据" len="42" format="MMDDNN...MMDDNN" unit="" rw="R"/>
+        <DI code="04020001" name="第二套第1日时段表数据" len="42" format="hhmmNN...hhmmNN" unit="" rw="R"/>
+        <DI code="04020008" name="第二套第8日时段表数据" len="42" format="hhmmNN...hhmmNN" unit="" rw="R"/>
+        <!-- 0403 公共假日参变量 -->
+        <DI code="04030001" name="第1公共假日日期及日时段表号" len="4" format="YYMMDDNN" unit="" rw="R/W"/>
+        <DI code="040300FE" name="第254公共假日日期及日时段表号" len="4" format="YYMMDDNN" unit="" rw="R/W"/>
+        <!-- 0404 显示参变量 -->
+        <DI code="04040101" name="自动循环显示第1屏显示数据项" len="5" format="NNNNNNNN,NN" unit="" rw="R/W"/>
+        <DI code="04040163" name="自动循环显示第99屏显示数据项" len="5" format="NNNNNNNN,NN" unit="" rw="R/W"/>
+        <DI code="04040201" name="按键循环显示第1屏显示数据项" len="5" format="NNNNNNNN,NN" unit="" rw="R/W"/>
+        <DI code="04040263" name="按键循环显示第99屏显示数据项" len="5" format="NNNNNNNN,NN" unit="" rw="R/W"/>
+        <DI code="04040300" name="液晶查看" len="5" format="NNNNNNNN,NN" unit="" rw="R"/>
+        <!-- 0405 费率参变量 -->
+        <DI code="04050101" name="当前套费率1" len="4" format="NNNN.NNNN" unit="元" rw="R/W"/>
+        <DI code="0405013F" name="当前套费率63" len="4" format="NNNN.NNNN" unit="元" rw="R/W"/>
+        <DI code="04050201" name="备用套费率1" len="4" format="NNNN.NNNN" unit="元" rw="R/W"/>
+        <DI code="0405023F" name="备用套费率63" len="4" format="NNNN.NNNN" unit="元" rw="R/W"/>
+        <DI code="040501FF" name="当前套费率数据块" len="252" format="Block" unit="" rw="R"/>
+        <DI code="040502FF" name="备用套费率数据块" len="252" format="Block" unit="" rw="R/W"/>
+        <!-- 0406 阶梯参变量 -->
+        <DI code="04060001" name="第一套第1阶梯值" len="4" format="NNNNNN.NN" unit="kWh" rw="R/W"/>
+        <DI code="04060002" name="第一套第2阶梯值" len="4" format="NNNNNN.NN" unit="kWh" rw="R/W"/>
+        <DI code="04060101" name="第一套阶梯电价1" len="4" format="NNNN.NNNN" unit="元" rw="R/W"/>
+        <DI code="04060102" name="第一套阶梯电价2" len="4" format="NNNN.NNNN" unit="元" rw="R/W"/>
+        <DI code="04060201" name="第二套第1阶梯值" len="4" format="NNNNNN.NN" unit="kWh" rw="R/W"/>
+        <DI code="04060202" name="第二套第2阶梯值" len="4" format="NNNNNN.NN" unit="kWh" rw="R/W"/>
+        <DI code="04060301" name="第二套阶梯电价1" len="4" format="NNNN.NNNN" unit="元" rw="R/W"/>
+        <DI code="04060302" name="第二套阶梯电价2" len="4" format="NNNN.NNNN" unit="元" rw="R/W"/>
+        <DI code="040604FF" name="当前套阶梯参数数据块" len="60" format="Block" unit="" rw="R"/>
+        <DI code="040605FF" name="备用套阶梯参数数据块" len="60" format="Block" unit="" rw="R/W"/>
+        <!-- 0409 事件判定参变量 -->
+        <DI code="04090101" name="失压事件电压触发上限" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04090102" name="失压事件电压恢复下限" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04090103" name="失压事件电流触发下限" len="3" format="NN.NNNN" unit="A" rw="R/W"/>
+        <DI code="04090104" name="失压事件判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090201" name="欠压事件电压触发上限" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04090202" name="欠压事件判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090301" name="过压事件电压触发下限" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04090302" name="过压事件判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090401" name="断相事件电压触发上限" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04090402" name="断相事件电流触发上限" len="3" format="NN.NNNN" unit="A" rw="R/W"/>
+        <DI code="04090403" name="断相事件判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090501" name="电压不平衡率限值" len="2" format="NN.NN" unit="%" rw="R/W"/>
+        <DI code="04090502" name="电压不平衡率判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090601" name="电流不平衡率限值" len="2" format="NN.NN" unit="%" rw="R/W"/>
+        <DI code="04090602" name="电流不平衡率判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090701" name="失流事件电压触发下限" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04090702" name="失流事件电流触发上限" len="3" format="NN.NNNN" unit="A" rw="R/W"/>
+        <DI code="04090703" name="失流事件电流触发下限" len="3" format="NN.NNNN" unit="A" rw="R/W"/>
+        <DI code="04090704" name="失流事件判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090801" name="过流事件电流触发下限" len="2" format="NNN.N" unit="A" rw="R/W"/>
+        <DI code="04090802" name="过流事件判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090901" name="断流事件电压触发下限" len="2" format="NNN.N" unit="V" rw="R"/>
+        <DI code="04090902" name="断流事件电流触发上限" len="3" format="NN.NNNN" unit="A" rw="R" sign="true"/>
+        <DI code="04090903" name="断流事件判定延时时间" len="1" format="NN" unit="秒" rw="R"/>
+        <DI code="04090A01" name="潮流反向事件有功功率触发下限" len="3" format="NN.NNNN" unit="kW" rw="R" sign="true"/>
+        <DI code="04090A02" name="潮流反向事件判定延时时间" len="1" format="NN" unit="秒" rw="R"/>
+        <DI code="04090B01" name="过载事件有功功率触发下限" len="3" format="NN.NNNN" unit="kW" rw="R" sign="true"/>
+        <DI code="04090B02" name="过载事件判定延时时间" len="1" format="NN" unit="秒" rw="R"/>
+        <DI code="04090C01" name="电压考核上限" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04090C02" name="电压考核下限" len="2" format="NNN.N" unit="V" rw="R/W"/>
+        <DI code="04090D01" name="有功需量超限事件需量触发下限" len="3" format="NN.NNNN" unit="kW" rw="R/W"/>
+        <DI code="04090D02" name="无功需量超限事件需量触发下限" len="3" format="NN.NNNN" unit="kvar" rw="R/W"/>
+        <DI code="04090D03" name="需量超限事件判定延时时间" len="1" format="NN" unit="秒" rw="R/W"/>
+        <DI code="04090E01" name="功率因数超下限阈值" len="2" format="N.NNN" unit="" rw="R/W" sign="true"/>
+        <DI code="04090E02" name="功率因数超下限判定延时时间" len="1" format="NN" unit="秒" rw="R/W" sign="true"/>
+        <DI code="04090F01" name="电流严重不平衡限值" len="2" format="NN.NN" unit="%" rw="R"/>
+        <DI code="04090F02" name="电流严重不平衡触发延时时间" len="1" format="NN" unit="秒" rw="R"/>
+        <DI code="04091001" name="功率反向事件有功功率触发下限" len="3" format="NN.NNNN" unit="kW" rw="R" sign="true"/>
+        <DI code="04091002" name="功率反向事件判定延时时间" len="1" format="NN" unit="秒" rw="R"/>
+        <!-- 0480 厂家自定义参变量 -->
+        <DI code="04800001" name="厂家软件版本号" len="32" format="ASCII" unit="" rw="R"/>
+        <DI code="04800002" name="厂家硬件版本号" len="32" format="ASCII" unit="" rw="R"/>
+        <DI code="04800003" name="厂家编号" len="32" format="ASCII" unit="" rw="R"/>
+        <DI code="04800004" name="软件备案号" len="8" format="ASCII" unit="" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 05xx 冻结数据 (Frozen Data) -->
+    <!-- ========================================== -->
+    <DI_Group code="05" name="冻结数据">
+        <!-- 0500 定时冻结数据 -->
+        <DI code="05000000" name="(上1次)定时冻结时间" len="5" format="YYMMDDhhmm" unit="" rw="R"/>
+        <DI code="05000001" name="(上1次)定时冻结正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="05000002" name="(上1次)定时冻结反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="05000003" name="(上1次)定时冻结组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="05000004" name="(上1次)定时冻结组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R" sign="true"/>
+        <DI code="05000005" name="(上1次)定时冻结第一象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="05000006" name="(上1次)定时冻结第二象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="05000007" name="(上1次)定时冻结第三象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="05000008" name="(上1次)定时冻结第四象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh" rw="R"/>
+        <DI code="05000009" name="(上1次)定时冻结正向有功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW年月日时分" rw="R"/>
+        <DI code="0500000A" name="(上1次)定时冻结反向有功最大需量及发生时间" len="8" format="XX.XXXXYYMMDDhhmm" unit="kW年月日时分" rw="R"/>
+        <DI code="05000010" name="(上1次)定时冻结变量数据" len="24" format="Block" unit="" rw="R"/>
+        <DI code="050000FF" name="(上1次)定时冻结数据块" len="60" format="Block" unit="" rw="R"/>
+        <!-- 支持多套冻结数据 -->
+        <DI code="05000000" name="(上2次)定时冻结时间" len="5" format="YYMMDDhhmm" unit="" rw="R"/>
+        <!-- ... 其他次数的冻结数据类似定义 -->
+        <!-- 0501 瞬时冻结数据 -->
+        <DI code="05010000" name="(上1次)瞬时冻结时间" len="5" format="YYMMDDhhmm" unit="" rw="R"/>
+        <DI code="05010001" name="(上1次)瞬时冻结正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="05010002" name="(上1次)瞬时冻结反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh" rw="R"/>
+        <DI code="05010010" name="(上1次)瞬时冻结变量数据" len="24" format="Block" unit="" rw="R"/>
+        <DI code="050100FF" name="(上1次)瞬时冻结数据块" len="33" format="Block" unit="" rw="R"/>
+        <!-- 0502 时区表切换冻结数据 -->
+        <DI code="05020000" name="(上1次)时区表切换冻结时间" len="5" format="YYMMDDhhmm" unit="" rw="R"/>
+        <DI code="050200FF" name="(上1次)时区表切换冻结数据块" len="60" format="Block" unit="" rw="R"/>
+        <!-- 0503 日时段表切换冻结数据 -->
+        <DI code="05030000" name="(上1次)日时段表切换冻结时间" len="5" format="YYMMDDhhmm" unit="" rw="R"/>
+        <DI code="050300FF" name="(上1次)日时段表切换冻结数据块" len="60" format="Block" unit="" rw="R"/>
+        <!-- 0504 约定冻结数据 -->
+        <DI code="05040000" name="(上1次)约定冻结时间" len="5" format="YYMMDDhhmm" unit="" rw="R"/>
+        <DI code="050400FF" name="(上1次)约定冻结数据块" len="60" format="Block" unit="" rw="R"/>
+        <!-- 0505 整点冻结数据 -->
+        <DI code="05050000" name="(上1次)整点冻结时间" len="5" format="YYMMDDhhmm" unit="" rw="R"/>
+        <DI code="050500FF" name="(上1次)整点冻结数据块" len="60" format="Block" unit="" rw="R"/>
+        <!-- 0506 日冻结数据 -->
+        <DI code="05060000" name="(上1次)日冻结时间" len="5" format="YYMMDDhhmm" unit="" rw="R"/>
+        <DI code="050600FF" name="(上1次)日冻结数据块" len="60" format="Block" unit="" rw="R"/>
+        <!-- 0507 月冻结数据 -->
+        <DI code="05070000" name="(上1次)月冻结时间" len="4" format="YYMM" unit="" rw="R"/>
+        <DI code="050700FF" name="(上1次)月冻结数据块" len="60" format="Block" unit="" rw="R"/>
+        <!-- 0508 年冻结数据 -->
+        <DI code="05080000" name="(上1次)年冻结时间" len="2" format="YY" unit="" rw="R"/>
+        <DI code="050800FF" name="(上1次)年冻结数据块" len="60" format="Block" unit="" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 06xx 负荷记录数据 (Load Record Data) -->
+    <!-- ========================================== -->
+    <DI_Group code="06" name="负荷记录数据">
+        <!-- 0600 第1类负荷记录 -->
+        <DI code="06000001" name="给定时间记录块" len="var" format="LoadRecord" unit="" rw="R">
+            <!-- 负荷记录子字段定义 (separator表示分隔符字段) -->
+            <Field name="起始码" len="2" format="Hex" expected="A0A0"/>
+            <Field name="字节数" len="1" format="Dec"/>
+            <Field name="存储时间" len="5" format="YYMMDDhhmm"/>
+            <Field name="电压电流频率" len="var" format="Block" separator="AA">
+                <SubField name="A相电压" len="2" format="XXX.X" unit="V"/>
+                <SubField name="B相电压" len="2" format="XXX.X" unit="V"/>
+                <SubField name="C相电压" len="2" format="XXX.X" unit="V"/>
+                <SubField name="A相电流" len="3" format="XXX.XXX" unit="A" sign="true"/>
+                <SubField name="B相电流" len="3" format="XXX.XXX" unit="A" sign="true"/>
+                <SubField name="C相电流" len="3" format="XXX.XXX" unit="A" sign="true"/>
+                <SubField name="频率" len="2" format="XX.XX" unit="Hz"/>
+            </Field>
+            <Field name="有无功功率" len="var" format="Block" separator="AA">
+                <SubField name="总有功功率" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="A相有功功率" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="B相有功功率" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="C相有功功率" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="总无功功率" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+                <SubField name="A相无功功率" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+                <SubField name="B相无功功率" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+                <SubField name="C相无功功率" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+            </Field>
+            <Field name="功率因数" len="var" format="Block" separator="AA">
+                <SubField name="总功率因数" len="2" format="X.XXX" unit="" sign="true"/>
+                <SubField name="A相功率因数" len="2" format="X.XXX" unit="" sign="true"/>
+                <SubField name="B相功率因数" len="2" format="X.XXX" unit="" sign="true"/>
+                <SubField name="C相功率因数" len="2" format="X.XXX" unit="" sign="true"/>
+            </Field>
+            <Field name="有无功总电能" len="var" separator="AA">
+                <SubField name="正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh"/>
+                <SubField name="反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh"/>
+                <SubField name="组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" sign="true"/>
+                <SubField name="组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" sign="true"/>
+            </Field>
+            <Field name="四象限无功总电能" len="var" separator="AA">
+                <SubField name="第一象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh"/>
+                <SubField name="第二象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh"/>
+                <SubField name="第三象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh"/>
+                <SubField name="第四象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh"/>
+            </Field>
+            <Field name="当前需量" len="var" format="Block" separator="AA">
+                <SubField name="当前有功需量" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="当前无功需量" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+            </Field>
+            <Field name="累加校验码" len="1" format="Hex"/>
+            <Field name="结束码" len="1" format="Hex" expected="E5"/>
+        </DI>
+        <DI code="06010100" name="第1类负荷记录起始时间" len="4" format="MMDDhhmm" unit="月日时分" rw="R"/>
+        <DI code="06010101" name="第1类负荷记录第1点数据" len="24" format="Block" unit="" rw="R"/>
+        <DI code="060101FF" name="第1类负荷记录数据块" len="2400" format="Block" unit="" rw="R"/>
+        <DI code="06010001" name="第1类负荷记录" len="var" format="LoadRecord" unit="" rw="R">
+            <Req>
+                <Field name="存储时间及数量" len="6" format="YYMMDDhhmmNN"/>
+            </Req>
+            <Rsp>
+                <!-- 负荷记录子字段定义 (separator表示分隔符字段) -->
+                <Field name="起始码" len="2" format="Hex" expected="A0A0"/>
+                <Field name="字节数" len="1" format="Dec"/>
+                <Field name="存储时间" len="5" format="YYMMDDhhmm"/>
+                <Field name="电压电流频率" len="var" format="Block" separator="AA">
+                    <SubField name="A相电压" len="2" format="XXX.X" unit="V"/>
+                    <SubField name="B相电压" len="2" format="XXX.X" unit="V"/>
+                    <SubField name="C相电压" len="2" format="XXX.X" unit="V"/>
+                    <SubField name="A相电流" len="3" format="XXX.XXX" unit="A" sign="true"/>
+                    <SubField name="B相电流" len="3" format="XXX.XXX" unit="A" sign="true"/>
+                    <SubField name="C相电流" len="3" format="XXX.XXX" unit="A" sign="true"/>
+                    <SubField name="频率" len="2" format="XX.XX" unit="Hz"/>
+                </Field>
+                <Field name="有无功功率" len="var" format="Block" separator="AA"/>
+                <Field name="功率因数" len="var" format="Block" separator="AA"/>
+                <Field name="有无功总电能" len="var" separator="AA"/>
+                <Field name="四象限无功总电能" len="var" separator="AA"/>
+                <Field name="当前需量" len="var" format="Block" separator="AA"/>
+                <Field name="累加校验码" len="1" format="Hex"/>
+                <Field name="结束码" len="1" format="Hex" expected="E5"/>
+            </Rsp>
+        </DI>
+        <!-- 0601 第2类负荷记录 -->
+        <DI code="06020100" name="第2类负荷记录起始时间" len="4" format="MMDDhhmm" unit="月日时分" rw="R"/>
+        <DI code="06020001" name="第2类负荷记录第1点数据" len="24" format="Block" unit="" rw="R"/>
+        <DI code="06020001" name="第2类负荷记录" len="var" format="LoadRecord" unit="" rw="R">
+            <!-- 负荷记录子字段定义 (separator表示分隔符字段) -->
+            <Field name="起始码" len="2" format="Hex" expected="A0A0"/>
+            <Field name="字节数" len="1" format="Dec"/>
+            <Field name="存储时间" len="5" format="YYMMDDhhmm"/>
+            <Field name="电压电流频率" len="var" format="Block" separator="AA"/>
+            <Field name="有无功功率" len="var" format="Block" separator="AA">
+                <SubField name="总有功功率" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="A相有功功率" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="B相有功功率" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="C相有功功率" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="总无功功率" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+                <SubField name="A相无功功率" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+                <SubField name="B相无功功率" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+                <SubField name="C相无功功率" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+            </Field>
+            <Field name="功率因数" len="var" format="Block" separator="AA"/>
+            <Field name="有无功总电能" len="var" separator="AA"/>
+            <Field name="四象限无功总电能" len="var" separator="AA"/>
+            <Field name="当前需量" len="var" format="Block" separator="AA"/>
+            <Field name="累加校验码" len="1" format="Hex"/>
+            <Field name="结束码" len="1" format="Hex" expected="E5"/>
+        </DI>
+        <!-- 0602 第3类负荷记录 -->
+        <DI code="06030100" name="第3类负荷记录起始时间" len="4" format="MMDDhhmm" unit="月日时分" rw="R"/>
+        <DI code="06030101" name="第3类负荷记录第1点数据" len="24" format="Block" unit="" rw="R"/>
+        <DI code="06030001" name="第3类负荷记录" len="var" format="LoadRecord" unit="" rw="R">
+            <!-- 负荷记录子字段定义 (separator表示分隔符字段) -->
+            <Field name="起始码" len="2" format="Hex" expected="A0A0"/>
+            <Field name="字节数" len="1" format="Dec"/>
+            <Field name="存储时间" len="5" format="YYMMDDhhmm"/>
+            <Field name="电压电流频率" len="var" format="Block" separator="AA"/>
+            <Field name="有无功功率" len="var" format="Block" separator="AA"/>
+            <Field name="功率因数" len="var" format="Block" separator="AA">
+                <SubField name="总功率因数" len="2" format="X.XXX" unit="" sign="true"/>
+                <SubField name="A相功率因数" len="2" format="X.XXX" unit="" sign="true"/>
+                <SubField name="B相功率因数" len="2" format="X.XXX" unit="" sign="true"/>
+                <SubField name="C相功率因数" len="2" format="X.XXX" unit="" sign="true"/>
+            </Field>
+            <Field name="有无功总电能" len="var" separator="AA"/>
+            <Field name="四象限无功总电能" len="var" separator="AA"/>
+            <Field name="当前需量" len="var" format="Block" separator="AA"/>
+            <Field name="累加校验码" len="1" format="Hex"/>
+            <Field name="结束码" len="1" format="Hex" expected="E5"/>
+        </DI>
+        <!-- 0603 第4类负荷记录 -->
+        <DI code="06040001" name="第4类负荷记录" len="var" format="LoadRecord" unit="" rw="R">
+            <!-- 负荷记录子字段定义 (separator表示分隔符字段) -->
+            <Field name="起始码" len="2" format="Hex" expected="A0A0"/>
+            <Field name="字节数" len="1" format="Dec"/>
+            <Field name="存储时间" len="5" format="YYMMDDhhmm"/>
+            <Field name="电压电流频率" len="var" format="Block" separator="AA"/>
+            <Field name="有无功功率" len="var" format="Block" separator="AA"/>
+            <Field name="功率因数" len="var" format="Block" separator="AA"/>
+            <Field name="有无功总电能" len="var" separator="AA">
+                <SubField name="正向有功总电能" len="4" format="XXXXXX.XX" unit="kWh"/>
+                <SubField name="反向有功总电能" len="4" format="XXXXXX.XX" unit="kWh"/>
+                <SubField name="组合无功1总电能" len="4" format="XXXXXX.XX" unit="kvarh" sign="true"/>
+                <SubField name="组合无功2总电能" len="4" format="XXXXXX.XX" unit="kvarh" sign="true"/>
+            </Field>
+            <Field name="四象限无功总电能" len="var" separator="AA"/>
+            <Field name="当前需量" len="var" format="Block" separator="AA"/>
+            <Field name="累加校验码" len="1" format="Hex"/>
+            <Field name="结束码" len="1" format="Hex" expected="E5"/>
+        </DI>
+        <DI code="06040100" name="第4类负荷记录起始时间" len="4" format="MMDDhhmm" unit="月日时分" rw="R"/>
+        <DI code="06040101" name="第4类负荷记录第1点数据" len="24" format="Block" unit="" rw="R"/>
+        <!-- 0604 第5类负荷记录 -->
+        <DI code="06050001" name="第5类负荷记录" len="var" format="LoadRecord" unit="" rw="R">
+            <!-- 负荷记录子字段定义 (separator表示分隔符字段) -->
+            <Field name="起始码" len="2" format="Hex" expected="A0A0"/>
+            <Field name="字节数" len="1" format="Dec"/>
+            <Field name="存储时间" len="5" format="YYMMDDhhmm"/>
+            <Field name="电压电流频率" len="var" format="Block" separator="AA"/>
+            <Field name="有无功功率" len="var" format="Block" separator="AA"/>
+            <Field name="功率因数" len="var" format="Block" separator="AA"/>
+            <Field name="有无功总电能" len="var" separator="AA"/>
+            <Field name="四象限无功总电能" len="var" separator="AA">
+                <SubField name="第一象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh"/>
+                <SubField name="第二象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh"/>
+                <SubField name="第三象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh"/>
+                <SubField name="第四象限无功总电能" len="4" format="XXXXXX.XX" unit="kvarh"/>
+            </Field>
+            <Field name="当前需量" len="var" format="Block" separator="AA"/>
+            <Field name="累加校验码" len="1" format="Hex"/>
+            <Field name="结束码" len="1" format="Hex" expected="E5"/>
+        </DI>
+        <DI code="06050100" name="第5类负荷记录起始时间" len="4" format="MMDDhhmm" unit="月日时分" rw="R"/>
+        <DI code="06050101" name="第5类负荷记录第1点数据" len="24" format="Block" unit="" rw="R"/>
+        <!-- 0605 第6类负荷记录 -->
+        <DI code="06060100" name="第6类负荷记录起始时间" len="4" format="MMDDhhmm" unit="月日时分" rw="R"/>
+        <DI code="06060101" name="第6类负荷记录第1点数据" len="24" format="Block" unit="" rw="R"/>
+        <DI code="06060001" name="第6类负荷记录" len="var" format="LoadRecord" unit="" rw="R">
+            <!-- 负荷记录子字段定义 (separator表示分隔符字段) -->
+            <Field name="起始码" len="2" format="Hex" expected="A0A0"/>
+            <Field name="字节数" len="1" format="Dec"/>
+            <Field name="存储时间" len="5" format="YYMMDDhhmm"/>
+            <Field name="电压电流频率" len="var" format="Block" separator="AA"/>
+            <Field name="有无功功率" len="var" format="Block" separator="AA"/>
+            <Field name="功率因数" len="var" format="Block" separator="AA"/>
+            <Field name="有无功总电能" len="var" separator="AA"/>
+            <Field name="四象限无功总电能" len="var" separator="AA"/>
+            <Field name="当前需量" len="var" format="Block" separator="AA">
+                <SubField name="当前有功需量" len="3" format="XX.XXXX" unit="kW" sign="true"/>
+                <SubField name="当前无功需量" len="3" format="XX.XXXX" unit="kvar" sign="true"/>
+            </Field>
+            <Field name="累加校验码" len="1" format="Hex"/>
+            <Field name="结束码" len="1" format="Hex" expected="E5"/>
+        </DI>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 07xx 安全认证数据 (Security Authentication) -->
+    <!-- ========================================== -->
+    <DI_Group code="07" name="安全认证数据">
+        <!-- 0700 密码相关 -->
+        <DI code="07000001" name="当前密码级别" len="1" format="NN" unit="" rw="R"/>
+        <DI code="07000002" name="密码错误次数" len="1" format="NN" unit="次" rw="R"/>
+        <DI code="07000003" name="密码错误最大次数" len="1" format="NN" unit="次" rw="R/W"/>
+        <DI code="07000004" name="密码连续错误锁定时间" len="2" format="NNNN" unit="分钟" rw="R/W"/>
+        <!-- 0701 安全认证状态 -->
+        <DI code="07010001" name="安全认证状态字" len="2" format="XXXX" unit="" rw="R"/>
+        <DI code="07010002" name="认证失败次数" len="1" format="NN" unit="次" rw="R"/>
+        <DI code="07010003" name="最大认证失败次数" len="1" format="NN" unit="次" rw="R/W"/>
+        <!-- 0702 密钥管理 -->
+        <DI code="07020001" name="当前有效密钥索引" len="1" format="NN" unit="" rw="R"/>
+        <DI code="07020002" name="密钥更新标志" len="1" format="NN" unit="" rw="R/W"/>
+        <DI code="07020003" name="密钥版本号" len="4" format="XXXX" unit="" rw="R"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 08xx 控制命令 (Control Commands) -->
+    <!-- ========================================== -->
+    <DI_Group code="08" name="控制命令">
+        <!-- 0800 继电器控制 -->
+        <DI code="08000001" name="继电器合闸命令" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08000002" name="继电器跳闸命令" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08000003" name="继电器状态查询" len="1" format="NN" unit="" rw="R"/>
+        <!-- 0801 报警控制 -->
+        <DI code="08010001" name="声音报警开启" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08010002" name="声音报警关闭" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08010003" name="光报警开启" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08010004" name="光报警关闭" len="1" format="NN" unit="" rw="W"/>
+        <!-- 0802 显示控制 -->
+        <DI code="08020001" name="LCD背光开启" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08020002" name="LCD背光关闭" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08020003" name="LCD全显" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08020004" name="LCD循环显示" len="1" format="NN" unit="" rw="W"/>
+        <!-- 0803 数据清零控制 -->
+        <DI code="08030001" name="最大需量清零" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08030002" name="电量清零" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08030003" name="事件记录清零" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08030004" name="负荷记录清零" len="1" format="NN" unit="" rw="W"/>
+        <!-- 0804 时间控制 -->
+        <DI code="08040001" name="广播对时" len="7" format="YYMMDDWWhhmmss" unit="" rw="W"/>
+        <DI code="08040002" name="对时命令" len="7" format="YYMMDDWWhhmmss" unit="" rw="W"/>
+        <!-- 0805 冻结控制 -->
+        <DI code="08050001" name="瞬时冻结命令" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08050002" name="定时冻结命令" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08050003" name="约定冻结命令" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08050004" name="日冻结命令" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08050005" name="整点冻结命令" len="1" format="NN" unit="" rw="W"/>
+        <!-- 0806 安全控制 -->
+        <DI code="08060001" name="密码修改命令" len="5" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="08060002" name="密码验证命令" len="5" format="NNNNNNNN" unit="" rw="W"/>
+        <DI code="08060003" name="密码解锁命令" len="5" format="NNNNNNNN" unit="" rw="W"/>
+        <!-- 0807 通信控制 -->
+        <DI code="08070001" name="通信测试命令" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08070002" name="重启通信模块" len="1" format="NN" unit="" rw="W"/>
+        <DI code="08070003" name="切换通信通道" len="1" format="NN" unit="" rw="W"/>
+    </DI_Group>
+    <!-- ========================================== -->
+    <!-- 09xx 扩展功能数据 (Extended Functions) -->
+    <!-- ========================================== -->
+    <DI_Group code="09" name="扩展功能数据">
+        <!-- 0900 谐波数据 -->
+        <DI code="09000101" name="A相电压谐波含量" len="42" format="Block" unit="%" rw="R"/>
+        <DI code="09000102" name="B相电压谐波含量" len="42" format="Block" unit="%" rw="R"/>
+        <DI code="09000103" name="C相电压谐波含量" len="42" format="Block" unit="%" rw="R"/>
+        <DI code="09000201" name="A相电流谐波含量" len="42" format="Block" unit="%" rw="R"/>
+        <DI code="09000202" name="B相电流谐波含量" len="42" format="Block" unit="%" rw="R"/>
+        <DI code="09000203" name="C相电流谐波含量" len="42" format="Block" unit="%" rw="R"/>
+        <!-- 0901 电能质量数据 -->
+        <DI code="09010001" name="电压闪变值" len="4" format="XX.XX" unit="" rw="R"/>
+        <DI code="09010002" name="电压偏差" len="4" format="XX.XX" unit="%" rw="R"/>
+        <DI code="09010003" name="频率偏差" len="2" format="XX.XX" unit="Hz" rw="R"/>
+        <DI code="09010004" name="电压合格率" len="4" format="XXXX.XX" unit="%" rw="R"/>
+        <!-- 0902 温度监测 -->
+        <DI code="09020001" name="表内温度" len="2" format="XXX.X" unit="℃" rw="R" sign="true"/>
+        <DI code="09020002" name="环境温度" len="2" format="XXX.X" unit="℃" rw="R" sign="true"/>
+        <!-- 0903 电池监测 -->
+        <DI code="09030001" name="时钟电池电压" len="2" format="XX.XX" unit="V" rw="R"/>
+        <DI code="09030002" name="停电抄表电池电压" len="2" format="XX.XX" unit="V" rw="R"/>
+        <DI code="09030003" name="内部电池工作时间" len="4" format="XXXXXX" unit="分钟" rw="R"/>
+        <!-- 0904 通信状态 -->
+        <DI code="09040001" name="通信信号强度" len="1" format="NN" unit="级" rw="R"/>
+        <DI code="09040002" name="通信模块状态" len="1" format="NN" unit="" rw="R"/>
+        <DI code="09040003" name="网络注册状态" len="1" format="NN" unit="" rw="R"/>
+        <!-- 0905 地理位置信息 -->
+        <DI code="09050001" name="经度" len="4" format="XXXX.XXXX" unit="度" rw="R"/>
+        <DI code="09050002" name="纬度" len="4" format="XXXX.XXXX" unit="度" rw="R"/>
+        <DI code="09050003" name="海拔高度" len="3" format="XXXX.XX" unit="米" rw="R"/>
+    </DI_Group>
+</Prot645Config>
