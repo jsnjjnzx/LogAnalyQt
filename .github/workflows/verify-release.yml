@@ -1,6 +1,9 @@
 name: Verify published release update
 
 on:
+  push:
+    branches: [main]
+    paths: ['tests/test_github_update.py', '.github/workflows/verify-release.yml']
   workflow_dispatch:
     inputs:
       tag:
@@ -40,7 +43,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate requested version
-        run: python -c "import os; from scripts.release.release_metadata import normalize_tag; print(normalize_tag(os.environ['RELEASE_TAG']))"
+        run: python -c "import json, os, subprocess; from scripts.release.release_metadata import normalize_tag; tag = os.environ.get('RELEASE_TAG') or json.loads(subprocess.check_output(['gh', 'release', 'view', '--repo', os.environ['GITHUB_REPOSITORY'], '--json', 'tagName'], text=True))['tagName']; normalize_tag(tag); open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8').write('RELEASE_TAG=' + tag + '\n'); print(tag)"
       - name: Verify Windows update from published files
         if: runner.os == 'Windows'
         env:

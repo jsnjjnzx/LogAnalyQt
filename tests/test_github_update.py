@@ -64,7 +64,7 @@ def main():
             else:
                 assert hashlib.sha256(executable.read_bytes()).digest() == hashlib.sha256(binary.read_bytes()).digest()
             time.sleep(3)
-            subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "read"],
+            subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "read", "--page", "3"],
                            cwd=root, env=workspace_environment, check=True, timeout=90)
             print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, saved, replaced, restarted {version} and preserved the workspace drafts and portable data")
         finally:
