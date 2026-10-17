@@ -1,5 +1,6 @@
 import LogAnalyQt.Next as Next
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Controls
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
@@ -110,8 +111,26 @@ ApplicationWindow {
     font.family: Qt.platform.os === "osx" ? "PingFang SC" : "Microsoft YaHei UI"
     font.pixelSize: 14
     title: "多协议解析器 v" + backend.appVersion
-    color: theme.background
+    color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
+    readonly property real windowCornerRadius: visibility === Window.Maximized || visibility === Window.FullScreen ? 0 : 8
+    background: Rectangle { color: theme.background; radius: mainWindow.windowCornerRadius }
+    contentItem.layer.enabled: windowCornerRadius > 0
+    contentItem.layer.effect: MultiEffect {
+        maskEnabled: true
+        maskThresholdMin: 0.5
+        maskSpreadAtMin: 1.0
+        maskSource: windowMask
+    }
+    Rectangle {
+        id: windowMask
+        width: mainWindow.width
+        height: mainWindow.height
+        radius: mainWindow.windowCornerRadius
+        antialiasing: true
+        layer.enabled: true
+        visible: false
+    }
 
     FontLoader {
         id: mdiFont

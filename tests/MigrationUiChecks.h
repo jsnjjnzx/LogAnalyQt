@@ -7,6 +7,7 @@
 #include <QEventLoop>
 #include <QElapsedTimer>
 #include <QMouseEvent>
+#include <QImage>
 #include <QQmlEngine>
 #include <QQmlIncubationController>
 #include <QQuickItem>
@@ -61,6 +62,15 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       settle();
       require(window->property("currentPage").toInt() == page, "navigation did not reach requested page");
     };
+    trace("window corners");
+    settle();
+    const QImage windowImage = window->grabWindow();
+    require(!windowImage.isNull(), "window frame capture failed");
+    for (const QPoint corner : {QPoint(0, 0), QPoint(windowImage.width() - 1, 0),
+                                QPoint(0, windowImage.height() - 1), QPoint(windowImage.width() - 1, windowImage.height() - 1)})
+      require(windowImage.pixelColor(corner).alpha() < 32, "window corner is not transparent");
+    require(windowImage.pixelColor(windowImage.width() / 2, 0).alpha() > 240,
+            "window edge must remain opaque between rounded corners");
     trace("manual parsing");
     navigate(1);
     backend->setProtocolType(0);
