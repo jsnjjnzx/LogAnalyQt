@@ -174,7 +174,7 @@ Mac 的 SSH 实时监控增加首次指纹确认、目标绑定的系统密码�
 
 ### Windows
 
-运行环境：Qt 6.5.3 静态版（MinGW 64-bit）、CMake、PowerShell。
+运行环境：Qt 6.11.1 静态版（MinGW 64-bit）、CMake、PowerShell。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/package_single.ps1 -Version 3.1.0
@@ -228,8 +228,8 @@ macOS 更新包内必须只包含一个 `LogAnalyQt.app`。应用会按当前系
 `.github/workflows/build.yml`；也可在 Actions 页面手动运行。
 标签必须与 CMake 项目版本一致。当前阶段只构建和保存产物，不自动创建正式 Release。
 
-- Windows：`windows-2022` x64，Qt 6.5.3 静态版 + MinGW 11.2，生成单文件 EXE 和 SHA256。
-- macOS：`macos-15` arm64，Qt 6.5.3，生成 DMG、更新 ZIP 和各自的 SHA256。
+- Windows：`windows-2022` x64，Qt 6.11.1 静态版 + MinGW 13.1，生成单文件 EXE 和 SHA256。
+- macOS：`macos-15` arm64，Qt 6.11.1，生成 DMG、更新 ZIP 和各自的 SHA256。
 - 两个平台分别执行 Release 构建、自动测试、打包及产物检查；Windows 额外检查 PE 架构为 x64。
 - Windows 静态 Qt 首次从 Qt 官方 GitHub 源码构建并缓存；缓存丢失时自动重建，首次运行较慢。
 - 构建包在 Actions 对应运行记录的 Artifacts 下载，保留 7 天。普通构建无需配置额外 Secrets。

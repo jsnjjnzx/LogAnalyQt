@@ -14,7 +14,7 @@ function Check-Exit([string]$Operation) {
     if ($LASTEXITCODE -ne 0) { throw "$Operation failed ($LASTEXITCODE)" }
 }
 
-git clone --depth 1 --branch v6.5.3 https://github.com/qt/qt5.git $SourceDir
+git clone --depth 1 --branch v6.11.1 https://github.com/qt/qt5.git $SourceDir
 Check-Exit "Clone Qt"
 git -C $SourceDir submodule update --init --depth 1 qtbase qtshadertools qtdeclarative qtsvg
 Check-Exit "Fetch Qt modules"

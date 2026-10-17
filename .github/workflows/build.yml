@@ -19,7 +19,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 180
     env:
-      QT_STATIC_DIR: D:/qt-static/6.5.3
+      QT_STATIC_DIR: D:/qt-static/6.11.1
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
@@ -35,22 +35,23 @@ jobs:
       - name: Install Qt test tools and MinGW
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.5.3'
+          version: '6.11.1'
           arch: win64_mingw
-          tools: 'tools_mingw,qt.tools.win64_mingw1120'
+          tools: 'tools_mingw1310,qt.tools.win64_mingw1310'
           cache: 'true'
-      - name: Locate MinGW
+          setup-python: 'false'
+      - name: Locate MinGW 13.1
         shell: pwsh
         run: |
-          $Mingw = Get-ChildItem "$env:IQTA_TOOLS" -Directory -Filter 'mingw1120*' | Select-Object -First 1
-          if (-not $Mingw) { throw 'MinGW 11.2 not installed' }
+          $Mingw = Get-ChildItem "$env:IQTA_TOOLS" -Directory -Filter 'mingw1310*' | Select-Object -First 1
+          if (-not $Mingw) { throw 'MinGW 13.1 not installed' }
           "MINGW_DIR=$($Mingw.FullName)" >> $env:GITHUB_ENV
       - name: Restore static Qt
         id: qt-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.QT_STATIC_DIR }}
-          key: windows-2022-qt-6.5.3-mingw1120-static-${{ hashFiles('scripts/ci/build_static_qt.ps1') }}
+          key: windows-2022-qt-6.11.1-mingw1310-static-${{ hashFiles('scripts/ci/build_static_qt.ps1') }}
       - name: Build static Qt on cache miss
         if: steps.qt-cache.outputs.cache-hit != 'true'
         shell: pwsh
@@ -94,9 +95,10 @@ jobs:
           python3 -m unittest tests.test_release_automation tests.test_ci_packages -v
       - uses: jurplel/install-qt-action@v4
         with:
-          version: '6.5.3'
+          version: '6.11.1'
           arch: clang_64
           cache: 'true'
+          setup-python: 'false'
       - name: Build, test and package
         run: |
           test "$(uname -m)" = arm64
