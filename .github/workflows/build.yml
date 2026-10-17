@@ -97,6 +97,8 @@ jobs:
             }
             & $Python tests/test_ui_migration_runtime.py $Package.FullName
             if ($LASTEXITCODE -ne 0) { throw 'Standalone Windows package failed to run' }
+            & $Python tests/test_github_update.py $Package.FullName --probe
+            if ($LASTEXITCODE -ne 0) { throw 'Standalone Windows update HTTPS probe failed' }
           }
           finally {
             foreach ($QtDirectory in $HiddenQt.Keys) {
@@ -214,6 +216,8 @@ jobs:
           test "$(lipo -archs build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt)" = arm64
           env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
             python3 tests/test_ui_migration_runtime.py build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt
+          env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
+            python3 tests/test_github_update.py build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt --probe
       - uses: actions/upload-artifact@v4
         with:
           name: LogAnalyQt-macOS-arm64

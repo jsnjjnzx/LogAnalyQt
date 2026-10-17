@@ -92,7 +92,8 @@ int main(int argc, char *argv[]) {
   QCoreApplication::setApplicationName(QStringLiteral("LogAnalyQt"));
   const bool legacyUi = app.arguments().contains(QStringLiteral("--legacy-ui"));
 #ifdef LOGANALYQT_UI_TESTING
-  const bool updateTest = app.arguments().contains(QStringLiteral("--update-test"));
+  const bool updateTest = app.arguments().contains(QStringLiteral("--update-test")) ||
+                          app.arguments().contains(QStringLiteral("--update-probe"));
   const bool updateRestart = qEnvironmentVariableIsSet("LOGANALYQT_UPDATE_TEST_RESULT") && !updateTest;
   const bool uiSmokeMode = app.arguments().contains(QStringLiteral("--ui-smoke")) || updateRestart;
 #else

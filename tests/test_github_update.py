@@ -13,6 +13,7 @@ import time
 def main():
     binary = Path(sys.argv[1]).resolve()
     version = sys.argv[2].removeprefix("v")
+    probe = sys.argv[2] == "--probe"
     with tempfile.TemporaryDirectory(prefix="loganalyqt-github-update-") as directory:
         root = Path(directory)
         if sys.platform == "darwin":
@@ -35,11 +36,14 @@ def main():
         for variable in ("QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QML_IMPORT_PATH", "QML2_IMPORT_PATH",
                          "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
             environment.pop(variable, None)
-        process = subprocess.Popen([str(executable), "--ui-smoke", "--update-test"],
+        process = subprocess.Popen([str(executable), "--ui-smoke", "--update-probe" if probe else "--update-test"],
                                    cwd=root, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             returncode = process.wait(timeout=900)
             assert returncode == 0, f"update client failed: {returncode}"
+            if probe:
+                print("PASS: packaged app reached the GitHub update endpoint over HTTPS; no installation attempted")
+                return
             deadline = time.monotonic() + 90
             while not result_path.exists() and time.monotonic() < deadline:
                 time.sleep(0.25)
