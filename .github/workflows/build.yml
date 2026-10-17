@@ -15,12 +15,11 @@ env:
 jobs:
   windows:
     name: Windows x64
-    if: github.event_name != 'workflow_dispatch'
     runs-on: windows-2022
     timeout-minutes: 180
     env:
       QT_STATIC_DIR: D:/qt-static/6.11.1
-      QT_QPA_PLATFORM: offscreen
+      QT_QPA_PLATFORM: windows
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
