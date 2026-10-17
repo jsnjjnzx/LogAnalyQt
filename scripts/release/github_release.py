@@ -59,7 +59,13 @@ def publish(directory, tag, notes, repository, commit):
         gh("release", "edit", tag, "--repo", repository, "--notes-file", str(notes_file))
     paths = [directory / asset["name"] for asset in metadata["assets"]] + [output]
     gh("release", "upload", tag, *map(str, paths), "--repo", repository, "--clobber")
-    uploaded = json.loads(gh("api", f"repos/{repository}/releases/tags/{tag}"))
+    details = json.loads(gh("release", "view", tag, "--repo", repository, "--json", "apiUrl"))
+    release_id = details["apiUrl"].rsplit("/", 1)[-1]
+    if not release_id.isdecimal():
+        raise ValueError("Invalid draft Release ID")
+    uploaded = json.loads(gh("api", f"repos/{repository}/releases/{release_id}"))
+    if not uploaded["draft"] or uploaded["tag_name"] != tag:
+        raise ValueError("Release changed while verifying draft attachments")
     expected = {path.name: path for path in paths}
     if {asset["name"] for asset in uploaded["assets"]} != set(expected):
         raise ValueError("Release attachments are incomplete or unexpected; draft retained")

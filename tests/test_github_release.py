@@ -40,9 +40,13 @@ class GitHubReleaseTests(unittest.TestCase):
             if arguments[0] == "api" and "--paginate" in arguments:
                 return json.dumps([[{"tag_name": self.tag, "draft": False}]] if published else [[]])
             if arguments[0] == "api" and "/releases/tags/" in arguments[1]:
+                raise RuntimeError("GitHub does not return draft releases by tag: HTTP 404")
+            if arguments[:2] == ("release", "view"):
+                return json.dumps({"apiUrl": f"https://api.github.com/repos/{self.repository}/releases/123"})
+            if arguments[0] == "api" and arguments[1].endswith("/releases/123"):
                 paths = [self.directory / name for name in github_release.expected_asset_names("3.1.1", "arm64")]
                 paths.append(self.directory / "update.json")
-                return json.dumps({"assets": [{"name": path.name, "size": path.stat().st_size,
+                return json.dumps({"draft": True, "tag_name": self.tag, "assets": [{"name": path.name, "size": path.stat().st_size,
                     "digest": "sha256:" + ("0" * 64 if broken_digest else hashlib.sha256(path.read_bytes()).hexdigest())}
                     for path in paths]})
             return ""
