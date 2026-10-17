@@ -33,3 +33,16 @@
 版本号为 4.0.0。沿用现有 GitHub Actions 发布流程：Windows x64 EXE、macOS arm64 DMG、macOS 更新 ZIP、各包 SHA256 和 `update.json`，两端构建通过后才发布。
 
 Windows 的构建、运行回归与更新验证由现有 Windows runner 执行，本机不声明 Windows 人工视觉验收。未进行公司 SSH/SMB、现场终端或真实 AI 联调。macOS 沿用项目现有 ad-hoc 签名，不等同于 Developer ID 公证。
+
+## 正式发布结果
+
+- 已发布 [v4.0.0](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v4.0.0)，发布代码提交为 `250406f86167faada1b6003220bfa6cc873dfc9f`。
+- [发布流水线 39032062528](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/39032062528) 的 Windows 构建、macOS 构建、发布、Windows 更新回归、macOS 更新回归五项全部成功。
+- Windows：54 项 QML 检查、20 组应用回归通过；打包 EXE 在移除 Qt/MinGW 环境路径后运行通过。
+- macOS：23 组应用回归通过；打包应用在移除开发环境路径后运行通过。
+- 两端受控旧客户端均从公开 Release 检查版本、下载、验证 SHA256、保存工作区、替换、重启到 4.0.0，并保留草稿和已有数据。
+- 已下载正式发布的全部六个安装包/校验附件，逐个核对 `update.json` 中的版本 URL、文件大小和 SHA256。
+- 正式 DMG 的 `hdiutil verify` 通过；只读挂载后签名验证通过，98 个随包 Mach-O 文件的 arm64 架构与依赖检查通过。
+- 从该 DMG 的临时副本再次运行页面、解析、11 个独立标签、关闭/新增、重启恢复、损坏状态备份和保存失败保护测试，全部通过。
+
+本地交付目录：`release_package/v4.0.0/`。完整流水线与下载包验证日志分别为本目录 `release-ci.log` 和 `published-package-runtime.log`。
