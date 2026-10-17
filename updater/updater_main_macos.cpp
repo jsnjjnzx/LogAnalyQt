@@ -19,6 +19,7 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include "../src/common/MacDataMigration.h"
 
 extern char **environ;
 
@@ -30,6 +31,8 @@ struct Options {
   pid_t pid = 0;
   fs::path source;
   fs::path target;
+  fs::path dataRoot;
+  fs::path logRoot;
   bool launch = false;
   int timeoutMs = 30000;
 };
@@ -80,6 +83,10 @@ bool parseArguments(int argc, char *argv[], Options &options,
         options.source = argv[++i];
       } else if (argument == "--target" && i + 1 < argc) {
         options.target = argv[++i];
+      } else if (argument == "--data-root" && i + 1 < argc) {
+        options.dataRoot = argv[++i];
+      } else if (argument == "--log-root" && i + 1 < argc) {
+        options.logRoot = argv[++i];
       } else if (argument == "--timeout" && i + 1 < argc) {
         options.timeoutMs = std::stoi(argv[++i]);
       } else if (argument == "--launch") {
@@ -100,6 +107,10 @@ bool parseArguments(int argc, char *argv[], Options &options,
   }
   if (options.timeoutMs <= 0) {
     error = "--timeout 必须大于 0";
+    return false;
+  }
+  if (!options.dataRoot.is_absolute() || !options.logRoot.is_absolute()) {
+    error = "需要提供用户数据和日志的绝对路径";
     return false;
   }
   return true;
@@ -138,38 +149,6 @@ fs::path findExtractedApp(const fs::path &directory) {
   return found;
 }
 
-void copyLegacyItemIfNeeded(const fs::path &source,
-                            const fs::path &destination) {
-  if (!fs::exists(source) || fs::exists(destination))
-    return;
-
-  std::error_code error;
-  fs::create_directories(destination.parent_path(), error);
-  if (error)
-    throw fs::filesystem_error("create data directory", destination, error);
-
-  if (fs::is_directory(source, error)) {
-    fs::copy(source, destination, fs::copy_options::recursive, error);
-  } else {
-    fs::copy_file(source, destination, error);
-  }
-  if (error)
-    throw fs::filesystem_error("migrate application data", source,
-                               destination, error);
-}
-
-void migrateLegacyData(const fs::path &oldApp) {
-  const fs::path oldData = oldApp / "Contents/MacOS";
-  const fs::path newData = oldApp.parent_path();
-  copyLegacyItemIfNeeded(oldData / "LogAnalyQt.ini",
-                         newData / "LogAnalyQt.ini");
-  copyLegacyItemIfNeeded(oldData / "protocol_xml",
-                         newData / "protocol_xml");
-  copyLegacyItemIfNeeded(oldData / "preset", newData / "preset");
-  copyLegacyItemIfNeeded(oldData / "prompts", newData / "prompts");
-  copyLegacyItemIfNeeded(oldData / "log", newData / "log");
-}
-
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -192,6 +171,18 @@ int main(int argc, char *argv[]) {
       options.target.extension() != ".app") {
     showError("目标路径不是有效的 macOS 应用包");
     return 1;
+  }
+  const fs::path canonicalTarget = fs::weakly_canonical(options.target, error);
+  if (error) { showError("无法确认应用安装路径"); return 1; }
+  for (const auto &root : {options.dataRoot, options.logRoot}) {
+    const fs::path canonicalRoot = fs::weakly_canonical(root, error);
+    if (error) { showError("无法确认用户数据路径"); return 1; }
+    const fs::path relative = canonicalRoot.lexically_relative(canonicalTarget);
+    if (canonicalRoot == canonicalTarget.parent_path() || canonicalRoot == canonicalRoot.root_path() ||
+        (!relative.empty() && *relative.begin() != "..")) {
+      showError("数据目录必须独立于应用包和应用安装目录");
+      return 1;
+    }
   }
 
   const fs::path parent = options.target.parent_path();
@@ -237,8 +228,8 @@ int main(int argc, char *argv[]) {
   }
 
   try {
-    migrateLegacyData(options.target);
-  } catch (const fs::filesystem_error &exception) {
+    MacDataMigration::initialize({options.target / "Contents/MacOS"}, options.dataRoot, options.logRoot);
+  } catch (const std::exception &exception) {
     fs::remove_all(staging, error);
     showError(std::string("迁移旧版本数据失败: ") + exception.what());
     return 1;

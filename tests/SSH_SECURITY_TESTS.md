@@ -17,7 +17,7 @@ build/macos-debug/ssh_security_tests --local-sshd
 主机密钥变化的人工处理：
 
 1. 停止连接，通过独立渠道向服务器管理员核对目标 host、port、算法以及 `SHA256:` 指纹。
-2. 完全关闭本应用，备份程序同级便携目录中的 `ssh-known-hosts.json`。
+2. 完全关闭本应用，备份用户数据目录中的 `ssh-known-hosts.json`（Mac 为 `~/Library/Application Support/LogAnalyQt/`，Windows 仍为程序同级目录）。
 3. 只有核实服务器正常换钥后，手工删除 JSON 中对应 `[host]:port` 的单个记录，保留其他端点的信任记录及有效 JSON 格式。读取失败也必须人工检查，不能用“仍然连接”绕过。
 4. 重开应用并显式连接，核对新弹出的目标及指纹后确认。程序只有原子保存成功后才发送密码，不提供覆盖现有记录的 API。
 

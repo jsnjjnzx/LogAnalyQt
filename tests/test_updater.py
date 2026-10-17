@@ -18,6 +18,8 @@ def main():
         marker = root / "restarted.txt"
         data = root / "LogAnalyQt.ini"
         data.write_text("user settings stay intact")
+        data_root = root / "home/Library/Application Support/LogAnalyQt"
+        log_root = root / "home/Library/Logs/LogAnalyQt"
         if windows:
             target, package = root / "old.exe", root / "new.exe"
             target.write_bytes(b"old version")
@@ -50,6 +52,7 @@ def main():
             child_environment = dict(environment)
             if fail: child_environment["LOGANALYQT_TEST_REPLACE_FAIL"] = "1"
             result = subprocess.run([str(helper), "--source", str(source), "--target", str(target),
+                                     *([] if windows else ["--data-root", str(data_root), "--log-root", str(log_root)]),
                                      *( ["--launch"] if launch else []), *extra],
                                     env=child_environment, capture_output=True, timeout=20)
             assert data.read_text() == "user settings stay intact", "updater changed portable data"
@@ -98,7 +101,9 @@ def main():
             assert target.read_bytes() == fixture.read_bytes()
         else:
             assert not (target / "old-version-marker").exists(), "old bundle was not replaced"
-            assert (root / "prompts/user.md").read_text() == "preserve legacy edited prompt"
+            assert (data_root / "prompts/user.md").read_text() == "preserve legacy edited prompt"
+            assert (data_root / "LogAnalyQt.ini").read_text() == "older bundle settings must not overwrite portable settings"
+            assert not (root / "prompts").exists(), "updater wrote data next to the application"
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(target)], check=True)
         print("PASS: missing package, parent timeout, legacy permissions, forced replacement rollback, portable data and native restart")
 

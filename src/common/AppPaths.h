@@ -3,8 +3,30 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QStandardPaths>
+#ifdef Q_OS_MACOS
+#include "MacDataMigration.h"
+#endif
 
 namespace AppPaths {
+
+#ifdef LOGANALYQT_UI_TESTING
+inline QString testHomeDirectory;
+#endif
+
+#ifdef Q_OS_MACOS
+inline QString standardLocation(QStandardPaths::StandardLocation location) {
+  QString path = QStandardPaths::writableLocation(location);
+#ifdef LOGANALYQT_UI_TESTING
+  if (!testHomeDirectory.isEmpty()) {
+    const QString home = QDir::homePath() + "/";
+    if (!path.startsWith(home)) return {};
+    path = QDir(testHomeDirectory).filePath(path.mid(home.size()));
+  }
+#endif
+  return path;
+}
+#endif
 
 inline QString portableDataRootForApplicationDir(
     const QString &applicationDirPath) {
@@ -26,11 +48,15 @@ inline QString portableDataRootForApplicationDir(
 }
 
 inline QString writableDataRoot() {
+#ifdef Q_OS_MACOS
+  return standardLocation(QStandardPaths::AppLocalDataLocation);
+#else
   const QString path = portableDataRootForApplicationDir(
       QCoreApplication::applicationDirPath());
   if (!path.isEmpty())
     QDir().mkpath(path);
   return path;
+#endif
 }
 
 inline QString protocolDirectory() {
@@ -42,11 +68,36 @@ inline QString promptDirectory() {
 }
 
 inline QString logDirectory() {
+#ifdef Q_OS_MACOS
+  const QString support = standardLocation(QStandardPaths::GenericDataLocation);
+  if (support.isEmpty()) return {};
+  return QDir(QFileInfo(support).absolutePath())
+      .filePath("Logs/" + QCoreApplication::applicationName());
+#else
   return QDir(writableDataRoot()).filePath(QStringLiteral("log"));
+#endif
 }
 
 inline QString presetDirectory() {
   return QDir(writableDataRoot()).filePath(QStringLiteral("preset"));
+}
+
+inline bool initialize(QString *error) {
+#ifdef Q_OS_MACOS
+  try {
+    const auto path = [](const QString &value) { return std::filesystem::path(value.toStdString()); };
+    MacDataMigration::initialize(
+        {path(portableDataRootForApplicationDir(QCoreApplication::applicationDirPath())),
+         path(QCoreApplication::applicationDirPath())},
+        path(writableDataRoot()), path(logDirectory()));
+  } catch (const std::exception &failure) {
+    if (error) *error = QString::fromUtf8(failure.what());
+    return false;
+  }
+#else
+  Q_UNUSED(error)
+#endif
+  return true;
 }
 
 } // namespace AppPaths

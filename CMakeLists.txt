@@ -75,7 +75,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 3.1.2 LANGUAGES CXX)
+project(LogAnalyQt VERSION 3.1.3 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -323,6 +323,7 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
         tests/app_paths_tests.cpp
     )
     target_include_directories(app_paths_tests PRIVATE src)
+    target_compile_definitions(app_paths_tests PRIVATE LOGANALYQT_UI_TESTING)
     target_link_libraries(app_paths_tests PRIVATE Qt6::Core)
     add_test(NAME app_paths_tests COMMAND app_paths_tests)
 
@@ -596,6 +597,7 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     )
     target_compile_definitions(protocol_sync_tests PRIVATE
         CSG_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+        LOGANALYQT_UI_TESTING
     )
     target_link_libraries(protocol_sync_tests PRIVATE Qt6::Core Qt6::Xml Qt6::Gui)
     if(APPLE)

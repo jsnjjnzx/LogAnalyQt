@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import plistlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,7 +22,10 @@ def main():
             shutil.copytree(binary.parents[2], bundle, symlinks=True)
             executable = bundle / "Contents/MacOS" / binary.name
             (bundle / "old-update-test-marker").write_text("controlled older installation")
+            package_version = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())["CFBundleShortVersionString"]
+            standard_mac = tuple(map(int, package_version.split("."))) >= (3, 1, 3)
         else:
+            standard_mac = False
             executable = root / "LogAnalyQt.exe"
             shutil.copy2(binary, executable)
             with executable.open("ab") as output:
@@ -32,7 +36,9 @@ def main():
         workspace = root / "unrelated-user-data.txt"
         workspace.write_text("keep all portable data")
         result_path = root / "restart-result.json"
-        environment = dict(os.environ, LOGANALYQT_UPDATE_TEST_RESULT=str(result_path))
+        environment = dict(os.environ, LOGANALYQT_UPDATE_TEST_RESULT=str(result_path), LOGANALYQT_TEST_HOME=str(root / "home"))
+        data_root = root / "home/Library/Application Support/LogAnalyQt" if standard_mac else root
+        log_path = root / "home/Library/Logs/LogAnalyQt/log.txt" if standard_mac else root / "log/log.txt"
         for variable in ("QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QML_IMPORT_PATH", "QML2_IMPORT_PATH",
                          "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
             environment.pop(variable, None)
@@ -41,11 +47,13 @@ def main():
         if not probe:
             subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "write"],
                            cwd=root, env=workspace_environment, check=True, timeout=90)
-        process = subprocess.Popen([str(executable), "--ui-smoke", "--update-probe" if probe else "--update-test"],
-                                   cwd=root, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stderr_path = root / "update-stderr.txt"
+        with stderr_path.open("wb") as errors:
+            process = subprocess.Popen([str(executable), "--ui-smoke", "--update-probe" if probe else "--update-test"],
+                                       cwd=root, env=environment, stdout=subprocess.DEVNULL, stderr=errors)
         try:
             returncode = process.wait(timeout=900)
-            assert returncode == 0, f"update client failed: {returncode}"
+            assert returncode == 0, f"update client failed: {returncode}; {stderr_path.read_text(encoding='utf-8')}"
             if probe:
                 print("PASS: packaged app reached the GitHub update endpoint over HTTPS; no installation attempted")
                 return
@@ -57,6 +65,7 @@ def main():
             assert result["version"] == version, result
             assert Path(result["executable"]).resolve() == executable.resolve(), result
             assert prompt.read_text() == "User prompt survives a real GitHub update.\n"
+            assert (data_root / "prompts/ai_698_framing.md").read_text() == prompt.read_text(), "migration changed the user's prompt"
             assert workspace.read_text() == "keep all portable data"
             if sys.platform == "darwin":
                 assert not (bundle / "old-update-test-marker").exists(), "bundle was not replaced"
@@ -66,12 +75,15 @@ def main():
             time.sleep(3)
             subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "read", "--page", "3"],
                            cwd=root, env=workspace_environment, check=True, timeout=90)
+            if standard_mac:
+                assert not any((root / name).exists() for name in ("LogAnalyQt.ini", "protocol_xml", "preset", "log")), "Mac update generated data beside its bundle"
+                assert (data_root / ".legacy-data-imported-v1").is_file()
             print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, saved, replaced, restarted {version} and preserved the workspace drafts and portable data")
         finally:
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=10)
-            log = root / "log/log.txt"
+            log = log_path
             if log.exists():
                 for line in log.read_text(encoding="utf-8").splitlines():
                     if "UPDATE_TEST_" in line or " CRIT " in line or " FATAL " in line:

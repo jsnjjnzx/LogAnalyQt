@@ -16,6 +16,9 @@
 #include <QTimer>
 #include <QTextStream>
 #include <QSaveFile>
+#include <QProcess>
+#include <QTemporaryDir>
+#include <memory>
 #ifdef LOGANALYQT_UI_TESTING
 #include "../../tests/MigrationUiChecks.h"
 #include "../../tests/ParseWorkspaceChecks.h"
@@ -23,7 +26,7 @@
 
 Q_IMPORT_QML_PLUGIN(NextUiPlugin)
 
-// 将 Qt 日志重定向到运行目录下的 log/log.txt，保证早期的 qDebug 也能被记录
+// 日志位置由平台路径规则决定，迁移完成后才开始写入。
 static QMutex g_logMutex;
 static void qtMessageToFile(QtMsgType type, const QMessageLogContext &context,
                             const QString &msg) {
@@ -96,13 +99,36 @@ int main(int argc, char *argv[]) {
                           app.arguments().contains(QStringLiteral("--update-probe"));
   const bool updateRestart = qEnvironmentVariableIsSet("LOGANALYQT_UPDATE_TEST_RESULT") && !updateTest;
   const bool uiSmokeMode = app.arguments().contains(QStringLiteral("--ui-smoke")) || updateRestart;
+#ifdef Q_OS_MACOS
+  std::unique_ptr<QTemporaryDir> isolatedHome;
+  if (uiSmokeMode) {
+    AppPaths::testHomeDirectory = qEnvironmentVariable("LOGANALYQT_TEST_HOME");
+    if (AppPaths::testHomeDirectory.isEmpty()) {
+      isolatedHome = std::make_unique<QTemporaryDir>();
+      if (!isolatedHome->isValid()) return 2;
+      AppPaths::testHomeDirectory = isolatedHome->path();
+    }
+    if (!QFileInfo(AppPaths::testHomeDirectory).isAbsolute()) return 2;
+  }
+#endif
 #else
   const bool uiSmokeMode = false;
 #endif
   if (!legacyUi)
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
-  // 安装自定义日志处理器，尽早记录日志
+  QString migrationError;
+  if (!AppPaths::initialize(&migrationError)) {
+    fprintf(stderr, "Data migration failed: %s\n", qPrintable(migrationError));
+#ifdef Q_OS_MACOS
+    if (!uiSmokeMode)
+      QProcess::execute(QStringLiteral("/usr/bin/osascript"), {QStringLiteral("-e"),
+          QStringLiteral("on run argv\ndisplay alert \"LogAnalyQt 数据迁移未完成\" message (item 1 of argv) as critical buttons {\"关闭\"}\nend run"),
+          QStringLiteral("旧数据已保留，请处理以下问题后重试：\n") + migrationError});
+#endif
+    return 2;
+  }
+  // 迁移失败时不创建后端或写入默认配置。
   qInstallMessageHandler(qtMessageToFile);
 
   qmlRegisterType<LogBackend>("LogAnalyQt", 1, 2, "LogBackend");

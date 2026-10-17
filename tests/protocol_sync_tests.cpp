@@ -605,6 +605,11 @@ void TestPromptSync() {
 
 int main(int argc, char *argv[]) {
   QCoreApplication application(argc, argv);
+#ifdef Q_OS_MACOS
+  QTemporaryDir isolatedHome(QDir(QCoreApplication::applicationDirPath()).filePath("test-home-XXXXXX"));
+  if (!isolatedHome.isValid()) return 1;
+  AppPaths::testHomeDirectory = isolatedHome.path();
+#endif
 
   const QString sourceXml =
       QStringLiteral(CSG_TEST_SOURCE_DIR "/protocol_xml/"

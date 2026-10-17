@@ -2,6 +2,7 @@
 #include <QDebug>
 #include <QSysInfo>
 #include <QVersionNumber>
+#include "../common/AppPaths.h"
 
 namespace {
 
@@ -660,6 +661,10 @@ bool UpdateChecker::installUpdate() {
     return false;
   }
   args << "--target" << QDir::toNativeSeparators(targetPath);
+#ifdef Q_OS_MACOS
+  args << "--data-root" << AppPaths::writableDataRoot()
+       << "--log-root" << AppPaths::logDirectory();
+#endif
   args << "--launch";
 
   // 启动 updater 进程（detached，不随主程序退出而终止）
