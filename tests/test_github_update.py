@@ -36,6 +36,11 @@ def main():
         for variable in ("QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QML_IMPORT_PATH", "QML2_IMPORT_PATH",
                          "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
             environment.pop(variable, None)
+        workspace_environment = dict(environment)
+        workspace_environment.pop("LOGANALYQT_UPDATE_TEST_RESULT")
+        if not probe:
+            subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "write"],
+                           cwd=root, env=workspace_environment, capture_output=True, check=True, timeout=90)
         process = subprocess.Popen([str(executable), "--ui-smoke", "--update-probe" if probe else "--update-test"],
                                    cwd=root, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
@@ -50,7 +55,7 @@ def main():
             assert result_path.exists(), "replacement did not restart the new app"
             result = json.loads(result_path.read_text())
             assert result["version"] == version, result
-            assert Path(result["executable"]).resolve() == executable, result
+            assert Path(result["executable"]).resolve() == executable.resolve(), result
             assert prompt.read_text() == "User prompt survives a real GitHub update.\n"
             assert workspace.read_text() == "keep all portable data"
             if sys.platform == "darwin":
@@ -59,7 +64,9 @@ def main():
             else:
                 assert hashlib.sha256(executable.read_bytes()).digest() == hashlib.sha256(binary.read_bytes()).digest()
             time.sleep(3)
-            print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, saved, replaced, restarted {version} and preserved portable data")
+            subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "read"],
+                           cwd=root, env=workspace_environment, capture_output=True, check=True, timeout=90)
+            print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, saved, replaced, restarted {version} and preserved the 11-tab workspace and portable data")
         finally:
             if process.poll() is None:
                 process.terminate()
