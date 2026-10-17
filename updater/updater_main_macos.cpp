@@ -140,10 +140,10 @@ fs::path findExtractedApp(const fs::path &directory) {
 
 void copyLegacyItemIfNeeded(const fs::path &source,
                             const fs::path &destination) {
-  std::error_code error;
-  if (!fs::exists(source, error) || fs::exists(destination, error))
+  if (!fs::exists(source) || fs::exists(destination))
     return;
 
+  std::error_code error;
   fs::create_directories(destination.parent_path(), error);
   if (error)
     throw fs::filesystem_error("create data directory", destination, error);

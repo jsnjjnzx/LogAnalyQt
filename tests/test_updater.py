@@ -64,6 +64,27 @@ def main():
             sleeper.terminate()
             sleeper.wait()
         assert snapshot() == original, "timeout changed installation"
+        if windows:
+            import ctypes
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                          ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+            kernel.CreateFileW.restype = ctypes.c_void_p
+            handle = kernel.CreateFileW(str(target), 0x80000000, 3, None, 3, 0, None)
+            assert handle not in (None, ctypes.c_void_p(-1).value), "cannot lock test installation"
+            try:
+                assert run().returncode != 0, "locked old executable must block replacement"
+            finally:
+                kernel.CloseHandle(ctypes.c_void_p(handle))
+            assert snapshot() == original, "file lock changed old executable"
+        else:
+            legacy_directory = target / "Contents/MacOS"
+            legacy_directory.chmod(0)
+            try:
+                assert run().returncode != 0, "unreadable legacy data must block replacement"
+            finally:
+                legacy_directory.chmod(0o755)
+            assert snapshot() == original, "unreadable legacy data changed installation"
         assert run(fail=True).returncode != 0
         assert snapshot() == original, "replacement failure did not restore installation"
         assert not marker.exists(), "failed replacement restarted application"
@@ -79,7 +100,7 @@ def main():
             assert not (target / "old-version-marker").exists(), "old bundle was not replaced"
             assert (root / "prompts/user.md").read_text() == "preserve legacy edited prompt"
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(target)], check=True)
-        print("PASS: missing package, parent timeout, forced replacement rollback, portable data and native restart")
+        print("PASS: missing package, parent timeout, legacy permissions, forced replacement rollback, portable data and native restart")
 
 
 if __name__ == "__main__":
