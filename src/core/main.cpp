@@ -145,16 +145,49 @@ int main(int argc, char *argv[]) {
       []() { QCoreApplication::exit(-1); }, Qt::QueuedConnection);
   engine.loadFromModule(legacyUi ? "LogAnalyQt" : "LogAnalyQt.Next", "Main");
 
+#ifdef Q_OS_MACOS
+  if (app.platformName() == QStringLiteral("cocoa") && !engine.rootObjects().isEmpty()) {
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+    if (window) {
+#ifdef LOGANALYQT_UI_TESTING
+      const int stateArg = app.arguments().indexOf(QStringLiteral("--ui-start-visibility"));
+      if (uiSmokeMode && stateArg >= 0 && stateArg + 1 < app.arguments().size()) {
+        if (app.arguments()[stateArg + 1] == QStringLiteral("hidden")) window->hide();
+        if (app.arguments()[stateArg + 1] == QStringLiteral("minimized")) window->showMinimized();
+      }
+#endif
+      // Older updaters pass no launch flag; restore the window on every native Mac launch.
+      QTimer::singleShot(0, window, [window] {
+        if (!window->isVisible() || window->visibility() == QWindow::Minimized)
+          window->showNormal();
+        window->raise();
+        window->requestActivate();
+      });
+    }
+  }
+#endif
+
 #ifdef LOGANALYQT_UI_TESTING
   if (!engine.rootObjects().isEmpty() && updateRestart) {
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
-    QObject::connect(window, &QQuickWindow::frameSwapped, &app, [] {
+    auto rendered = std::make_shared<bool>(false);
+    const bool nativeMac = app.platformName() == QStringLiteral("cocoa");
+    const auto recordRestart = [window, rendered, nativeMac] {
+      if (!*rendered || !window->isVisible() || (nativeMac && !window->isActive())) return;
       QSaveFile marker(qEnvironmentVariable("LOGANALYQT_UPDATE_TEST_RESULT"));
       if (!marker.open(QIODevice::WriteOnly)) { QCoreApplication::exit(7); return; }
       marker.write(QJsonDocument(QJsonObject{{"version", QStringLiteral(APP_VERSION)},
-          {"executable", QCoreApplication::applicationFilePath()}}).toJson());
+          {"executable", QCoreApplication::applicationFilePath()},
+          {"pid", QCoreApplication::applicationPid()},
+          {"visible", window->isVisible()},
+          {"active", window->isActive()}}).toJson());
       if (!marker.commit()) QCoreApplication::exit(7);
+    };
+    QObject::connect(window, &QQuickWindow::frameSwapped, &app, [rendered, recordRestart] {
+      *rendered = true;
+      recordRestart();
     }, Qt::SingleShotConnection);
+    QObject::connect(window, &QQuickWindow::activeChanged, &app, recordRestart);
   }
   if (updateTest && !engine.rootObjects().isEmpty()) {
     QTimer::singleShot(0, &app, [&engine] {

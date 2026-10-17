@@ -75,7 +75,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 4.0.0 LANGUAGES CXX)
+project(LogAnalyQt VERSION 4.0.1 LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -230,6 +230,12 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     add_test(NAME ui_migration_runtime
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_migration_runtime.py
                 $<TARGET_FILE:appLogAnalyQt>)
+    if(APPLE)
+        add_test(NAME macos_window_activation
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_macos_window_activation.py
+                    $<TARGET_FILE:appLogAnalyQt>)
+        set_tests_properties(macos_window_activation PROPERTIES RUN_SERIAL TRUE TIMEOUT 90)
+    endif()
     set(PROT698_TEST_ENGINE_SOURCES
         src/protocols/698_prot/Prot698DataEncoder.cpp
         src/protocols/698_prot/Prot698OadManager.cpp

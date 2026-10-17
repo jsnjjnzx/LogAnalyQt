@@ -3406,7 +3406,7 @@ ApplicationWindow {
 
             // === 下载完成提示 ===
             Text {
-                text: "✅ 下载完成，校验通过！可以立即安装更新。"
+                text: "下载完成，校验通过。更新时会保存工作区，并自动重新打开软件。"
                 color: theme.success
                 font.pixelSize: 13
                 font.bold: true
@@ -3481,7 +3481,7 @@ ApplicationWindow {
 
                 // 立即更新按钮（下载完成状态）
                 StyledButton {
-                    text: "立即更新 🚀"
+                    text: "立即更新并重启"
                     visible: updateWindow.updateState === "ready"
                     onClicked: {
                         mainWindow.installingUpdate = true;

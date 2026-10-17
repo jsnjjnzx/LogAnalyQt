@@ -266,7 +266,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (options.launch &&
-      runCommand({"/usr/bin/open", options.target.string()}) != 0) {
+      runCommand({"/usr/bin/open", "-n", options.target.string()}) != 0) {
     showError("更新成功，但无法自动启动新版本，请手动打开应用。旧程序保留于: " +
               (swapped ? newApp.string() : backup.string()));
     return 1;

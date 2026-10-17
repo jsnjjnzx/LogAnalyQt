@@ -60,10 +60,14 @@ def main():
             deadline = time.monotonic() + 90
             while not result_path.exists() and time.monotonic() < deadline:
                 time.sleep(0.25)
-            assert result_path.exists(), "replacement did not restart the new app"
+            assert result_path.exists(), "updated application did not report a ready main window"
             result = json.loads(result_path.read_text())
             assert result["version"] == version, result
             assert Path(result["executable"]).resolve() == executable.resolve(), result
+            if tuple(map(int, version.split("."))) >= (4, 0, 1):
+                assert result.get("visible") is True, "updated application did not show its main window"
+                if sys.platform == "darwin":
+                    assert result.get("active") is True, "updated Mac application did not activate its main window"
             assert prompt.read_text() == "User prompt survives a real GitHub update.\n"
             assert (data_root / "prompts/ai_698_framing.md").read_text() == prompt.read_text(), "migration changed the user's prompt"
             assert workspace.read_text() == "keep all portable data"

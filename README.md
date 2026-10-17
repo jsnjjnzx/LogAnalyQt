@@ -1,6 +1,6 @@
 # MultiProtocolParser (Log Analyzer)
 
-**当前项目版本：** v4.0.0 — see `CHANGELOG.md`
+**当前项目版本：** v4.0.1 — see `CHANGELOG.md`
 
 一个功能强大的多协议报文分析与日志查看工具，专为分析 16 进制数据和调试通讯协议而设计。
 
