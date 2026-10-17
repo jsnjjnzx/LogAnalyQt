@@ -9,10 +9,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
-
 jobs:
   windows:
     name: Windows x64
@@ -38,6 +34,8 @@ jobs:
           version: '6.11.1'
           arch: win64_mingw
           tools: 'tools_mingw1310,qt.tools.win64_mingw1310'
+          # aqt 3.3 predates Qt 6.11's Windows repository layout.
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7'
           cache: 'true'
           setup-python: 'false'
       - name: Locate MinGW 13.1
@@ -69,6 +67,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
           python scripts/ci/check_build.py --packages release_package --platform windows
           if ($LASTEXITCODE -ne 0) { throw 'Windows package validation failed' }
+          $Package = Get-ChildItem release_package/*_Windows_x64.exe | Select-Object -First 1
+          $Imports = & "$env:MINGW_DIR/bin/objdump.exe" -p $Package.FullName | Out-String
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Windows imports' }
+          if ($Imports -match 'DLL Name:\s+(Qt6|libgcc|libstdc|libwinpthread)') { throw 'Package still depends on Qt or MinGW DLLs' }
       - uses: actions/upload-artifact@v4
         with:
           name: LogAnalyQt-Windows-x64

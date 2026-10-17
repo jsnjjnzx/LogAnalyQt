@@ -24,6 +24,12 @@ if ([string]::IsNullOrWhiteSpace($QtDir)) {
 if ([string]::IsNullOrWhiteSpace($MingwDir)) {
     $MingwDir = "C:/Qt/Tools/mingw1120_64"
 }
+if (-not (Test-Path "$QtDir/lib/libQt6Core.a")) {
+    throw "Static Qt library missing: $QtDir/lib/libQt6Core.a"
+}
+if (-not (Test-Path "$MingwDir/bin/g++.exe")) {
+    throw "MinGW compiler missing: $MingwDir/bin/g++.exe"
+}
 $AppName = "LogAnalyQt"
 $OriginalAppName = "appLogAnalyQt"
 $MaxThreads = 8 # 最大编译线程数
