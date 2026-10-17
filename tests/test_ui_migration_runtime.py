@@ -31,7 +31,8 @@ def main():
                       if (" WARN " in line or " CRIT " in line or " FATAL " in line)
                       and "Populating font family aliases" not in line]
             if result.returncode or errors:
-                print(arguments, result.stdout, result.stderr, "\n".join(dict.fromkeys(errors)), sep="\n")
+                diagnostics = [line for line in log.splitlines() if line in errors or "UI_CHECK_" in line]
+                print(arguments, result.stdout, result.stderr, "\n".join(dict.fromkeys(diagnostics)), sep="\n")
                 raise SystemExit(result.returncode or 1)
 
         run("--ui-checks")

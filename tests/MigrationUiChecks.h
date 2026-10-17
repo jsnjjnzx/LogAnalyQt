@@ -29,7 +29,15 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     }
     auto *backend = window->findChild<LogBackend *>("analysisBackend");
     require(backend != nullptr, "real LogBackend is missing");
+    auto trace = [](const char *step) { qInfo() << "UI_CHECK_STEP" << step; };
     auto settle = [&] {
+      QEventLoop frame;
+      bool rendered = false;
+      QObject::connect(window, &QQuickWindow::frameSwapped, &frame, [&] { rendered = true; frame.quit(); }, Qt::QueuedConnection);
+      QTimer::singleShot(2000, &frame, &QEventLoop::quit);
+      window->update();
+      frame.exec();
+      require(rendered, "UI frame did not finish rendering");
       auto *controller = qmlEngine(window)->incubationController();
       QElapsedTimer elapsed;
       elapsed.start();
@@ -48,10 +56,12 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     };
     auto uiItem = [&](const QString &name) { return findItem(window->contentItem(), name); };
     auto navigate = [&](int page) {
+      qInfo() << "UI_CHECK_PAGE" << page;
       require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, page)), "navigation invocation failed");
       settle();
       require(window->property("currentPage").toInt() == page, "navigation did not reach requested page");
     };
+    trace("manual parsing");
     navigate(1);
     backend->setProtocolType(0);
     auto *manualInput = uiItem("parse-input-1");
@@ -133,6 +143,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     }
     window->resize(originalSize);
 
+    trace("multi-tab parsing");
     navigate(3);
     auto *tabs = uiItem("parseTabs");
     require(tabs && tabs->property("count").toInt() == 5, "multi-parse must start with five tabs");
@@ -210,6 +221,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(backend->parseModel(14)->rowCount() == 0 && backend->parseModel(4)->rowCount() > 2,
             "clearing a tab affected another tab");
 
+    trace("files and filters");
     QTemporaryDir files;
     require(files.isValid(), "temporary log directory failed");
     const QString path = files.filePath(QString::fromUtf8("设备 日志.log"));
@@ -241,6 +253,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     backend->clearDiffs();
     require(backend->findNextDiff(-1) < 0, "diff state not cleared");
 
+    trace("frame verification");
     const QString frame = backend->buildFullFrame("05 01 01 40 00 02 00 00", {{"serverAddrHex", "000000000001"}, {"prm", true}, {"funcCode", 3}});
     require(!frame.startsWith("ERR:") && !frame.isEmpty(), "698 frame build failed");
     for (const QString &badApdu : {QString(), QString("GG0501014000020000"), QString("050101400002000"), QString("05:01:01:40:00:02:00:00")})
@@ -278,22 +291,31 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(QMetaObject::invokeMethod(framing, "verifyCurrent"), "verification popup invocation failed");
     settle();
     require(!framing->property("verifyFields").toList().isEmpty(), "verification popup has no rows");
+    trace("frame result return");
     require(QMetaObject::invokeMethod(framing, "framingResult", Q_ARG(QString, frame), Q_ARG(int, 1)), "framing result signal failed");
     require(window->property("currentPage").toInt() == 1 && backend->resultModel()->rowCount() > 5, "framing result did not return to manual page");
+    settle();
+    trace("APP result return");
     const QString appFrame = "01 00 00 00 00 63 6C 69 65 6E 74 00 73 65 72 76 65 72 00 10 00 00 00 00";
     require(QMetaObject::invokeMethod(framing, "framingResult", Q_ARG(QString, appFrame), Q_ARG(int, 4)), "APP return signal failed");
     require(backend->protocolType() == 4 && backend->resultModel()->rowCount() > 5, "APP return targeted the wrong parser/model");
+    settle();
+    trace("APDU popup");
     require(QMetaObject::invokeMethod(window, "inspectApdu", Q_ARG(QVariant, "05 01 01 40 00 02 00 00")), "APDU inspection failed");
     auto *apduWindow = window->findChild<QQuickWindow *>("apduInspection");
     require(apduWindow && apduWindow->isVisible() && backend->popupResultModel()->rowCount() > 0, "APDU window did not display parsed data");
+    settle();
     apduWindow->close();
+    settle();
 
+    trace("CSG parsing");
     const QByteArray csg = BuildCsgApplicationFrame(0x88, 0x0A, 0x01,
         BuildCsgDataUnit(0, 0xE0000000, QByteArray::fromHex("00")));
     backend->setProtocolType(8);
     backend->parseHex(QString::fromLatin1(csg.toHex(' ')), "auto");
     require(backend->resultModel()->rowCount() > 5, "CSG parser unavailable in migrated UI");
 
+    trace("presets and merge");
     const QString summary = "__ui_migration_runtime_fixture__";
     require(backend->addPresetMessage("698", summary, frame), "preset create failed");
     require(backend->getPresetContent("698", summary) == frame, "preset persistence failed");
@@ -325,6 +347,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     manualInput->setProperty("text", "0501024000020000");
     clickParse();
     require(backend->resultModel()->rowCount() > 2, "returning to manual page lost APDU parsing");
+    trace("finish");
     navigate(0);
     return {};
   } catch (const QString &error) {
