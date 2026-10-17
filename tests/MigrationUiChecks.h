@@ -21,6 +21,12 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     if (!ok) throw QString::fromUtf8(message);
   };
   try {
+    for (auto *model : QList<QAbstractItemModel *>{new ParseResultModel, new GlobalPreviewModel}) {
+      bool reset = false;
+      QObject::connect(model, &QAbstractItemModel::modelReset, [&] { reset = true; });
+      delete model;
+      require(!reset, "destroying a model must not restart view delegates");
+    }
     auto *backend = window->findChild<LogBackend *>("analysisBackend");
     require(backend != nullptr, "real LogBackend is missing");
     auto settle = [&] {

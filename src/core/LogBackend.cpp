@@ -110,7 +110,7 @@ static void ensureProtocolsExtracted() {
 ParseResultModel::ParseResultModel(QObject *parent)
     : QAbstractListModel(parent) {}
 
-ParseResultModel::~ParseResultModel() { clear(); }
+ParseResultModel::~ParseResultModel() { qDeleteAll(m_allItems); }
 
 int ParseResultModel::rowCount(const QModelIndex &parent) const {
   if (parent.isValid())
@@ -587,7 +587,7 @@ void ParseResultModel::rebuildVisibleItems() {
 GlobalPreviewModel::GlobalPreviewModel(QObject *parent)
     : QAbstractListModel(parent) {}
 
-GlobalPreviewModel::~GlobalPreviewModel() { clear(); }
+GlobalPreviewModel::~GlobalPreviewModel() = default;
 
 int GlobalPreviewModel::rowCount(const QModelIndex &parent) const {
   if (parent.isValid())

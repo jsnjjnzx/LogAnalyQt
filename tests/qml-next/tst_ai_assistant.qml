@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import QtTest
 import "../../qml/Next" as Next
 Item {
@@ -22,11 +23,12 @@ Item {
         function init() {
             failOnWarning(/Binding loop|TypeError|ReferenceError|Unable to assign/)
             control.reset(); fakeBackend.copied = ""
-            page = createTemporaryObject(pageComponent, scene, {width:1144,height:752}); verify(page); verify(waitForRendering(page))
+            page = createTemporaryObject(pageComponent, scene, {width:1144,height:752}); verify(page); renderPage()
             settingsSignal.target = page; settingsSignal.clear(); resultSignal.target = page; resultSignal.clear()
         }
         function cleanup() { settingsSignal.target = null; resultSignal.target = null }
         function item(name) { const found = findChild(page,name); verify(found !== null,name); return found }
+        function renderPage() { page.Window.window.update(); verify(waitForRendering(page)) }
         function enter(field,text) { field.forceActiveFocus(); field.selectAll(); keyClick(Qt.Key_Backspace); for(let i=0;i<text.length;++i) keyClick(text.charAt(i)) }
         function prepare() { enter(item("ai-terminal-address"),"010203040506"); enter(item("ai-composer"),"read time") }
         function test_noDemonstrationAddressAndSettings() {
@@ -44,7 +46,7 @@ Item {
             control.succeed(); wait(20); verify(page.resultValid)
             verify(item("ai-result-target").text.indexOf("010203040506") >= 0)
             verify(item("ai-result-target").text.indexOf("AAAAAAAAAAAA") < 0)
-            verify(waitForRendering(page))
+            renderPage()
             mouseClick(item("ai-copy-result")); compare(fakeBackend.copied,control.result.frameHex)
             mouseClick(item("ai-return-result")); compare(resultSignal.count,1); compare(resultSignal.signalArguments[0][0],control.result.frameHex); compare(resultSignal.signalArguments[0][1],1)
             control.result = {requestId:"old",terminal:control.lastTerminal,frameHex:"GG",apduHex:"05"}; verify(!page.resultValid)
@@ -99,7 +101,7 @@ Item {
             const result = Object.assign({},control.result)
             result.inputTreeText = input; result.normalizedTreeText = normalized; control.result = result; wait(20)
             const toggle = item("ai-parameters-toggle")
-            tryCompare(toggle,"visible",true); verify(waitForPolish(toggle.parent)); verify(waitForRendering(page))
+            tryCompare(toggle,"visible",true); verify(waitForPolish(toggle.parent)); renderPage()
             mouseClick(toggle); tryCompare(page,"parametersExpanded",true)
             compare(item("ai-input-parameters").text,input); compare(item("ai-encoded-parameters").text,normalized)
             compare(item("ai-input-parameters").textFormat,TextEdit.PlainText)
@@ -150,7 +152,7 @@ Item {
             mouseClick(item("ai-preview-submit")); compare(control.submits,1)
             control.state = "preparing"; control.settingsBusy = true; control.credentialStatus = "checking"
             verify(page.working); verify(item("ai-cancel").visible); verify(!item("ai-preview-submit").enabled)
-            verify(waitForRendering(page)); mouseClick(item("ai-cancel")); compare(control.cancels,1); verify(control.settingsBusy)
+            renderPage(); mouseClick(item("ai-cancel")); compare(control.cancels,1); verify(control.settingsBusy)
             control.credentialStatus = "waiting"; control.credentialMessage = "仍在等待系统授权，操作尚未物理完成"
             compare(item("ai-credential-status").text,control.credentialMessage); verify(!item("ai-preview-submit").enabled)
             page.submitRequest(); compare(control.submits,1)
@@ -158,7 +160,7 @@ Item {
             compare(item("ai-credential-status").text,"系统凭据读取失败")
         }
         function test_compactLayout() {
-            page.width = 920; page.height = 632; verify(waitForRendering(page))
+            page.width = 920; page.height = 632; renderPage()
             for(const name of ["ai-preview-submit","ai-composer","ai-suggestion-0","ai-suggestion-2","ai-manage-terminals"]) {
                 const view = item(name); const bottom = view.mapToItem(page,view.width,view.height)
                 verify(bottom.x <= page.width && bottom.y <= page.height,name+" outside")
