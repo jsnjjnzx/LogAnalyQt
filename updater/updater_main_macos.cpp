@@ -166,6 +166,7 @@ void migrateLegacyData(const fs::path &oldApp) {
   copyLegacyItemIfNeeded(oldData / "protocol_xml",
                          newData / "protocol_xml");
   copyLegacyItemIfNeeded(oldData / "preset", newData / "preset");
+  copyLegacyItemIfNeeded(oldData / "prompts", newData / "prompts");
   copyLegacyItemIfNeeded(oldData / "log", newData / "log");
 }
 

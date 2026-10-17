@@ -34,6 +34,10 @@ def main():
             package = root / "new.zip"
             subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(target), str(package)], check=True)
             (target / "old-version-marker").write_text("old installation")
+            (target / "Contents/MacOS/LogAnalyQt.ini").write_text("older bundle settings must not overwrite portable settings")
+            legacy_prompt = target / "Contents/MacOS/prompts/user.md"
+            legacy_prompt.parent.mkdir()
+            legacy_prompt.write_text("preserve legacy edited prompt")
 
         def snapshot():
             paths = [target] if windows else [path for path in target.rglob("*") if path.is_file()]
@@ -73,6 +77,7 @@ def main():
             assert target.read_bytes() == fixture.read_bytes()
         else:
             assert not (target / "old-version-marker").exists(), "old bundle was not replaced"
+            assert (root / "prompts/user.md").read_text() == "preserve legacy edited prompt"
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(target)], check=True)
         print("PASS: missing package, parent timeout, forced replacement rollback, portable data and native restart")
 
