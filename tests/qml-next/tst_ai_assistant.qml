@@ -22,7 +22,7 @@ Item {
         function init() {
             failOnWarning(/Binding loop|TypeError|ReferenceError|Unable to assign/)
             control.reset(); fakeBackend.copied = ""
-            page = createTemporaryObject(pageComponent, scene, {width:1144,height:752}); verify(page); wait(30)
+            page = createTemporaryObject(pageComponent, scene, {width:1144,height:752}); verify(page); verify(waitForRendering(page))
             settingsSignal.target = page; settingsSignal.clear(); resultSignal.target = page; resultSignal.clear()
         }
         function cleanup() { settingsSignal.target = null; resultSignal.target = null }
@@ -97,7 +97,9 @@ Item {
             const normalized = '{\n  "date":{"year":2026,"month":10,"day":14,"hour":15,"minute":0,"second":0},\n  "value":123,\n  "counter":{"type":"long64_unsigned","value":"18446744073709551615"}\n}'
             const result = Object.assign({},control.result)
             result.inputTreeText = input; result.normalizedTreeText = normalized; control.result = result; wait(20)
-            mouseClick(item("ai-parameters-toggle")); wait(20); verify(page.parametersExpanded)
+            const toggle = item("ai-parameters-toggle")
+            tryCompare(toggle,"visible",true); verify(waitForPolish(toggle.parent)); verify(waitForRendering(page))
+            mouseClick(toggle); tryCompare(page,"parametersExpanded",true)
             compare(item("ai-input-parameters").text,input); compare(item("ai-encoded-parameters").text,normalized)
             compare(item("ai-input-parameters").textFormat,TextEdit.PlainText)
             verify(item("ai-encoded-parameters").text.indexOf("18446744073709551615") >= 0)
@@ -147,7 +149,7 @@ Item {
             mouseClick(item("ai-preview-submit")); compare(control.submits,1)
             control.state = "preparing"; control.settingsBusy = true; control.credentialStatus = "checking"
             verify(page.working); verify(item("ai-cancel").visible); verify(!item("ai-preview-submit").enabled)
-            wait(30); mouseClick(item("ai-cancel")); compare(control.cancels,1); verify(control.settingsBusy)
+            verify(waitForRendering(page)); mouseClick(item("ai-cancel")); compare(control.cancels,1); verify(control.settingsBusy)
             control.credentialStatus = "waiting"; control.credentialMessage = "仍在等待系统授权，操作尚未物理完成"
             compare(item("ai-credential-status").text,control.credentialMessage); verify(!item("ai-preview-submit").enabled)
             page.submitRequest(); compare(control.submits,1)
@@ -155,7 +157,7 @@ Item {
             compare(item("ai-credential-status").text,"系统凭据读取失败")
         }
         function test_compactLayout() {
-            page.width = 920; page.height = 632; wait(30)
+            page.width = 920; page.height = 632; verify(waitForRendering(page))
             for(const name of ["ai-preview-submit","ai-composer","ai-suggestion-0","ai-suggestion-2","ai-manage-terminals"]) {
                 const view = item(name); const bottom = view.mapToItem(page,view.width,view.height)
                 verify(bottom.x <= page.width && bottom.y <= page.height,name+" outside")
