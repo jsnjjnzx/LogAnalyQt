@@ -31,7 +31,7 @@ Item {
     Component.onCompleted: reload()
     onBackendChanged: reload()
 
-    ComboBox {
+    Next.GlassComboBox {
         id: combo
         anchors.fill: parent
         textRole: "name"
@@ -61,7 +61,6 @@ Item {
             }
         }
 
-        background: Rectangle { color: root.theme ? root.theme.controlBackground : "#fff"; border.color: root.theme ? root.theme.controlBorder : "#ccc"; radius: 8 }
         contentItem: Text { leftPadding: 8; rightPadding: combo.indicator.width + combo.spacing; text: combo.displayText; color: root.theme ? root.theme.text : "#333"; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
         delegate: ItemDelegate {
             width: combo.width
@@ -82,7 +81,7 @@ Item {
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             }
             background: Rectangle {
-                color: root.theme ? root.theme.controlBackground : "#fff"
+                color: root.theme ? root.theme.popupBackground : "#fff"
                 border.color: root.theme ? root.theme.controlBorder : "#ccc"
                 radius: 8
             }

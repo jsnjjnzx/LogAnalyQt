@@ -25,13 +25,13 @@ Item {
         anchors.fill: parent
         spacing: 8
 
-        TextField {
+        Next.GlassTextField {
             id: searchField
             Layout.fillWidth: true
             placeholderText: "搜索 OI / 名称 / 属性 / 方法"
             color: theme ? theme.text : "#333"
             placeholderTextColor: theme ? theme.placeholderText : "#888"
-            background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
+
             onTextChanged: reload()
         }
 

@@ -1,3 +1,4 @@
+import LogAnalyQt.Next as Next
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -159,7 +160,7 @@ Item {
         verticalAlignment: Text.AlignVCenter
         Accessible.ignored: true
     }
-    component UiButton: Button {
+    component UiButton: Next.GlassButton {
         id: button
         property bool primary: false
         property bool selected: false
@@ -168,22 +169,23 @@ Item {
         font.pixelSize: 14
         hoverEnabled: true
         Accessible.name: text
-        background: Rectangle {
-            radius: 7
-            color: button.primary ? root.theme.accentMuted : button.selected ? root.theme.tableHighlight
+        background: Next.ControlSurface {
+            radius: 8
+            baseColor: button.primary ? root.theme.accentMuted : button.selected ? root.theme.tableHighlight
                 : button.hovered ? root.theme.surfaceHover : root.theme.buttonBackground
-            border.color: button.activeFocus || button.selected ? root.theme.accent : root.theme.controlBorder
-            opacity: button.enabled ? 1 : 0.45
+            edgeColor: button.selected ? root.theme.accent : root.theme.controlBorder
+            focused: button.visualFocus; focusColor: root.theme.accent
+            pressed: button.down; hovered: button.hovered
         }
         contentItem: Text {
             text: button.text; font: button.font
             color: button.primary ? "white" : root.theme.text
-            opacity: button.enabled ? 1 : 0.5
+
             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
         }
     }
-    component Field: TextField {
+    component Field: Next.GlassTextField {
         id: field
         implicitHeight: 38
         color: root.theme.text
@@ -191,12 +193,8 @@ Item {
         selectionColor: root.theme.tableHighlight
         font.pixelSize: 14
         leftPadding: 12
-        background: Rectangle {
-            radius: 6; color: root.theme.controlBackground
-            border.color: field.activeFocus ? root.theme.accent : root.theme.controlBorder
-        }
     }
-    component Choice: ComboBox {
+    component Choice: Next.GlassComboBox {
         id: choice
         implicitHeight: 38
         font.pixelSize: 14
@@ -205,10 +203,7 @@ Item {
         palette.base: root.theme.controlBackground
         palette.button: root.theme.buttonBackground
         palette.highlight: root.theme.tableHighlight
-        background: Rectangle {
-            radius: 6; color: root.theme.controlBackground
-            border.color: choice.activeFocus ? root.theme.accent : root.theme.controlBorder
-        }
+
         contentItem: Text {
             text: choice.displayText; color: root.theme.text; font: choice.font
             leftPadding: 12; rightPadding: 32; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
@@ -297,7 +292,7 @@ Item {
                                 Accessible.name: "逻辑地址"
                             }
                         }
-                        Button {
+                        Next.GlassButton {
                             objectName: "ai-advanced-toggle"
                             Layout.fillWidth: true; implicitHeight: 34
                             onClicked: root.advanced = !root.advanced
@@ -326,7 +321,7 @@ Item {
                         }
                     }
                 }
-                Button {
+                Next.GlassButton {
                     objectName: "ai-manage-terminals"; Layout.fillWidth: true; implicitHeight: 36
                     Accessible.name: "管理终端"
                     onClicked: { terminalName.text = root.terminal.name; terminalManager.open() }
@@ -377,7 +372,7 @@ Item {
                                 {title:"读取终端时间", detail:"读取当前终端的日期时间", icon:0xF01DA},
                                 {title:"解释一条 698 报文", detail:"分析并解释一条 698 格式报文", icon:0xF09EE}
                             ]
-                            delegate: Button {
+                            delegate: Next.GlassButton {
                                 required property var modelData
                                 required property int index
                                 objectName: "ai-suggestion-" + index
@@ -495,7 +490,7 @@ Item {
         }
     }
 
-    Dialog {
+    Next.GlassDialog {
         id: terminalManager
         objectName: "ai-terminal-manager"
         parent: Overlay.overlay
@@ -503,7 +498,7 @@ Item {
         width: 400; modal: true; title: "管理当前终端"
         palette.window: root.theme.background; palette.windowText: root.theme.text
         palette.text: root.theme.text; palette.button: root.theme.buttonBackground; palette.buttonText: root.theme.text
-        background: Rectangle { radius: 12; color: root.theme.background; border.color: root.theme.controlBorder }
+        background: Rectangle { radius: 12; color: root.theme.popupBackground; border.color: root.theme.controlBorder }
         contentItem: ColumnLayout {
             spacing: 14
             Label { text: "终端名称"; color: root.theme.text }

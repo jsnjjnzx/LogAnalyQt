@@ -38,7 +38,7 @@ Item {
         columnSpacing: 6
         rowSpacing: 6
         Label { text: root.title; color: theme ? theme.subText : "#666"; Layout.preferredWidth: 36 }
-        TextField {
+        Next.GlassTextField {
             id: oiField
             Layout.preferredWidth: 78
             text: ""
@@ -46,14 +46,14 @@ Item {
             color: theme ? theme.text : "#333"
             placeholderTextColor: theme ? theme.placeholderText : "#888"
             font.family: Next.PlatformFonts.monospaceFamily
-            background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
+
             onTextChanged: root.selectionChanged()
         }
         Label { text: methodMode ? "方法" : "属性"; color: theme ? theme.subText : "#666" }
         Next.CompactSpinBox { id: idSpin; from: 1; to: 255; value: methodMode ? 1 : 2; editable: true; Layout.preferredWidth: 76; onValueChanged: root.selectionChanged() }
         Label { text: methodMode ? "模式" : "索引"; color: theme ? theme.subText : "#666" }
         Next.CompactSpinBox { id: indexSpin; from: 0; to: 255; value: 0; editable: true; Layout.preferredWidth: 70; onValueChanged: root.selectionChanged() }
-        Button {
+        Next.GlassButton {
             text: "选择"
             Layout.preferredWidth: 58
             implicitHeight: 34
@@ -76,7 +76,7 @@ Item {
         y: Math.round((Overlay.overlay.height - height) / 2)
         parent: Overlay.overlay
         padding: 10
-        background: Rectangle { color: theme ? theme.background : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 6 }
+        background: Rectangle { color: theme ? theme.popupBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 12 }
         Next.OadPicker {
             anchors.fill: parent
             theme: root.theme

@@ -113,7 +113,7 @@ ApplicationWindow {
     title: "多协议解析器 v" + backend.appVersion
     color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
-    readonly property real windowCornerRadius: visibility === Window.Maximized || visibility === Window.FullScreen ? 0 : 8
+    readonly property real windowCornerRadius: visibility === Window.Maximized || visibility === Window.FullScreen ? 0 : 18
     background: Rectangle { color: theme.background; radius: mainWindow.windowCornerRadius }
     contentItem.layer.enabled: windowCornerRadius > 0
     contentItem.layer.effect: MultiEffect {
@@ -176,6 +176,12 @@ ApplicationWindow {
     palette.text: theme.text
     palette.button: theme.buttonBackground
     palette.buttonText: theme.buttonText
+    palette.mid: theme.controlBorder
+    palette.dark: theme.groupBorder
+    palette.light: theme.highlightEdge
+    palette.placeholderText: theme.placeholderText
+    palette.brightText: "white"
+    palette.highlightedText: "white"
     palette.highlight: theme.accentMuted
 
     // 窗口初始化完成后设置无边框窗口
@@ -481,12 +487,13 @@ ApplicationWindow {
         id: control
         padding: 0
         topPadding: 0
-        background: Rectangle { color: theme.surface; radius: 10; border.color: theme.groupBorder }
+        background: Rectangle { color: theme.surface; radius: 14; border.color: theme.groupBorder
+            Rectangle { x: 14; y: 1; width: Math.max(0, parent.width - 28); height: 1; color: theme.highlightEdge }
+        }
         label: Label { x: 14; y: 5; text: control.title; font.pixelSize: 15; font.bold: true; color: theme.text; padding: 3 }
     }
 
-
-    component StyledComboBox: ComboBox {
+    component StyledComboBox: Next.GlassComboBox {
         id: control
 
         delegate: ItemDelegate {
@@ -547,15 +554,6 @@ ApplicationWindow {
             elide: Text.ElideRight
         }
 
-        background: Rectangle {
-            implicitWidth: 100
-            implicitHeight: 36
-            color: theme.controlBackground
-            border.color: theme.controlBorder
-            border.width: control.visualFocus ? 2 : 1
-            radius: 8
-        }
-
         popup: Popup {
             y: control.height - 1
             width: control.width
@@ -575,14 +573,12 @@ ApplicationWindow {
             background: Rectangle {
                 border.color: theme.controlBorder
                 radius: 8
-                color: theme.controlBackground
+                color: theme.popupBackground
             }
         }
     }
 
-
-
-    component StyledButton: Button {
+    component StyledButton: Next.GlassButton {
         id: control
         property string iconChar: ""
         property int iconSize: 16
@@ -613,7 +609,7 @@ ApplicationWindow {
                 Text {
                     text: control.text
                     font: control.font
-                    opacity: enabled ? 1.0 : 0.3
+
                     color: control.highlighted ? "white" : theme.buttonText
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
@@ -621,15 +617,6 @@ ApplicationWindow {
             }
         }
 
-        background: Rectangle {
-            implicitWidth: 100
-            implicitHeight: 36
-            opacity: enabled ? 1 : 0.3
-            color: control.highlighted ? theme.accentMuted : (control.down ? theme.buttonPressed : (control.hovered ? theme.buttonHover : theme.buttonBackground))
-            border.color: theme.controlBorder
-            border.width: 1
-            radius: 8
-        }
     }
 
     component ParsePane: ColumnLayout {
@@ -936,6 +923,7 @@ ApplicationWindow {
                         }
                         StyledButton {
                             text: "解析"
+                            highlighted: true
                             objectName: "parse-button-" + targetModelId
                             iconChar: mdi.play
                             onClicked: {
@@ -1230,7 +1218,7 @@ ApplicationWindow {
                         }
                     }
 
-                    QQC2.Menu {
+                    Next.GlassMenu {
                         id: rowContextMenu
                         property string rowName: ""
                         property string rowValue: ""
@@ -1430,9 +1418,14 @@ ApplicationWindow {
     }
 
     GlassSurface { anchors.fill: parent; theme: mainWindow.uiTheme }
+    Rectangle {
+        anchors.fill: parent; z: 1000
+        radius: mainWindow.windowCornerRadius; color: "transparent"
+        border.color: theme.groupBorder; antialiasing: true
+    }
     Navigation {
         id: navigation
-        width: mainWindow.width < 1340 ? 244 : 278
+        width: mainWindow.width < 1340 ? 226 : 244
         anchors.top: parent.top; anchors.bottom: parent.bottom
         theme: mainWindow.uiTheme; currentPage: mainWindow.currentPage; version: mainWindow.appVersion
         onNavigate: page => mainWindow.navigate(page)
@@ -1442,7 +1435,7 @@ ApplicationWindow {
         anchors.top: parent.top; anchors.left: navigation.right; anchors.right: parent.right
         targetWindow: mainWindow
         title: mainWindow.pageTitles[mainWindow.currentPage]
-        titleBarColor: theme.background; titleTextColor: theme.text
+        titleBarColor: theme.sidebar; titleTextColor: theme.text
         buttonHoverColor: theme.buttonHover; isDarkTheme: theme.isDark
         showThemeToggle: false
     }
@@ -1513,7 +1506,7 @@ ApplicationWindow {
             StyledButton { text: "打开日志"; highlighted: true; iconChar: mdi.folderOpen; visible: !theme.isManualMode; onClicked: logFileDialog.open() }
             StyledButton { text: "文件夹"; visible: !theme.isManualMode; onClicked: folderDialog.open() }
             StyledComboBox { id: fileCombo; objectName: "fileCombo"; visible: !theme.isManualMode; Layout.fillWidth: true; Layout.minimumWidth: 110; model: backend.fileList; onActivated: backend.loadFile(currentText, encodingCombo.currentText) }
-            TextField { id: folderPathField; visible: false }
+            Next.GlassTextField { id: folderPathField; visible: false }
             StyledButton { text: "刷新"; visible: !theme.isManualMode; onClicked: backend.openFolder(folderPathField.text) }
             StyledComboBox { id: encodingCombo; objectName: "encodingCombo"; visible: mainWindow.currentPage !== 1; model: ["auto", "UTF-8", "GBK", "ASCII"]; Layout.preferredWidth: 100; onActivated: { saveMainUiSetting("encoding/current", currentText); if (!theme.isManualMode) backend.loadFile(fileCombo.currentText, currentText); } }
             StyledComboBox {
@@ -1530,10 +1523,10 @@ ApplicationWindow {
         }
         RowLayout {
             Layout.fillWidth: true; visible: !theme.isManualMode; spacing: 10
-            TextField { id: searchField; objectName: "logSearch"; Layout.fillWidth: true; placeholderText: "搜索日志内容"; color: theme.text; placeholderTextColor: theme.placeholderText; background: Rectangle { radius: 8; color: theme.controlBackground; border.color: parent.activeFocus ? theme.accent : theme.controlBorder } onAccepted: logContentLayout.findNext() }
+            Next.GlassTextField { id: searchField; objectName: "logSearch"; Layout.fillWidth: true; placeholderText: "搜索日志内容"; color: theme.text; placeholderTextColor: theme.placeholderText;  onAccepted: logContentLayout.findNext() }
             StyledButton { text: "上一处"; onClicked: logContentLayout.findPrev() }
             StyledButton { text: "下一处"; onClicked: logContentLayout.findNext() }
-            TextField { id: regexField; objectName: "logFilter"; Layout.fillWidth: true; placeholderText: "正则过滤"; color: theme.text; placeholderTextColor: theme.placeholderText; background: Rectangle { radius: 8; color: theme.controlBackground; border.color: parent.activeFocus ? theme.accent : theme.controlBorder } onAccepted: mainWindow.filterLog() }
+            Next.GlassTextField { id: regexField; objectName: "logFilter"; Layout.fillWidth: true; placeholderText: "正则过滤"; color: theme.text; placeholderTextColor: theme.placeholderText;  onAccepted: mainWindow.filterLog() }
             StyledButton { text: "过滤"; onClicked: mainWindow.filterLog() }
         }
         // --- Main Content Area (Split View) ---
@@ -1981,7 +1974,7 @@ ApplicationWindow {
                                 }
                             }
 
-                            QQC2.Menu {
+                            Next.GlassMenu {
                                 id: contextMenu
                                 QQC2.MenuItem {
                                     text: "返回日志并高亮"
@@ -2217,7 +2210,7 @@ ApplicationWindow {
 
                 StyledButton {
                     text: "上一个差异"
-                    Layout.preferredHeight: 20
+                    Layout.preferredHeight: 30
                     onClicked: {
                         var currentIdx = pane1.listView.currentIndex;
                         var prevDiff = backend.findPrevDiff(currentIdx);
@@ -2232,7 +2225,7 @@ ApplicationWindow {
 
                 StyledButton {
                     text: "下一个差异"
-                    Layout.preferredHeight: 20
+                    Layout.preferredHeight: 30
                     onClicked: {
                         var currentIdx = pane1.listView.currentIndex;
                         var nextDiff = backend.findNextDiff(currentIdx);
@@ -2256,17 +2249,12 @@ ApplicationWindow {
                     color: theme.text
                 }
 
-                TextField {
+                Next.GlassTextField {
                     id: addrEdit698
                     placeholderText: ""
                     Layout.preferredWidth: 140
                     font.pixelSize: 12
                     color: theme.text
-                    background: Rectangle {
-                        color: theme.controlBackground
-                        border.color: theme.controlBorder
-                        radius: 6
-                    }
                 }
 
                 Label {
@@ -2275,23 +2263,18 @@ ApplicationWindow {
                     color: theme.text
                 }
 
-                TextField {
+                Next.GlassTextField {
                     id: logicAddrEdit698
                     placeholderText: ""
                     text: ""
-                    Layout.preferredWidth: 30
+                    Layout.preferredWidth: 52
                     font.pixelSize: 12
                     color: theme.text
-                    background: Rectangle {
-                        color: theme.controlBackground
-                        border.color: theme.controlBorder
-                        radius: 6
-                    }
                 }
 
                 StyledButton {
                     text: "更改"
-                    Layout.preferredHeight: 20
+                    Layout.preferredHeight: 30
                     Layout.preferredWidth: 50
                     onClicked: {
                         if (pane1.manualParseInput.text !== "") {
@@ -2553,7 +2536,7 @@ ApplicationWindow {
         visible: mainWindow.currentPage === 11
         onRequested: mainWindow.navigate(11)
         onClosed: mainWindow.navigate(10)
-        color: theme.background
+        color: theme.surface
 
         property string readmeText: ""
 
@@ -2583,7 +2566,7 @@ ApplicationWindow {
         visible: mainWindow.currentPage === 12
         onRequested: mainWindow.navigate(12)
         onClosed: mainWindow.navigate(10)
-        color: theme.background
+        color: theme.surface
 
         property string changelogText: ""
 
@@ -2606,6 +2589,7 @@ ApplicationWindow {
     Window {
         id: popupWindow
         objectName: "apduInspection"
+        palette: mainWindow.palette
         property string apduHex: ""
         width: 800
         height: 600
@@ -2648,8 +2632,7 @@ ApplicationWindow {
         visible: mainWindow.currentPage === 7
         onRequested: mainWindow.navigate(7)
         onClosed: mainWindow.navigate(10)
-        color: theme.background
-
+        color: theme.surface
 
         // 窗口边框
         Rectangle {
@@ -2781,17 +2764,12 @@ ApplicationWindow {
                             Layout.preferredWidth: 70
                         }
 
-                        TextField {
+                        Next.GlassTextField {
                             id: newSummaryInput
                             Layout.fillWidth: true
                             placeholderText: "输入报文名称/概述..."
                             placeholderTextColor: theme.placeholderText
                             color: theme.text
-                            background: Rectangle {
-                                color: theme.controlBackground
-                                border.color: theme.controlBorder
-                                radius: 8
-                            }
                         }
                     }
 
@@ -2917,7 +2895,7 @@ ApplicationWindow {
 
                         delegate: Rectangle {
                             width: existingMessagesList.width
-                            height: 35
+                            height: 48
                             color: existingMessagesList.currentIndex === index ? theme.tableHighlight : (index % 2 === 0 ? "transparent" : theme.rowAlt)
 
                             RowLayout {
@@ -3008,7 +2986,7 @@ ApplicationWindow {
         promptSyncManager: backend.promptSyncManager
     }
 
-    QQC2.Dialog {
+    Next.GlassDialog {
         id: securityControlDialog
         width: 540
         modal: false
@@ -3092,7 +3070,7 @@ ApplicationWindow {
         }
 
         background: Rectangle {
-            color: theme.background
+            color: theme.popupBackground
             radius: 8
             border.color: theme.controlBorder
             border.width: 1
@@ -3203,8 +3181,9 @@ ApplicationWindow {
         // 窗口边框
         Rectangle {
             anchors.fill: parent
-            color: theme.background
-            border.color: theme.controlBorder // 使用主题边框色
+            color: theme.surface
+            radius: 14
+            border.color: theme.groupBorder
             border.width: 1
             z: 0 // Background at bottom
         }
@@ -3270,7 +3249,7 @@ ApplicationWindow {
             RowLayout {
                 spacing: 15
                 Text {
-                    text: updateWindow.isUpdateAvailable ? "🎉 发现新版本 " + updateWindow.latestVersion : "✅ 当前已是最新版本"
+                    text: updateWindow.isUpdateAvailable ? "发现新版本 " + updateWindow.latestVersion : updateWindow.latestVersion.length ? "当前已是最新版本" : "检查版本更新"
                     color: updateWindow.isUpdateAvailable ? theme.success : theme.text
                     font.pixelSize: 18
                     font.bold: true
@@ -3542,7 +3521,6 @@ ApplicationWindow {
                 StyledButton { text: updateChecker.checking ? "正在检查…" : "检查更新"; enabled: !updateChecker.checking; onClicked: { mainWindow.updateCheckStatus = "正在检查更新…"; mainWindow.isAutoCheck = false; updateChecker.checkForUpdate(); } }
             }
             Label { text: mainWindow.updateCheckStatus; visible: text.length > 0; color: theme.subText; wrapMode: Text.Wrap; Layout.fillWidth: true }
-            Label { text: "旧界面入口：使用 --legacy-ui 启动参数。旧界面源码仍保留。"; color: theme.subText; wrapMode: Text.Wrap; Layout.fillWidth: true }
         }
     }
 }

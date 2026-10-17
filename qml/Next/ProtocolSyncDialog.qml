@@ -89,8 +89,7 @@ GlassPage {
     onClosing: cancelOwnedWork()
     Component.onDestruction: cancelOwnedWork()
 
-
-    color: theme ? theme.background : "#ffffff"
+    color: theme ? theme.surface : "#ffffff"
     palette.highlight: theme ? theme.accentMuted : "#1976D2"
 
 
@@ -199,25 +198,16 @@ GlassPage {
         } else cancelOwnedWork()
     }
 
-    component StyledButton: Button {
+    component StyledButton: Next.GlassButton {
         id: control
         contentItem: Text {
             text: control.text
             font: control.font
-            opacity: enabled ? 1.0 : 0.3
-            color: theme ? theme.buttonText : "#333333"
+
+            color: control.highlighted ? "white" : (theme ? theme.buttonText : "#333333")
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
-        }
-        background: Rectangle {
-            implicitWidth: 100
-            implicitHeight: 36
-            opacity: enabled ? 1 : 0.3
-            color: control.down ? (theme ? theme.buttonPressed : "#cccccc") : (control.hovered ? (theme ? theme.buttonHover : "#dddddd") : (theme ? theme.buttonBackground : "#eeeeee"))
-            border.color: theme ? theme.controlBorder : "#cccccc"
-            border.width: 1
-            radius: 8
         }
     }
 
@@ -233,7 +223,7 @@ GlassPage {
             Layout.fillWidth: true
             visible: !!syncDialog.promptSyncManager
             Label { text: "同步内容"; color: theme ? theme.text : "#333333" }
-            ComboBox {
+            Next.GlassComboBox {
                 objectName: "sync-content-selector"
                 model: ["协议 XML", "AI 提示词"]
                 currentIndex: syncDialog.promptsSelected ? 1 : 0
@@ -260,7 +250,7 @@ GlassPage {
                 Layout.alignment: Qt.AlignVCenter
             }
 
-            TextField {
+            Next.GlassTextField {
                 id: pathField
                 objectName: "protocol-sync-path"
                 Layout.fillWidth: true
@@ -270,11 +260,6 @@ GlassPage {
                 readOnly: !syncDialog.systemSmb && !syncDialog.promptsSelected
                 text: activeManager ? activeManager.sharePath : ""
                 color: theme ? theme.text : "#333333"
-                background: Rectangle {
-                    color: theme ? theme.controlBackground : "#ffffff"
-                    border.color: theme ? theme.controlBorder : "#cccccc"
-                    radius: 8
-                }
             }
 
             StyledButton {
@@ -332,9 +317,9 @@ GlassPage {
                 RowLayout {
                     spacing: 10
                     Label { text: "账号:"; color: theme ? theme.text : "#333333" }
-                    TextField { objectName: "protocol-sync-legacy-user"; Layout.preferredWidth: 180; text: activeManager ? activeManager.username : ""; onTextEdited: if (activeManager) activeManager.username = text }
+                    Next.GlassTextField { objectName: "protocol-sync-legacy-user"; Layout.preferredWidth: 180; text: activeManager ? activeManager.username : ""; onTextEdited: if (activeManager) activeManager.username = text }
                     Label { text: "密码:"; color: theme ? theme.text : "#333333" }
-                    TextField { objectName: "protocol-sync-legacy-password"; Layout.preferredWidth: 180; echoMode: TextInput.Password; text: activeManager ? activeManager.password : ""; onTextEdited: if (activeManager) activeManager.password = text }
+                    Next.GlassTextField { objectName: "protocol-sync-legacy-password"; Layout.preferredWidth: 180; echoMode: TextInput.Password; text: activeManager ? activeManager.password : ""; onTextEdited: if (activeManager) activeManager.password = text }
                     Item { Layout.fillWidth: true }
                 }
             }
@@ -518,6 +503,7 @@ GlassPage {
 
             StyledButton {
                 objectName: "protocol-sync-all"
+                highlighted: true
                 text: "一键同步"
                 Layout.preferredWidth: 100
                 enabled: syncDialog.canSync
@@ -536,7 +522,7 @@ GlassPage {
         }
     }
 
-    Dialog {
+    Next.GlassDialog {
         id: resultDialog
         objectName: "protocol-sync-result"
         parent: syncDialog.contentItem
@@ -601,8 +587,8 @@ GlassPage {
         }
 
         background: Rectangle {
-            color: theme ? theme.background : "#ffffff"
-            radius: 6
+            color: theme ? theme.popupBackground : "#ffffff"
+            radius: 12
             border.color: theme ? theme.controlBorder : "#cccccc"
         }
 
@@ -625,6 +611,7 @@ GlassPage {
     Window {
         id: diffDialog
         objectName: "protocol-diff-window"
+        palette: syncDialog.palette
         width: 1100
         height: 700
         minimumWidth: 600

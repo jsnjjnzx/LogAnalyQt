@@ -83,7 +83,7 @@ Item {
             Layout.fillWidth: true
             spacing: 8
             Label { text: "服务器地址"; color: root.theme ? root.theme.subText : "#666"; Layout.preferredWidth: 76 }
-            TextField {
+            Next.GlassTextField {
                 id: addrField
                 Layout.fillWidth: true
                 text: root.defaultAddress
@@ -91,7 +91,6 @@ Item {
                 color: root.theme ? root.theme.text : "#333"
                 placeholderTextColor: root.theme ? root.theme.placeholderText : "#888"
                 font.family: Next.PlatformFonts.monospaceFamily
-                background: Rectangle { color: root.theme ? root.theme.controlBackground : "#fff"; border.color: root.theme ? root.theme.controlBorder : "#ccc"; radius: 8 }
             }
         }
 
@@ -101,15 +100,15 @@ Item {
             rowSpacing: 8
             columnSpacing: 10
 
-            CheckBox { id: dirCheck; text: "DIR 服务器→客户机"; checked: false; palette.windowText: root.theme ? root.theme.text : "#333" }
-            CheckBox { id: prmCheck; text: "PRM 主动"; checked: true; palette.windowText: root.theme ? root.theme.text : "#333" }
-            CheckBox { id: splitCheck; text: "分帧"; checked: false; palette.windowText: root.theme ? root.theme.text : "#333" }
-            CheckBox { id: scrambleCheck; text: "扰码"; checked: false; palette.windowText: root.theme ? root.theme.text : "#333" }
+            Next.GlassCheckBox { id: dirCheck; text: "DIR 服务器→客户机"; checked: false; palette.windowText: root.theme ? root.theme.text : "#333" }
+            Next.GlassCheckBox { id: prmCheck; text: "PRM 主动"; checked: true; palette.windowText: root.theme ? root.theme.text : "#333" }
+            Next.GlassCheckBox { id: splitCheck; text: "分帧"; checked: false; palette.windowText: root.theme ? root.theme.text : "#333" }
+            Next.GlassCheckBox { id: scrambleCheck; text: "扰码"; checked: false; palette.windowText: root.theme ? root.theme.text : "#333" }
 
             Label { text: "功能码"; color: root.theme ? root.theme.subText : "#666" }
             Next.CompactSpinBox { id: funcCode; from: 0; to: 7; value: 3; editable: true; Layout.fillWidth: true }
             Label { text: "地址类型"; color: root.theme ? root.theme.subText : "#666" }
-            ComboBox { id: saTypeCombo; model: ["单地址", "通配地址", "组地址", "广播地址"]; Layout.fillWidth: true }
+            Next.GlassComboBox { id: saTypeCombo; model: ["单地址", "通配地址", "组地址", "广播地址"]; Layout.fillWidth: true }
 
             Label { text: "逻辑地址"; color: root.theme ? root.theme.subText : "#666" }
             Next.CompactSpinBox { id: logicAddress; from: 0; to: 1; value: 0; editable: true; Layout.fillWidth: true }

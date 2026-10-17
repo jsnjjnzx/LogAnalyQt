@@ -135,11 +135,10 @@ Item {
         return value
     }
 
-    component SmallButton: Button {
+    component SmallButton: Next.GlassButton {
         id: button
         implicitHeight: 28
         contentItem: Text { text: button.text; color: theme ? theme.buttonText : "#333"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
-        background: Rectangle { color: button.down ? (theme ? theme.buttonPressed : "#ddd") : (button.hovered ? (theme ? theme.buttonHover : "#eee") : (theme ? theme.buttonBackground : "#f5f5f5")); border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
     }
 
     component TreeSection: Rectangle {
@@ -315,7 +314,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: "TSA"; color: theme ? theme.subText : "#666"; Layout.preferredWidth: 42 }
-                TextField { id: tsaField; Layout.fillWidth: true; placeholderText: "目标服务器地址内容 hex（不含 0x55 Tag）"; color: theme ? theme.text : "#333"; placeholderTextColor: theme ? theme.placeholderText : "#888"; font.family: Next.PlatformFonts.monospaceFamily; background: Rectangle { color: theme ? theme.background : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 } }
+                Next.GlassTextField { id: tsaField; Layout.fillWidth: true; placeholderText: "目标服务器地址内容 hex（不含 0x55 Tag）"; color: theme ? theme.text : "#333"; placeholderTextColor: theme ? theme.placeholderText : "#888"; font.family: Next.PlatformFonts.monospaceFamily;  }
                 Label { text: "超时"; color: theme ? theme.subText : "#666" }
                 Next.CompactSpinBox { id: serverTimeout; from: 0; to: 65535; value: 5; editable: true; Layout.preferredWidth: 86 }
             }
@@ -399,7 +398,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: "结果"; color: theme ? theme.subText : "#666" }
-                ComboBox { id: resultChoice; model: ["Data", "DAR"]; Layout.preferredWidth: 120; onCurrentIndexChanged: resultEditor.dataSchema = null }
+                Next.GlassComboBox { id: resultChoice; model: ["Data", "DAR"]; Layout.preferredWidth: 120; onCurrentIndexChanged: resultEditor.dataSchema = null }
                 Label { text: "DAR"; visible: resultChoice.currentIndex === 1; color: theme ? theme.subText : "#666" }
                 Next.CompactSpinBox { id: darSpin; visible: resultChoice.currentIndex === 1; from: 0; to: 255; value: 0; editable: true; Layout.preferredWidth: 92 }
                 Item { Layout.fillWidth: true }
@@ -458,7 +457,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: "结果"; color: theme ? theme.subText : "#666" }
-                ComboBox { id: recordChoice; model: ["DAR", "记录行数据"]; Layout.preferredWidth: 140 }
+                Next.GlassComboBox { id: recordChoice; model: ["DAR", "记录行数据"]; Layout.preferredWidth: 140 }
                 Label { text: "DAR"; visible: recordChoice.currentIndex === 0; color: theme ? theme.subText : "#666" }
                 Next.CompactSpinBox { id: recordDar; visible: recordChoice.currentIndex === 0; from: 0; to: 255; value: 0; editable: true; Layout.preferredWidth: 92 }
                 Label { text: "行数"; visible: recordChoice.currentIndex === 1; color: theme ? theme.subText : "#666" }
@@ -566,7 +565,7 @@ Item {
                 Layout.fillWidth: true
                 Label { text: "DAR"; color: theme ? theme.subText : "#666" }
                 Next.CompactSpinBox { id: darSpin; from: 0; to: 255; value: 0; editable: true; Layout.preferredWidth: 92 }
-                CheckBox { id: hasDataCheck; objectName: "action-result-has-data"; text: "携带返回 Data"; palette.windowText: theme ? theme.text : "#333"; onCheckedChanged: if (checked) actionResultEditor.loadSchema() }
+                Next.GlassCheckBox { id: hasDataCheck; objectName: "action-result-has-data"; text: "携带返回 Data"; palette.windowText: theme ? theme.text : "#333"; onCheckedChanged: if (checked) actionResultEditor.loadSchema() }
                 Item { Layout.fillWidth: true }
             }
 
@@ -574,7 +573,7 @@ Item {
                 visible: hasDataCheck.checked
                 Layout.fillWidth: true
                 Label { text: "返回类型"; color: theme ? theme.subText : "#666" }
-                ComboBox {
+                Next.GlassComboBox {
                     id: returnType
                     objectName: "action-result-return-type"
                     Layout.fillWidth: true
@@ -587,7 +586,7 @@ Item {
                 }
             }
 
-            TextField {
+            Next.GlassTextField {
                 id: exactInteger
                 objectName: "action-result-return-64"
                 visible: hasDataCheck.checked && (returnType.currentText === "long64" || returnType.currentText === "long64_unsigned")
@@ -649,7 +648,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: "TSA"; color: theme ? theme.subText : "#666"; Layout.preferredWidth: 42 }
-                TextField { id: tsaField; Layout.fillWidth: true; placeholderText: "目标服务器地址内容 hex（不含 0x55 Tag）"; color: theme ? theme.text : "#333"; placeholderTextColor: theme ? theme.placeholderText : "#888"; font.family: Next.PlatformFonts.monospaceFamily; background: Rectangle { color: theme ? theme.background : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 } }
+                Next.GlassTextField { id: tsaField; Layout.fillWidth: true; placeholderText: "目标服务器地址内容 hex（不含 0x55 Tag）"; color: theme ? theme.text : "#333"; placeholderTextColor: theme ? theme.placeholderText : "#888"; font.family: Next.PlatformFonts.monospaceFamily;  }
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -684,8 +683,8 @@ Item {
                 Layout.fillWidth: true
                 Label { text: "服务序号"; color: theme ? theme.subText : "#666" }
                 Next.CompactSpinBox { id: piidSpin; from: 0; to: 63; value: backend ? backend.getNextPiid() : 1; editable: true; Layout.preferredWidth: 90 }
-                CheckBox { id: highPriorityCheck; text: "高优先级"; palette.windowText: theme ? theme.text : "#333" }
-                CheckBox { id: acdCheck; visible: root.usesAcd(); text: "ACD"; palette.windowText: theme ? theme.text : "#333" }
+                Next.GlassCheckBox { id: highPriorityCheck; text: "高优先级"; palette.windowText: theme ? theme.text : "#333" }
+                Next.GlassCheckBox { id: acdCheck; visible: root.usesAcd(); text: "ACD"; palette.windowText: theme ? theme.text : "#333" }
                 Item { Layout.fillWidth: true }
             }
         }
@@ -814,11 +813,11 @@ Item {
             visible: serviceCode === "GET_RESPONSE_NEXT"
             RowLayout {
                 Layout.fillWidth: true
-                CheckBox { id: getResponseNextEnd; text: "末帧"; checked: true; palette.windowText: theme ? theme.text : "#333" }
+                Next.GlassCheckBox { id: getResponseNextEnd; text: "末帧"; checked: true; palette.windowText: theme ? theme.text : "#333" }
                 Label { text: "分帧序号"; color: theme ? theme.subText : "#666" }
                 Next.CompactSpinBox { id: getResponseNextBlockNo; from: 0; to: 65535; value: 0; editable: true; Layout.preferredWidth: 110 }
                 Label { text: "结果"; color: theme ? theme.subText : "#666" }
-                ComboBox { id: getResponseNextChoice; model: ["DAR", "普通结果列表", "记录结果列表"]; Layout.preferredWidth: 150 }
+                Next.GlassComboBox { id: getResponseNextChoice; model: ["DAR", "普通结果列表", "记录结果列表"]; Layout.preferredWidth: 150 }
                 Item { Layout.fillWidth: true }
             }
             RowLayout {
@@ -898,19 +897,19 @@ Item {
             title: "TimeTag"
             subtitle: "可选时间标签"
             expanded: false
-            CheckBox { id: timeTagCheck; text: "携带时间标签"; palette.windowText: theme ? theme.text : "#333" }
+            Next.GlassCheckBox { id: timeTagCheck; text: "携带时间标签"; palette.windowText: theme ? theme.text : "#333" }
             GridLayout {
                 Layout.fillWidth: true
                 columns: 4
                 enabled: timeTagCheck.checked
                 Label { text: "日期"; color: theme ? theme.subText : "#666" }
-                TextField { id: timeDate; text: Qt.formatDate(new Date(), "yyyy-MM-dd"); Layout.fillWidth: true; color: theme ? theme.text : "#333"; background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 } }
+                Next.GlassTextField { id: timeDate; text: Qt.formatDate(new Date(), "yyyy-MM-dd"); Layout.fillWidth: true; color: theme ? theme.text : "#333";  }
                 Label { text: "时间"; color: theme ? theme.subText : "#666" }
-                TextField { id: timeClock; text: Qt.formatTime(new Date(), "HH:mm:ss"); Layout.fillWidth: true; color: theme ? theme.text : "#333"; background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 } }
+                Next.GlassTextField { id: timeClock; text: Qt.formatTime(new Date(), "HH:mm:ss"); Layout.fillWidth: true; color: theme ? theme.text : "#333";  }
                 Label { text: "允许延时"; color: theme ? theme.subText : "#666" }
                 Next.CompactSpinBox { id: tiValueSpin; from: 0; to: 65535; value: 10; editable: true; Layout.fillWidth: true }
                 Label { text: "单位"; color: theme ? theme.subText : "#666" }
-                ComboBox { id: tiUnitCombo; model: ["秒", "分", "时", "日", "月", "年"]; Layout.fillWidth: true }
+                Next.GlassComboBox { id: tiUnitCombo; model: ["秒", "分", "时", "日", "月", "年"]; Layout.fillWidth: true }
             }
         }
     }

@@ -208,7 +208,7 @@ Item {
         width: parent.width
         spacing: 6
 
-        CheckBox {
+        Next.GlassCheckBox {
             id: optionalCheck
             visible: !!(schema && schema.optional)
             checked: true
@@ -241,34 +241,32 @@ Item {
                     font.pixelSize: 12
                 }
 
-                TextField {
+                Next.GlassTextField {
                     id: numberInput
                     visible: ["integer", "long", "double_long", "long64", "unsigned", "long_unsigned", "double_long_unsigned", "long64_unsigned", "float32", "float64"].indexOf(root.lowerType()) >= 0
                     Layout.fillWidth: visible
                     text: "0"
                     color: theme ? theme.text : "#333"
                     font.family: Next.PlatformFonts.monospaceFamily
-                    background: Rectangle { color: theme ? theme.background : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
 
-                CheckBox {
+                Next.GlassCheckBox {
                     id: boolInput
                     visible: root.lowerType() === "bool" || root.lowerType() === "boolean"
                     text: "true"
                     palette.windowText: theme ? theme.text : "#333"
                 }
 
-                ComboBox {
+                Next.GlassComboBox {
                     id: enumInput
                     visible: root.lowerType() === "enum"
                     Layout.fillWidth: visible
                     model: schema && schema.enumValues ? schema.enumValues : []
                     textRole: "text"
                     valueRole: "value"
-                    background: Rectangle { color: theme ? theme.background : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
 
-                TextField {
+                Next.GlassTextField {
                     id: textInput
                     visible: ["octet_string", "visible_string", "utf8_string", "bit_string", "oi", "oad", "omd", "road", "tsa", "mac", "rn", "rsd", "csd", "ms", "rcsd", "comdcb", "region", "sid", "sid_mac", "vqds", "checksum"].indexOf(root.lowerType()) >= 0
                     Layout.fillWidth: visible
@@ -276,7 +274,6 @@ Item {
                     color: theme ? theme.text : "#333"
                     placeholderTextColor: theme ? theme.placeholderText : "#888"
                     font.family: Next.PlatformFonts.monospaceFamily
-                    background: Rectangle { color: theme ? theme.background : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
 
                 Label {
@@ -299,40 +296,36 @@ Item {
                 anchors.leftMargin: root.compactDetailLayout ? 0 : 148
                 spacing: 6
 
-                TextField {
+                Next.GlassTextField {
                     id: dateInput
                     visible: root.lowerType() !== "time"
                     width: 110
                     text: Qt.formatDate(new Date(), "yyyy-MM-dd")
                     color: theme ? theme.text : "#333"
-                    background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
 
-                TextField {
+                Next.GlassTextField {
                     id: weekInput
                     visible: root.lowerType() === "date_time" || root.lowerType() === "date"
                     width: 48
                     text: "255"
                     color: theme ? theme.text : "#333"
-                    background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
 
-                TextField {
+                Next.GlassTextField {
                     id: timeInput
                     visible: root.lowerType() !== "date"
                     width: 90
                     text: Qt.formatTime(new Date(), "HH:mm:ss")
                     color: theme ? theme.text : "#333"
-                    background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
 
-                TextField {
+                Next.GlassTextField {
                     id: msInput
                     visible: root.lowerType() === "date_time"
                     width: 54
                     text: "0"
                     color: theme ? theme.text : "#333"
-                    background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
             }
         }
@@ -349,7 +342,7 @@ Item {
                 anchors.leftMargin: root.compactDetailLayout ? 0 : 148
                 spacing: 6
 
-                ComboBox {
+                Next.GlassComboBox {
                     id: tiUnit
                     width: 80
                     model: ["秒", "分", "时", "日", "月", "年"]
@@ -380,22 +373,20 @@ Item {
 
                 Label { text: "倍率"; color: theme ? theme.subText : "#666" }
 
-                TextField {
+                Next.GlassTextField {
                     id: scalerInput
                     width: 60
                     text: "0"
                     color: theme ? theme.text : "#333"
-                    background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
 
                 Label { text: "单位"; color: theme ? theme.subText : "#666" }
 
-                TextField {
+                Next.GlassTextField {
                     id: unitInput
                     width: 60
                     text: "0"
                     color: theme ? theme.text : "#333"
-                    background: Rectangle { color: theme ? theme.controlBackground : "#fff"; border.color: theme ? theme.controlBorder : "#ccc"; radius: 8 }
                 }
             }
         }
@@ -436,7 +427,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: schema ? ((schema.name || "choice") + " 分支") : "分支"; color: theme ? theme.text : "#333"; font.bold: true }
-                ComboBox {
+                Next.GlassComboBox {
                     id: choiceCombo
                     Layout.fillWidth: true
                     model: schema && schema.children ? schema.children : []
@@ -470,8 +461,8 @@ Item {
                 Layout.fillWidth: true
                 Label { text: schema ? ((schema.name || "array") + " 数组") : ""; color: theme ? theme.text : "#333"; font.bold: true }
                 Item { Layout.fillWidth: true }
-                Button { text: "+ 添加"; onClicked: arrayColumn.arrayCount += 1 }
-                Button { text: "- 删除"; enabled: arrayColumn.arrayCount > 0; onClicked: arrayColumn.arrayCount -= 1 }
+                Next.GlassButton { text: "+ 添加"; onClicked: arrayColumn.arrayCount += 1 }
+                Next.GlassButton { text: "- 删除"; enabled: arrayColumn.arrayCount > 0; onClicked: arrayColumn.arrayCount -= 1 }
             }
             Label {
                 Layout.fillWidth: true

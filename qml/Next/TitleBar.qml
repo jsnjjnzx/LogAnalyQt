@@ -1,3 +1,4 @@
+import LogAnalyQt.Next as Next
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -15,11 +16,11 @@ Rectangle {
     property bool showThemeToggle: false
     signal themeToggleClicked()
     readonly property bool embedded: targetWindow && targetWindow.embedded === true
-    height: embedded ? 0 : 72
+    height: embedded ? 0 : 64
     visible: !embedded
     color: titleBarColor
     gradient: Gradient {
-        GradientStop { position: 0; color: Qt.lighter(bar.titleBarColor, 1.2) }
+        GradientStop { position: 0; color: Qt.lighter(bar.titleBarColor, 1.08) }
         GradientStop { position: 1; color: bar.titleBarColor }
     }
     MouseArea {
@@ -30,10 +31,10 @@ Rectangle {
     Label { anchors.left: parent.left; anchors.leftMargin: 22; anchors.verticalCenter: parent.verticalCenter; width: parent.width - buttons.width - 55; elide: Text.ElideRight; text: bar.title; color: bar.titleTextColor; font.pixelSize: 24; font.bold: true }
     Row {
         id: buttons; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; spacing: 5
-        Button { visible: bar.showThemeToggle; text: bar.isDarkTheme ? "浅色" : "深色"; onClicked: bar.themeToggleClicked() }
+        Next.GlassButton { visible: bar.showThemeToggle; text: bar.isDarkTheme ? "浅色" : "深色"; onClicked: bar.themeToggleClicked() }
         Repeater {
             model: [{label:"−",name:"最小化"},{label:"□",name:"最大化 / 还原"},{label:"×",name:"关闭"}]
-            delegate: Button {
+            delegate: Next.GlassButton {
                 required property var modelData
                 required property int index
                 width: 36; height: 32
@@ -50,5 +51,5 @@ Rectangle {
             }
         }
     }
-    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Qt.lighter(bar.titleBarColor, 1.5) }
+    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: bar.isDarkTheme ? "#26ffffff" : "#20000000" }
 }

@@ -7,6 +7,8 @@ qt_add_qml_module(nextUi
     CLASS_NAME NextUiPlugin
     QML_FILES
         Main.qml GlassTheme.qml GlassSurface.qml GlassPage.qml Navigation.qml CompactSpinBox.qml AiAssistantPage.qml SystemSettingsPage.qml
+        ControlSurface.qml GlassButton.qml GlassTextField.qml GlassComboBox.qml GlassCheckBox.qml GlassSwitch.qml
+        GlassMenu.qml GlassDialog.qml
         TitleBar.qml Icons.qml PlatformFonts.qml
         LiveLogDialog.qml LogMergeDialog.qml ProtocolSyncDialog.qml SmartFramingDialog.qml
         SmartFraming/ProtocolSelector.qml SmartFraming/HexPreview.qml

@@ -84,7 +84,7 @@ Item {
         return listModel[itemIndex]
     }
 
-    component StyledSelectorComboBox: ComboBox {
+    component StyledSelectorComboBox: Next.GlassComboBox {
         id: control
         implicitHeight: 32
 
@@ -95,12 +95,6 @@ Item {
             color: root.theme ? root.theme.text : "#333"
             font.pixelSize: 10
             verticalAlignment: Text.AlignVCenter
-        }
-
-        background: Rectangle {
-            color: root.theme ? root.theme.controlBackground : "#fff"
-            border.color: root.theme ? root.theme.controlBorder : "#ccc"
-            radius: 8
         }
 
         contentItem: Text {
@@ -125,7 +119,7 @@ Item {
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             }
             background: Rectangle {
-                color: root.theme ? root.theme.controlBackground : "#fff"
+                color: root.theme ? root.theme.popupBackground : "#fff"
                 border.color: root.theme ? root.theme.controlBorder : "#ccc"
                 radius: 8
             }

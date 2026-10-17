@@ -1,3 +1,4 @@
+import LogAnalyQt.Next as Next
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -77,32 +78,60 @@ Item {
         ignoreUnknownSignals: true
         function onSettingsOperationFinished(operationId, reply) { root.finishSettingsOperation(operationId, reply) }
     }
-    component SectionButton: Button {
+    component SectionButton: Next.GlassButton {
         property bool selected: false
         Layout.fillWidth: true
         implicitHeight: 42
         Accessible.name: text
         palette.buttonText: root.theme.text
-        background: Rectangle { radius: 7; color: parent.selected ? root.theme.tableHighlight : parent.hovered ? root.theme.surfaceHover : "transparent"; border.color: parent.activeFocus ? root.theme.accent : "transparent" }
+        background: Rectangle { radius: 10; color: parent.selected ? root.theme.navigationSelected : parent.hovered ? root.theme.surfaceHover : "transparent"; border.color: parent.activeFocus ? root.theme.accent : "transparent" }
     }
-    component SettingField: TextField {
+    component SettingField: Next.GlassTextField {
         implicitHeight: 40
         Layout.fillWidth: true
         color: root.theme.text
         placeholderTextColor: root.theme.placeholderText
         selectByMouse: true
-        background: Rectangle { radius: 6; color: root.theme.controlBackground; border.color: parent.activeFocus ? root.theme.accent : root.theme.controlBorder }
+    }
+    component AppearanceSwitch: Next.GlassSwitch {
+        id: setting
+        Layout.fillWidth: true
+        Layout.preferredHeight: 64
+        leftPadding: 20; rightPadding: 20
+        trailingIndicator: true
+        contentItem: Label {
+            text: setting.text; color: root.theme.text; font.pixelSize: 16
+            verticalAlignment: Text.AlignVCenter
+            rightPadding: setting.indicator.width + setting.spacing
+        }
+    }
+    component ShortcutRow: Item {
+        id: row
+        property string label
+        property string keys
+        property bool last: false
+        width: parent.width; height: 54
+        Accessible.role: Accessible.StaticText
+        Accessible.name: label + " " + keys
+        Label { x: 20; anchors.verticalCenter: parent.verticalCenter; text: row.label; color: root.theme.text; font.pixelSize: 15 }
+        Next.ControlSurface {
+            anchors.right: parent.right; anchors.rightMargin: 20; anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(88, keyText.implicitWidth + 28); height: 34
+            baseColor: root.theme.buttonBackground; edgeColor: root.theme.controlBorder
+            Label { id: keyText; anchors.centerIn: parent; text: row.keys; color: root.theme.text; font.pixelSize: 14 }
+        }
+        Rectangle { visible: !row.last; x: 20; width: parent.width - 40; height: 1; anchors.bottom: parent.bottom; color: root.theme.separator }
     }
     RowLayout {
         anchors.fill: parent
-        spacing: 14
+        spacing: 0
         GlassPage {
             theme: root.theme
-            Layout.preferredWidth: root.width < 850 ? 146 : 180
+            Layout.preferredWidth: root.width < 850 ? 156 : 190
             Layout.fillHeight: true
+            background: Rectangle { color: "transparent"; Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.theme.separator } }
             ColumnLayout {
-                anchors.fill: parent; anchors.margins: 14; spacing: 10
-                Label { text: "系统设置"; color: root.theme.text; font.pixelSize: 20; font.bold: true; Layout.fillWidth: true }
+                anchors.fill: parent; anchors.margins: 10; spacing: 10
                 SectionButton { objectName: "settings-appearance-tab"; text: "外观与快捷键"; selected: root.section === 0; onClicked: root.section = 0 }
                 SectionButton { objectName: "settings-model-tab"; text: "大模型接入"; selected: root.section === 1; onClicked: root.section = 1 }
                 Item { Layout.fillHeight: true }
@@ -111,25 +140,45 @@ Item {
         GlassPage {
             theme: root.theme
             Layout.fillWidth: true; Layout.fillHeight: true
+            background: null
             ScrollView {
                 anchors.fill: parent; anchors.margins: 24
                 contentWidth: availableWidth; clip: true
                 ColumnLayout {
-                    width: parent.width; spacing: 18
+                    width: Math.min(parent.width, 840); spacing: 18
                     ColumnLayout {
                         visible: root.section === 0
                         Layout.fillWidth: true; spacing: 20
                         Label { text: "界面外观"; color: root.theme.text; font.pixelSize: 23; font.bold: true }
                         Label { text: "选择适合当前工作环境的显示方式"; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                        Switch { objectName: "settings-dark"; text: "深色外观"; checked: root.theme.isDark; palette.windowText: root.theme.text
-                            onToggled: { root.theme.followSystem = false; root.theme.isDark = checked; root.persistAppearance("next/appearance/dark", checked); root.persistAppearance("next/appearance/followSystem", false) } }
-                        Switch { objectName: "settings-follow-system"; text: "跟随系统外观"; checked: root.theme.followSystem; palette.windowText: root.theme.text
-                            onToggled: { root.theme.followSystem = checked; if (checked) root.theme.isDark = Qt.styleHints.colorScheme === Qt.ColorScheme.Dark; root.persistAppearance("next/appearance/followSystem", checked) } }
-                        Switch { objectName: "settings-reduced-transparency"; text: "减少透明度"; checked: root.theme.reducedTransparency; palette.windowText: root.theme.text
-                            onToggled: { root.theme.reducedTransparency = checked; root.persistAppearance("next/appearance/reducedTransparency", checked) } }
-                        Rectangle { Layout.fillWidth: true; height: 1; color: root.theme.controlBorder }
-                        Label { text: "快捷键"; color: root.theme.text; font.pixelSize: 19; font.bold: true }
-                        Label { text: "Ctrl / ⌘ + O  打开日志\nCtrl / ⌘ + F  搜索日志\nF3 / Shift + F3  下一处 / 上一处\nCtrl + Shift + F  智能组帧\nCtrl + Shift + S  协议同步"; color: root.theme.subText; lineHeight: 1.7; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                        Rectangle {
+                            Layout.fillWidth: true; implicitHeight: appearanceRows.implicitHeight
+                            radius: 14; color: root.theme.surface; border.color: root.theme.groupBorder
+                            ColumnLayout {
+                                id: appearanceRows; width: parent.width; spacing: 0
+                                AppearanceSwitch { objectName: "settings-dark"; text: "深色外观"; checked: root.theme.isDark; palette.windowText: root.theme.text
+                                    onToggled: { root.theme.followSystem = false; root.theme.isDark = checked; root.persistAppearance("next/appearance/dark", checked); root.persistAppearance("next/appearance/followSystem", false) } }
+                                Rectangle { Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; height: 1; color: root.theme.separator }
+                                AppearanceSwitch { objectName: "settings-follow-system"; text: "跟随系统外观"; checked: root.theme.followSystem; palette.windowText: root.theme.text
+                                    onToggled: { root.theme.followSystem = checked; if (checked) root.theme.isDark = Qt.styleHints.colorScheme === Qt.ColorScheme.Dark; root.persistAppearance("next/appearance/followSystem", checked) } }
+                                Rectangle { Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; height: 1; color: root.theme.separator }
+                                AppearanceSwitch { objectName: "settings-reduced-transparency"; text: "减少透明度"; checked: root.theme.reducedTransparency; palette.windowText: root.theme.text
+                                    onToggled: { root.theme.reducedTransparency = checked; root.persistAppearance("next/appearance/reducedTransparency", checked) } }
+                            }
+                        }
+                        Label { text: "快捷键"; color: root.theme.text; font.pixelSize: 19; font.bold: true; Layout.topMargin: 12 }
+                        Rectangle {
+                            Layout.fillWidth: true; implicitHeight: shortcutRows.implicitHeight
+                            radius: 14; color: root.theme.surface; border.color: root.theme.groupBorder
+                            Column {
+                                id: shortcutRows; width: parent.width
+                                ShortcutRow { label: "打开日志"; keys: Qt.platform.os === "osx" ? "⌘  O" : "Ctrl + O" }
+                                ShortcutRow { label: "搜索日志"; keys: Qt.platform.os === "osx" ? "⌘  F" : "Ctrl + F" }
+                                ShortcutRow { label: "下一处 / 上一处"; keys: Qt.platform.os === "osx" ? "F3 / ⇧ F3" : "F3 / Shift + F3" }
+                                ShortcutRow { label: "智能组帧"; keys: Qt.platform.os === "osx" ? "⌃ ⇧ F" : "Ctrl + Shift + F" }
+                                ShortcutRow { label: "协议同步"; keys: Qt.platform.os === "osx" ? "⌃ ⇧ S" : "Ctrl + Shift + S"; last: true }
+                            }
+                        }
                     }
                     ColumnLayout {
                         visible: root.section === 1
@@ -148,10 +197,10 @@ Item {
                         Label { objectName: "settings-key-status"; textFormat: Text.PlainText; text: !root.controller ? "尚未接入设置控制器" : root.controller.credentialStatus !== "ready" ? (root.controller.credentialMessage || "安全凭据状态尚未确认") : root.controller.hasApiKey ? "•••••••• · 已保存于 " + root.controller.baseUrl : "未保存密钥"; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
                         Flow {
                             Layout.fillWidth: true; spacing: 10
-                            Button { objectName: "settings-save"; text: root.settingsPending && root.settingsOperationKind === "save" ? "保存处理中…" : "保存设置"; enabled: !!root.controller && root.controller.credentialAvailable && !root.locked && !!endpoint.text.trim() && !!modelName.text.trim(); onClicked: root.beginSettingsOperation("save") }
-                            Button { objectName: "settings-clear-key"; text: root.settingsPending && root.settingsOperationKind === "clear" ? "清除处理中…" : "清除已保存密钥"; enabled: !!root.controller && root.controller.hasApiKey && !root.locked; onClicked: root.beginSettingsOperation("clear") }
-                            Button { objectName: "settings-test"; text: "测试连接"; enabled: !!root.controller && root.controller.credentialAvailable && !root.locked && !!endpoint.text.trim() && !!modelName.text.trim(); onClicked: root.startConnectionTest() }
-                            Button { objectName: "settings-cancel-test"; text: "取消连接测试"; visible: !!root.controller && root.controller.connectionBusy && root.ownedConnectionId === root.controller.connectionRequestId; onClicked: root.cancelOwnedConnection() }
+                            Next.GlassButton { objectName: "settings-save"; highlighted: true; text: root.settingsPending && root.settingsOperationKind === "save" ? "保存处理中…" : "保存设置"; enabled: !!root.controller && root.controller.credentialAvailable && !root.locked && !!endpoint.text.trim() && !!modelName.text.trim(); onClicked: root.beginSettingsOperation("save") }
+                            Next.GlassButton { objectName: "settings-clear-key"; text: root.settingsPending && root.settingsOperationKind === "clear" ? "清除处理中…" : "清除已保存密钥"; enabled: !!root.controller && root.controller.hasApiKey && !root.locked; onClicked: root.beginSettingsOperation("clear") }
+                            Next.GlassButton { objectName: "settings-test"; text: "测试连接"; enabled: !!root.controller && root.controller.credentialAvailable && !root.locked && !!endpoint.text.trim() && !!modelName.text.trim(); onClicked: root.startConnectionTest() }
+                            Next.GlassButton { objectName: "settings-cancel-test"; text: "取消连接测试"; visible: !!root.controller && root.controller.connectionBusy && root.ownedConnectionId === root.controller.connectionRequestId; onClicked: root.cancelOwnedConnection() }
                         }
                         Label { text: "连接测试会发送一次小型真实工具请求，可能产生少量计费；测试不保存当前输入。"; color: root.theme.subText; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.Wrap }
                         Label { objectName: "settings-connection-status"; textFormat: Text.PlainText; text: root.controller ? root.controller.connectionMessage : "尚未测试连接"; color: root.controller && root.controller.connectionStatus === "failed" ? root.theme.error : root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
@@ -167,7 +216,7 @@ Item {
                             text: "使用 UTF-8 文本编辑器修改；保存后从下一次组帧任务生效，当前澄清对话保持原版本。共享同步请在协议同步页面选择“AI 提示词”。"
                             color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap
                         }
-                        Button {
+                        Next.GlassButton {
                             objectName: "settings-open-prompts"
                             text: "打开提示词文件夹"
                             enabled: !!(root.controller && root.controller.promptDirectoryUrl)

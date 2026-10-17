@@ -26,7 +26,7 @@ GlassPage {
     property string statusText: ""
     property bool statusIsError: false
 
-    color: theme ? theme.background : "#ffffff"
+    color: theme ? theme.surface : "#ffffff"
     palette.highlight: theme ? theme.accentMuted : "#1976D2"
 
 
@@ -63,25 +63,16 @@ GlassPage {
         }
     }
 
-    component StyledButton: Button {
+    component StyledButton: Next.GlassButton {
         id: control
         contentItem: Text {
             text: control.text
             font: control.font
-            opacity: enabled ? 1.0 : 0.3
-            color: theme ? theme.buttonText : "#333333"
+
+            color: control.highlighted ? "white" : (theme ? theme.buttonText : "#333333")
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
-        }
-        background: Rectangle {
-            implicitWidth: 100
-            implicitHeight: 36
-            opacity: enabled ? 1 : 0.3
-            color: control.down ? (theme ? theme.buttonPressed : "#cccccc") : (control.hovered ? (theme ? theme.buttonHover : "#dddddd") : (theme ? theme.buttonBackground : "#eeeeee"))
-            border.color: theme ? theme.controlBorder : "#cccccc"
-            border.width: 1
-            radius: 8
         }
     }
 
@@ -187,7 +178,7 @@ GlassPage {
                 Layout.alignment: Qt.AlignVCenter
             }
 
-            TextField {
+            Next.GlassTextField {
                 id: pathField
                 Layout.fillWidth: true
                 readOnly: true
@@ -201,11 +192,6 @@ GlassPage {
                     return outPath;
                 }
                 color: theme ? theme.text : "#333333"
-                background: Rectangle {
-                    color: theme ? theme.controlBackground : "#ffffff"
-                    border.color: theme ? theme.controlBorder : "#cccccc"
-                    radius: 8
-                }
             }
 
             StyledButton {
@@ -275,6 +261,7 @@ GlassPage {
 
             StyledButton {
                 text: "合并"
+                highlighted: true
                 enabled: fileListView.count > 0 && logMerger.outputPath !== "" && !logMerger.merging
                 onClicked: {
                     logMerger.mergeFiles();

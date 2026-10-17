@@ -59,7 +59,7 @@ Item {
         return value
     }
 
-    component SmallButton: Button {
+    component SmallButton: Next.GlassButton {
         id: button
         implicitHeight: 26
         contentItem: Text {
@@ -70,20 +70,10 @@ Item {
             elide: Text.ElideRight
             font.pixelSize: 12
         }
-        background: Rectangle {
-            color: button.down ? (root.theme ? root.theme.buttonPressed : "#ddd") : (button.hovered ? (root.theme ? root.theme.buttonHover : "#eee") : (root.theme ? root.theme.buttonBackground : "#f5f5f5"))
-            border.color: root.theme ? root.theme.controlBorder : "#ccc"
-            radius: 8
-        }
     }
 
-    component StyledTextField: TextField {
+    component StyledTextField: Next.GlassTextField {
         color: root.theme ? root.theme.text : "#333"
-        background: Rectangle {
-            color: root.theme ? root.theme.controlBackground : "#fff"
-            border.color: root.theme ? root.theme.controlBorder : "#ccc"
-            radius: 8
-        }
     }
 
     component DateTimeSInput: RowLayout {
@@ -113,7 +103,7 @@ Item {
         function getValue() { return { unit: tiUnit.currentIndex, value: Number(tiValue.value) } }
         Layout.fillWidth: true
         Label { text: "时间间隔 TI"; color: root.theme ? root.theme.subText : "#666"; Layout.preferredWidth: 84 }
-        ComboBox { id: tiUnit; model: ["秒", "分", "时", "日", "月", "年"]; Layout.preferredWidth: 90 }
+        Next.GlassComboBox { id: tiUnit; model: ["秒", "分", "时", "日", "月", "年"]; Layout.preferredWidth: 90 }
         Next.CompactSpinBox { id: tiValue; from: 0; to: 65535; value: 10; editable: true; Layout.preferredWidth: 110 }
         Item { Layout.fillWidth: true }
     }
@@ -168,7 +158,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: "MS"; color: root.theme ? root.theme.text : "#333"; font.bold: true; Layout.preferredWidth: 36 }
-                ComboBox {
+                Next.GlassComboBox {
                     id: msType
                     Layout.fillWidth: true
                     model: ["0 无表计", "1 全部用户地址", "2 一组用户类型", "3 一组用户地址 TSA", "4 一组配置序号", "5 用户类型区间", "6 用户地址区间", "7 配置序号区间", "8 一组设备类型", "9 特定逻辑设备"]
@@ -303,7 +293,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Label { text: "选择方法"; color: root.theme ? root.theme.subText : "#666"; Layout.preferredWidth: 64 }
-            ComboBox {
+            Next.GlassComboBox {
                 id: selectorType
                 Layout.fillWidth: true
                 model: ["0 不选择", "1 OAD + Data", "2 OAD + 起止/间隔 Data", "3 多个 Selector2", "4 采集启动时间 + MS", "5 采集存储时间 + MS", "6 采集启动时间区间 + MS", "7 存储时间区间 + TI + MS", "8 成功时间区间 + TI + MS", "9 上第 n 次记录", "10 上 n 条记录 + MS", "11 多个 RSD"]

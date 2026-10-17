@@ -37,6 +37,17 @@ Item {
             mouseClick(item("settings-follow-system")); compare(fakeBackend.writes["next/appearance/followSystem"],true)
             mouseClick(item("settings-reduced-transparency")); compare(fakeBackend.writes["next/appearance/reducedTransparency"],true)
         }
+        function test_appearanceRowsKeepSwitchesClearOfLabels() {
+            for (const width of [1144, 850]) {
+                page.width = width; wait(20)
+                for (const name of ["settings-dark", "settings-follow-system", "settings-reduced-transparency"]) {
+                    const row = item(name)
+                    verify(row.indicator.x > row.width / 2, name + " must put its switch on the right")
+                    verify(row.indicator.x + row.indicator.width <= row.width - row.rightPadding)
+                    verify(row.contentItem.contentWidth < row.indicator.x - row.leftPadding)
+                }
+            }
+        }
         function test_configurationAndSecretLifecycle() {
             showModel(); compare(item("settings-endpoint").text,control.baseUrl); compare(item("settings-model").text,control.model)
             compare(item("settings-api-key").text,""); compare(item("settings-api-key").echoMode,TextInput.Password)

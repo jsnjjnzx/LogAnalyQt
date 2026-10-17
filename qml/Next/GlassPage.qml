@@ -22,7 +22,16 @@ Pane {
     palette.base: theme ? theme.controlBackground : "#1d2630"
     palette.button: theme ? theme.buttonBackground : "#354456"
     palette.buttonText: theme ? theme.text : "#e8eef8"
+    palette.mid: theme ? theme.controlBorder : "#444a53"
+    palette.dark: theme ? theme.groupBorder : "#3c424b"
+    palette.light: theme ? theme.highlightEdge : "#18ffffff"
+    palette.placeholderText: theme ? theme.placeholderText : "#9199a5"
     palette.highlight: theme ? theme.accentMuted : "#1978ee"
+    palette.brightText: "white"
     palette.highlightedText: "white"
-    background: Rectangle { radius: 12; color: page.color; border.color: page.theme ? page.theme.groupBorder : "#4a596b" }
+    background: Rectangle {
+        radius: 14; color: page.color
+        border.color: page.theme ? page.theme.groupBorder : "#3c424b"
+        Rectangle { x: 14; y: 1; width: Math.max(0, parent.width - 28); height: 1; color: page.theme ? page.theme.highlightEdge : "#18ffffff" }
+    }
 }

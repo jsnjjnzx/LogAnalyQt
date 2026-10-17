@@ -23,11 +23,10 @@ Item {
         return { items: collectRepeaterValues(csdRepeater) }
     }
 
-    component SmallButton: Button {
+    component SmallButton: Next.GlassButton {
         id: button
         implicitHeight: 26
         contentItem: Text { text: button.text; color: root.theme ? root.theme.buttonText : "#333"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; font.pixelSize: 12 }
-        background: Rectangle { color: button.down ? (root.theme ? root.theme.buttonPressed : "#ddd") : (button.hovered ? (root.theme ? root.theme.buttonHover : "#eee") : (root.theme ? root.theme.buttonBackground : "#f5f5f5")); border.color: root.theme ? root.theme.controlBorder : "#ccc"; radius: 8 }
     }
 
     component OadLineEditor: Rectangle {
@@ -84,7 +83,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: "CSD " + csdRoot.itemNo; color: root.theme ? root.theme.text : "#333"; font.bold: true }
-                ComboBox { id: choiceCombo; model: ["OAD", "ROAD"]; Layout.preferredWidth: 110 }
+                Next.GlassComboBox { id: choiceCombo; model: ["OAD", "ROAD"]; Layout.preferredWidth: 110 }
                 Item { Layout.fillWidth: true }
                 SmallButton { text: "删除"; onClicked: csdRoot.removeRequested() }
             }

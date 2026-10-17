@@ -8,7 +8,7 @@ GlassPage {
     id: liveLogDialog
     visible: false
     title: "实时终端监控"
-    color: theme ? theme.background : "#ffffff"
+    color: theme ? theme.surface : "#ffffff"
     palette.highlight: theme ? theme.accentMuted : "#1976D2"
 
     property var backend
@@ -620,7 +620,7 @@ GlassPage {
         }
     }
 
-    Dialog {
+    Next.GlassDialog {
         id: hostKeyDialog; objectName: "ssh-host-key-dialog"
         parent: Overlay.overlay; anchors.centerIn: parent; width: Math.min(620, liveLogDialog.width - 30)
         modal: true; title: "确认 SSH 主机密钥"; standardButtons: Dialog.NoButton; closePolicy: Popup.CloseOnEscape
@@ -632,13 +632,13 @@ GlassPage {
             TextArea { objectName: "ssh-host-key-fingerprint"; text: liveLogDialog.pendingHostKey ? liveLogDialog.pendingHostKey.fingerprint : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; Layout.fillWidth: true }
             Label { text: "请通过可信渠道核对目标与 SHA256 指纹。只有明确确认才会继续；关闭或取消均不信任。密钥变化会阻止连接，不提供覆盖按钮。"; textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap }
             RowLayout {
-                Button { objectName: "ssh-host-key-reject"; text: "拒绝并断开"; onClicked: liveLogDialog.respondHostKey(false) }
-                Button { objectName: "ssh-host-key-accept"; text: "已核对，信任并继续"; enabled: sshTerminal.hostKeyPending && !!liveLogDialog.pendingHostKey; onClicked: liveLogDialog.respondHostKey(true) }
+                Next.GlassButton { objectName: "ssh-host-key-reject"; text: "拒绝并断开"; onClicked: liveLogDialog.respondHostKey(false) }
+                Next.GlassButton { objectName: "ssh-host-key-accept"; text: "已核对，信任并继续"; enabled: sshTerminal.hostKeyPending && !!liveLogDialog.pendingHostKey; onClicked: liveLogDialog.respondHostKey(true) }
             }
         }
     }
 
-    Menu {
+    Next.GlassMenu {
         id: terminalContextMenu
 
         MenuItem {
@@ -743,7 +743,7 @@ GlassPage {
     readonly property color terminalText: (theme && theme.isDark) ? "#d4d4d4" : "#1e1e1e"
     readonly property color terminalMatchBg: (theme && theme.isDark) ? "#5a4a00" : "#fff3a0"
     readonly property color terminalBorder: (theme && theme.isDark) ? "#3c3f44" : "#d0d3d8"
-    readonly property color cardBg: theme ? theme.controlBackground : "#ffffff"
+    readonly property color cardBg: theme ? theme.surface : "#ffffff"
     readonly property color cardBorder: theme ? theme.controlBorder : "#d0d3d8"
     readonly property color labelColor: theme ? theme.subText : "#606060"
     readonly property color primaryBtnBg: liveLogDialog.theme ? liveLogDialog.theme.accentMuted : "#1976D2"
@@ -771,7 +771,7 @@ GlassPage {
     }
 
     // ── 与主界面一致的控件样式组件 ────────────────────────────────
-    component StyledTextField: TextField {
+    component StyledTextField: Next.GlassTextField {
         implicitHeight: 36
         topPadding: 0
         bottomPadding: 0
@@ -780,15 +780,9 @@ GlassPage {
         verticalAlignment: Text.AlignVCenter
         color: liveLogDialog.theme ? liveLogDialog.theme.text : "#333333"
         placeholderTextColor: liveLogDialog.theme ? liveLogDialog.theme.placeholderText : "#aaaaaa"
-        background: Rectangle {
-            color: liveLogDialog.theme ? liveLogDialog.theme.controlBackground : "#ffffff"
-            radius: 8
-            border.color: parent.activeFocus ? focusAccentColor : (liveLogDialog.theme ? liveLogDialog.theme.controlBorder : "#cccccc")
-            border.width: parent.activeFocus ? 2 : 1
-        }
     }
 
-    component StyledComboBox: ComboBox {
+    component StyledComboBox: Next.GlassComboBox {
         id: styledCbCtrl
         implicitHeight: 36
 
@@ -847,15 +841,6 @@ GlassPage {
             elide: Text.ElideRight
         }
 
-        background: Rectangle {
-            implicitWidth: 100
-            implicitHeight: 36
-            color: liveLogDialog.theme ? liveLogDialog.theme.controlBackground : "#ffffff"
-            border.color: styledCbCtrl.visualFocus ? focusAccentColor : (liveLogDialog.theme ? liveLogDialog.theme.controlBorder : "#cccccc")
-            border.width: styledCbCtrl.visualFocus ? 2 : 1
-            radius: 8
-        }
-
         popup: Popup {
             y: styledCbCtrl.height - 1
             width: styledCbCtrl.width
@@ -873,31 +858,22 @@ GlassPage {
             background: Rectangle {
                 border.color: liveLogDialog.theme ? liveLogDialog.theme.controlBorder : "#cccccc"
                 radius: 8
-                color: liveLogDialog.theme ? liveLogDialog.theme.controlBackground : "#ffffff"
+                color: liveLogDialog.theme ? liveLogDialog.theme.popupBackground : "#ffffff"
             }
         }
     }
 
-    component StyledButton: Button {
+    component StyledButton: Next.GlassButton {
         id: styledBtnCtrl
         implicitHeight: 36
         contentItem: Text {
             text: styledBtnCtrl.text
             font: styledBtnCtrl.font
-            opacity: styledBtnCtrl.enabled ? 1.0 : 0.3
+
             color: liveLogDialog.theme ? liveLogDialog.theme.buttonText : "#ffffff"
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
-        }
-        background: Rectangle {
-            implicitWidth: 80
-            implicitHeight: 36
-            opacity: styledBtnCtrl.enabled ? 1 : 0.3
-            color: styledBtnCtrl.down ? (liveLogDialog.theme ? liveLogDialog.theme.buttonPressed : primaryBtnBg) : styledBtnCtrl.hovered ? primaryBtnHoverBg : (liveLogDialog.theme ? liveLogDialog.theme.buttonBackground : primaryBtnBg)
-            border.color: liveLogDialog.theme ? liveLogDialog.theme.controlBorder : "#cccccc"
-            border.width: 1
-            radius: 8
         }
     }
 
@@ -1083,7 +1059,7 @@ GlassPage {
                     color: labelColor
                     font.pixelSize: 12
                 }
-                Switch {
+                Next.GlassSwitch {
                     checked: sshTerminal.autoReconnectEnabled
                     onToggled: sshTerminal.autoReconnectEnabled = checked
                     palette.button: liveLogDialog.theme ? liveLogDialog.theme.controlBackground : "#ffffff"
@@ -1409,7 +1385,7 @@ GlassPage {
                                     font.bold: true
                                 }
 
-                                TextField {
+                                Next.GlassTextField {
                                     id: terminalInput
                                     Layout.fillWidth: true
                                     font.family: Next.PlatformFonts.monospaceFamily

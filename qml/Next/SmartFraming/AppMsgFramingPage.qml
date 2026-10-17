@@ -130,11 +130,10 @@ Item {
     onSchemaChanged: Qt.callLater(syncFieldEditor)
     onSelectedKindChanged: root.reloadInterfaces()
 
-    component SmallButton: Button {
+    component SmallButton: Next.GlassButton {
         id: button
         implicitHeight: 30
         contentItem: Text { text: button.text; color: root.theme ? root.theme.buttonText : "#333"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
-        background: Rectangle { color: button.down ? (root.theme ? root.theme.buttonPressed : "#ddd") : (button.hovered ? (root.theme ? root.theme.buttonHover : "#eee") : (root.theme ? root.theme.buttonBackground : "#f5f5f5")); border.color: root.theme ? root.theme.controlBorder : "#ccc"; radius: 8 }
     }
 
     ColumnLayout {
@@ -144,13 +143,13 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-            TextField {
+            Next.GlassTextField {
                 id: searchField
                 Layout.fillWidth: true
                 placeholderText: "搜索 IOP / 名称 / 描述"
                 color: root.theme ? root.theme.text : "#333"
                 placeholderTextColor: root.theme ? root.theme.placeholderText : "#888"
-                background: Rectangle { color: root.theme ? root.theme.controlBackground : "#fff"; border.color: root.theme ? root.theme.controlBorder : "#ccc"; radius: 8 }
+
                 onTextChanged: root.reloadInterfaces()
             }
             SmallButton { text: "生成 Payload"; onClicked: root.buildPayload() }
@@ -386,7 +385,7 @@ Item {
         width: 720
         height: 460
         padding: 10
-        background: Rectangle { color: root.theme ? root.theme.background : "#ffffff"; border.color: root.theme ? root.theme.controlBorder : "#cccccc"; radius: 6 }
+        background: Rectangle { color: root.theme ? root.theme.popupBackground : "#ffffff"; border.color: root.theme ? root.theme.controlBorder : "#cccccc"; radius: 12 }
 
         ColumnLayout {
             anchors.fill: parent

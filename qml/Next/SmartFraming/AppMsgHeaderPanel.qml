@@ -54,7 +54,7 @@ Item {
             rowSpacing: 8
             columnSpacing: 10
 
-            CheckBox {
+            Next.GlassCheckBox {
                 id: prmCheck
                 text: "PRM 启动站"
                 checked: true
@@ -91,13 +91,12 @@ Item {
                 color: root.theme ? root.theme.subText : "#666"
                 Layout.preferredWidth: 64
             }
-            TextField {
+            Next.GlassTextField {
                 id: sourceField
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 text: root.kind === "response" ? "server" : "client"
                 color: root.theme ? root.theme.text : "#333"
-                background: Rectangle { color: root.theme ? root.theme.controlBackground : "#fff"; border.color: root.theme ? root.theme.controlBorder : "#ccc"; radius: 8 }
             }
 
             Label {
@@ -105,13 +104,12 @@ Item {
                 color: root.theme ? root.theme.subText : "#666"
                 Layout.preferredWidth: 84
             }
-            TextField {
+            Next.GlassTextField {
                 id: destinationField
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 text: root.kind === "response" ? "client" : "server"
                 color: root.theme ? root.theme.text : "#333"
-                background: Rectangle { color: root.theme ? root.theme.controlBackground : "#fff"; border.color: root.theme ? root.theme.controlBorder : "#ccc"; radius: 8 }
             }
         }
     }

@@ -23,7 +23,7 @@ GlassPage {
     signal framingResult(string hexStr, int protocolType)
     onVisibleChanged: if (!visible) verifyPopup.close()
 
-    color: theme ? theme.background : "#ffffff"
+    color: theme ? theme.surface : "#ffffff"
     palette.highlight: theme ? theme.accentMuted : "#1976D2"
 
 
@@ -80,31 +80,21 @@ GlassPage {
 
     Item { id: titleBar; height: 0; width: parent.width }
 
-
-    component StyledButton: Button {
+    component StyledButton: Next.GlassButton {
         id: control
         implicitHeight: 36
         contentItem: Text {
             text: control.text
             font: control.font
-            opacity: enabled ? 1.0 : 0.3
-            color: theme ? theme.buttonText : "#333333"
+
+            color: control.highlighted ? "white" : (theme ? theme.buttonText : "#333333")
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
         }
-        background: Rectangle {
-            implicitWidth: 100
-            implicitHeight: 36
-            opacity: enabled ? 1 : 0.3
-            color: control.down ? (theme ? theme.buttonPressed : "#cccccc") : (control.hovered ? (theme ? theme.buttonHover : "#dddddd") : (theme ? theme.buttonBackground : "#eeeeee"))
-            border.color: theme ? theme.controlBorder : "#cccccc"
-            border.width: 1
-            radius: 8
-        }
     }
 
-    component StyledComboBox: ComboBox {
+    component StyledComboBox: Next.GlassComboBox {
         id: control
         implicitHeight: 36
         textRole: "text"
@@ -166,15 +156,6 @@ GlassPage {
             elide: Text.ElideRight
         }
 
-        background: Rectangle {
-            implicitWidth: 100
-            implicitHeight: 36
-            color: dialog.theme ? dialog.theme.controlBackground : "#ffffff"
-            border.color: dialog.theme ? dialog.theme.controlBorder : "#cccccc"
-            border.width: control.visualFocus ? 2 : 1
-            radius: 8
-        }
-
         delegate: ItemDelegate {
             id: delegateRoot
             required property int index
@@ -212,7 +193,7 @@ GlassPage {
             }
 
             background: Rectangle {
-                color: dialog.theme ? dialog.theme.controlBackground : "#ffffff"
+                color: dialog.theme ? dialog.theme.popupBackground : "#ffffff"
                 border.color: dialog.theme ? dialog.theme.controlBorder : "#cccccc"
                 radius: 8
             }
@@ -253,7 +234,7 @@ GlassPage {
             visible: protocolSelector.protocolCode === "698"
             Layout.fillWidth: true; spacing: 10
             Item { Layout.fillWidth: true }
-            StyledButton { text: "生成 APDU"; visible: protocolSelector.protocolCode === "698"; onClicked: dialog.buildApdu() }
+            StyledButton { text: "生成 APDU"; highlighted: true; visible: protocolSelector.protocolCode === "698"; onClicked: dialog.buildApdu() }
             StyledButton { text: "封装完整帧"; visible: protocolSelector.protocolCode === "698"; enabled: dialog.apduHex.length > 0; onClicked: dialog.buildFrame() }
             StyledButton { text: "解析校验"; visible: protocolSelector.protocolCode === "698"; enabled: dialog.apduHex.length > 0 || dialog.frameHex.length > 0; onClicked: dialog.verifyCurrent() }
         }
@@ -382,7 +363,7 @@ GlassPage {
         width: 720
         height: 460
         padding: 10
-        background: Rectangle { color: theme ? theme.background : "#ffffff"; border.color: theme ? theme.controlBorder : "#cccccc"; radius: 6 }
+        background: Rectangle { color: theme ? theme.popupBackground : "#ffffff"; border.color: theme ? theme.controlBorder : "#cccccc"; radius: 12 }
 
         ColumnLayout {
             anchors.fill: parent

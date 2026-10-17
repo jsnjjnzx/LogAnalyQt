@@ -16,7 +16,7 @@ SpinBox {
         font: control.font
         text: control.textFromValue(Math.abs(control.from) > Math.abs(control.to) ? control.from : control.to, control.locale)
     }
-    background: Rectangle { radius: 7; color: control.palette.base; border.color: control.activeFocus ? control.palette.highlight : "#526175" }
+    background: ControlSurface { inset: true; baseColor: control.palette.base; edgeColor: control.palette.mid; focused: control.activeFocus; focusColor: control.palette.highlight }
     contentItem: TextInput {
         text: control.textFromValue(control.value, control.locale)
         color: control.palette.text
@@ -30,16 +30,18 @@ SpinBox {
         inputMethodHints: Qt.ImhFormattedNumbersOnly
         onEditingFinished: control.value = control.valueFromText(text, control.locale)
     }
-    up.indicator: Rectangle {
+    up.indicator: ControlSurface {
         x: control.width - width; width: 23; height: control.height; radius: 6
         opacity: control.wrap || (control.from <= control.to ? control.value < control.to : control.value > control.to) ? 1 : 0.35
-        color: control.up.pressed ? control.palette.highlight : control.palette.button
+        baseColor: control.up.pressed ? control.palette.highlight : control.palette.button
+        edgeColor: control.palette.mid; pressed: control.up.pressed
         Text { anchors.centerIn: parent; text: "+"; color: control.palette.buttonText; font.pixelSize: 17 }
     }
-    down.indicator: Rectangle {
+    down.indicator: ControlSurface {
         width: 23; height: control.height; radius: 6
         opacity: control.wrap || (control.from <= control.to ? control.value > control.from : control.value < control.from) ? 1 : 0.35
-        color: control.down.pressed ? control.palette.highlight : control.palette.button
+        baseColor: control.down.pressed ? control.palette.highlight : control.palette.button
+        edgeColor: control.palette.mid; pressed: control.down.pressed
         Text { anchors.centerIn: parent; text: "−"; color: control.palette.buttonText; font.pixelSize: 17 }
     }
 }

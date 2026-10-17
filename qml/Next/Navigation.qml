@@ -1,3 +1,4 @@
+import LogAnalyQt.Next as Next
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -8,7 +9,7 @@ Rectangle {
     property int currentPage: 0
     property string version: ""
     signal navigate(int page)
-    color: theme.isDark ? "#79404d5d" : "#bde4ecf7"
+    color: theme.sidebar
     readonly property var items: [
         {section:"分析工作台"},
         {page:0,title:"日志解析",icon:0xF09EE},
@@ -27,11 +28,11 @@ Rectangle {
     FontLoader { id: mdi; source: "qrc:/qt/qml/LogAnalyQt/assets/materialdesignicons-webfont.ttf" }
     Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: nav.theme.groupBorder }
     RowLayout {
-        x: 22; y: 24; width: parent.width - 40; spacing: 13
-        Image { source: "assets/app-logo.png"; Layout.preferredWidth: 48; Layout.preferredHeight: 48; smooth: true }
+        x: 20; y: 24; width: parent.width - 36; spacing: 12
+        Image { source: "assets/app-logo.png"; Layout.preferredWidth: 44; Layout.preferredHeight: 44; smooth: true }
         Column {
             spacing: 4
-            Text { text: "多协议解析器"; font.pixelSize: 20; font.bold: true; color: nav.theme.text }
+            Text { text: "多协议解析器"; font.pixelSize: 18; font.bold: true; color: nav.theme.text }
             Text { text: "LogAnalyQt"; font.pixelSize: 13; color: nav.theme.subText }
         }
     }
@@ -50,7 +51,7 @@ Rectangle {
                     width: menu.width
                     height: modelData.section ? (index === 0 ? 24 : (nav.height < 800 ? 36 : 43)) : (nav.height < 800 ? 38 : 43)
                     Text { visible: !!modelData.section; x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; text: modelData.section || ""; font.pixelSize: 13; color: nav.theme.subText }
-                    Button {
+                    Next.GlassButton {
                         objectName: modelData.section ? "" : "nav-" + modelData.page
                         anchors.fill: parent; visible: !modelData.section
                         hoverEnabled: true
@@ -58,14 +59,14 @@ Rectangle {
                         onClicked: nav.navigate(modelData.page)
                         background: Rectangle {
                             radius: 9
-                            color: nav.currentPage === modelData.page ? nav.theme.tableHighlight : parent.hovered ? nav.theme.surfaceHover : "transparent"
+                            color: nav.currentPage === modelData.page ? nav.theme.navigationSelected : parent.hovered ? nav.theme.surfaceHover : "transparent"
                             border.width: nav.currentPage === modelData.page || parent.activeFocus ? 1 : 0
-                            border.color: nav.theme.accent
+                            border.color: parent.activeFocus ? nav.theme.accent : nav.theme.groupBorder
                         }
                         contentItem: RowLayout {
                             spacing: 15
-                            Text { text: String.fromCodePoint(modelData.icon || 0); font.family: mdi.name; font.pixelSize: 23; color: nav.theme.text; Layout.leftMargin: 7 }
-                            Text { text: modelData.title || ""; font.pixelSize: 16; color: nav.theme.text; Layout.fillWidth: true }
+                            Text { text: String.fromCodePoint(modelData.icon || 0); font.family: mdi.name; font.pixelSize: 22; color: nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.subText; Layout.leftMargin: 7 }
+                            Text { text: modelData.title || ""; font.pixelSize: 15; color: nav.theme.text; Layout.fillWidth: true }
                         }
                     }
                 }
@@ -78,13 +79,13 @@ Rectangle {
         Rectangle { width: parent.width; height: 1; color: nav.theme.groupBorder }
         Repeater {
             model: [{page:9,title:"系统设置",icon:0xF08BB},{page:10,title:"帮助与更新",icon:0xF0625}]
-            delegate: Button {
+            delegate: Next.GlassButton {
                 required property var modelData
                 objectName: "nav-" + modelData.page
                 width: parent.width; height: 39
                 Accessible.name: modelData.title
                 onClicked: nav.navigate(modelData.page)
-                background: Rectangle { radius: 8; color: nav.currentPage === modelData.page ? nav.theme.tableHighlight : parent.hovered ? nav.theme.surfaceHover : "transparent" }
+                background: Rectangle { radius: 9; color: nav.currentPage === modelData.page ? nav.theme.navigationSelected : parent.hovered ? nav.theme.surfaceHover : "transparent"; border.color: parent.visualFocus ? nav.theme.accent : "transparent" }
                 contentItem: RowLayout {
                     spacing: 15
                     Text { text: String.fromCodePoint(modelData.icon); font.family: mdi.name; font.pixelSize: 23; color: nav.theme.subText }
