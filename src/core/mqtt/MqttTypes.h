@@ -17,6 +17,8 @@ QVariantMap brokerDefaults();
 QString validateConnection(const QVariantMap &config, bool checkFiles = false);
 QString validateBroker(const QVariantMap &config, bool checkFiles = false);
 QString validateSubscription(const QString &topic, int qos);
+QString validateSubscriptionAppearance(const QVariantMap &subscription);
+QString defaultSubscriptionColor(int index);
 QString decodePayload(const QString &text, const QString &format, QByteArray *bytes);
 QString formatPayload(const QByteArray &bytes, const QString &format);
 QString publishError(const QString &topic, int qos);

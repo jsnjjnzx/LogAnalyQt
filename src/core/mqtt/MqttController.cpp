@@ -74,6 +74,7 @@ QString MqttController::validateWorkspace(const QVariantMap &config) {
         const auto qos = sub.value("qos").toDouble(&validQos);
         if (!validQos || qos != std::floor(qos) || qos < 0 || qos > 2) return QStringLiteral("订阅 QoS 无效。");
         if (auto error = Mqtt::validateSubscription(topic, sub.value("qos").toInt()); !error.isEmpty()) return error;
+        if (auto error = Mqtt::validateSubscriptionAppearance(sub); !error.isEmpty()) return error;
         if (topics.contains(topic)) return QStringLiteral("存在重复订阅主题。");
         topics.insert(topic);
     }

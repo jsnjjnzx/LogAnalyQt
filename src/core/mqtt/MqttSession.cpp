@@ -72,11 +72,19 @@ MqttSession::~MqttSession() {
 QString MqttSession::configure(const QVariantMap &config) {
     if (active()) return QStringLiteral("请先断开连接，再修改或切换连接配置。");
     if (auto error = Mqtt::validateConnection(config); !error.isEmpty()) return error;
+    auto subscriptions = config.value("subscriptions").toList();
+    for (int i = 0; i < subscriptions.size(); ++i) {
+        auto subscription = subscriptions[i].toMap();
+        if (auto error = Mqtt::validateSubscriptionAppearance(subscription); !error.isEmpty()) return error;
+        if (!subscription.contains("color")) subscription.insert("color", Mqtt::defaultSubscriptionColor(i));
+        if (!subscription.contains("visible")) subscription.insert("visible", true);
+        subscriptions[i] = subscription;
+    }
     if (m_config.value("id") != config.value("id")) clearMessages();
     m_config = config;
+    m_config.insert("subscriptions", subscriptions);
     m_subscriptionStates.clear();
-    emit configurationChanged();
-    emit subscriptionsChanged();
+    updateSubscriptionDisplay();
     return {};
 }
 
@@ -203,13 +211,53 @@ void MqttSession::sendSubscriptions() {
     const auto subscriptions = m_config.value("subscriptions").toList();
     const auto cancelled = m_config.value("cancelledSubscriptions").toStringList();
     QMetaObject::invokeMethod(m_worker, [worker = m_worker, generation, subscriptions, cancelled] { worker->subscriptions(generation, subscriptions, cancelled); });
-    emit subscriptionsChanged();
-    emit configurationChanged();
+    updateSubscriptionDisplay();
 }
 
-QVariantMap MqttSession::saveSubscription(const QString &topic, int qos, bool enabled, const QString &previousTopic) {
-    if (auto error = Mqtt::validateSubscription(topic, qos); !error.isEmpty()) return report(error);
+void MqttSession::updateSubscriptionDisplay() {
+    m_filter.setSubscriptions(m_config.value("subscriptions").toList());
+    emit subscriptionsChanged();
+    emit configurationChanged();
+    emit messagesChanged();
+}
+
+QVariantMap MqttSession::setSubscriptionAppearance(const QString &topic, const QString &color, bool visible) {
+    if (auto error = Mqtt::validateSubscriptionAppearance({{"color", color}, {"visible", visible}}); !error.isEmpty()) return report(error);
     auto subscriptions = m_config.value("subscriptions").toList();
+    for (auto &entry : subscriptions) {
+        auto subscription = entry.toMap();
+        if (subscription.value("topic").toString() != topic) continue;
+        subscription.insert("color", color.toLower());
+        subscription.insert("visible", visible);
+        entry = subscription;
+        m_config.insert("subscriptions", subscriptions);
+        updateSubscriptionDisplay();
+        return report({});
+    }
+    return report(QStringLiteral("订阅主题不存在。"));
+}
+
+void MqttSession::setAllSubscriptionsVisible(bool visible) {
+    auto subscriptions = m_config.value("subscriptions").toList();
+    for (auto &entry : subscriptions) { auto subscription = entry.toMap(); subscription.insert("visible", visible); entry = subscription; }
+    m_config.insert("subscriptions", subscriptions);
+    updateSubscriptionDisplay();
+}
+
+QVariantMap MqttSession::saveSubscription(const QString &topic, int qos, bool enabled, const QString &previousTopic, const QString &color) {
+    if (auto error = Mqtt::validateSubscription(topic, qos); !error.isEmpty()) return report(error);
+    if (!color.isEmpty()) {
+        if (auto error = Mqtt::validateSubscriptionAppearance({{"color", color}}); !error.isEmpty()) return report(error);
+    }
+    auto subscriptions = m_config.value("subscriptions").toList();
+    QVariantMap subscription;
+    int previousIndex = -1;
+    for (int i = 0; i < subscriptions.size(); ++i) {
+        const auto entry = subscriptions[i].toMap();
+        if (!previousTopic.isEmpty() && previousTopic != topic && entry.value("topic").toString() == topic)
+            return report(QStringLiteral("该订阅主题已存在，请使用其他名称。"));
+        if (entry.value("topic").toString() == (previousTopic.isEmpty() ? topic : previousTopic)) { subscription = entry; previousIndex = i; }
+    }
     auto cancelled = m_config.value("cancelledSubscriptions").toStringList();
     if (!previousTopic.isEmpty() && previousTopic != topic) {
         if (!cancelled.contains(previousTopic)) cancelled.append(previousTopic);
@@ -218,14 +266,18 @@ QVariantMap MqttSession::saveSubscription(const QString &topic, int qos, bool en
             if (subscriptions[i].toMap().value("topic").toString() == previousTopic) subscriptions.removeAt(i);
     }
     cancelled.removeAll(topic);
-    const QVariantMap subscription{{"topic", topic}, {"qos", qos}, {"enabled", enabled}};
+    subscription.insert("topic", topic); subscription.insert("qos", qos); subscription.insert("enabled", enabled);
+    if (!color.isEmpty()) subscription.insert("color", color.toLower());
+    if (!subscription.contains("color")) subscription.insert("color", Mqtt::defaultSubscriptionColor(subscriptions.size()));
+    if (!subscription.contains("visible")) subscription.insert("visible", true);
     bool found = false;
     for (auto &entry : subscriptions) {
         if (entry.toMap().value("topic").toString() == topic) { entry = subscription; found = true; break; }
     }
     if (!found) {
         if (subscriptions.size() >= 100) return report(QStringLiteral("每个连接最多保存 100 个订阅。"));
-        subscriptions.append(subscription);
+        if (previousIndex >= 0) subscriptions.insert(previousIndex, subscription);
+        else subscriptions.append(subscription);
     }
     m_config.insert("subscriptions", subscriptions);
     m_config.insert("cancelledSubscriptions", cancelled);
@@ -263,6 +315,7 @@ QVariantMap MqttSession::message(qulonglong id, const QString &format) const {
     constexpr qsizetype PreviewLimit = 64 * 1024;
     const bool truncated = message->payload.size() > PreviewLimit;
     return {{"id", QVariant::fromValue(id)}, {"topic", message->topic},
+        {"topicColor", m_filter.topicColor(message->topic)}, {"visible", m_filter.acceptsMessage(*message)},
         {"time", message->time.toString("yyyy-MM-dd HH:mm:ss.zzz")}, {"qos", message->qos},
         {"retained", message->retained}, {"received", message->received}, {"delivery", message->delivery},
         {"byteCount", message->payload.size()}, {"truncated", truncated},

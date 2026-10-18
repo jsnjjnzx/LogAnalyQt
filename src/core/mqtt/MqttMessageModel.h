@@ -9,7 +9,7 @@ class MqttMessageModel : public QAbstractListModel {
     Q_OBJECT
 public:
     enum Role { IdRole = Qt::UserRole + 1, TimeRole, TopicRole, PreviewRole,
-                QosRole, RetainedRole, ReceivedRole, DeliveryRole, SizeRole };
+                QosRole, RetainedRole, ReceivedRole, DeliveryRole, SizeRole, TopicColorRole };
     explicit MqttMessageModel(QObject *parent = nullptr, int maxRows = 10000,
                               qsizetype maxBytes = 64 * 1024 * 1024);
     int rowCount(const QModelIndex &parent = {}) const override;
@@ -38,10 +38,16 @@ class MqttMessageFilter : public QSortFilterProxyModel {
 public:
     explicit MqttMessageFilter(QObject *parent = nullptr);
     QString setCriteria(const QString &direction, const QString &topic, const QString &content);
+    void setSubscriptions(const QVariantList &subscriptions);
+    QString topicColor(const QString &topic) const;
+    bool acceptsMessage(const Mqtt::Message &message) const;
+    QVariant data(const QModelIndex &index, int role) const override;
 protected:
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
 private:
     QString m_direction = "all";
     QByteArray m_topic;
     QString m_content;
+    struct DisplayRule { QByteArray topic; QString color; bool visible; qint64 specificity; };
+    QList<DisplayRule> m_subscriptions;
 };

@@ -107,6 +107,20 @@ QString Mqtt::publishError(const QString &topic, int qos) {
     return {};
 }
 
+QString Mqtt::defaultSubscriptionColor(int index) {
+    static const QStringList colors{"#60a5fa", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#22d3ee", "#fb923c", "#f87171", "#a3e635", "#2dd4bf", "#818cf8", "#fb7185"};
+    return colors.at(index % colors.size());
+}
+
+QString Mqtt::validateSubscriptionAppearance(const QVariantMap &subscription) {
+    static const QRegularExpression colorPattern(QStringLiteral("^#[0-9a-fA-F]{6}$"));
+    if (subscription.contains("color") && !colorPattern.match(subscription.value("color").toString()).hasMatch())
+        return QStringLiteral("主题颜色请使用 #RRGGBB 格式。");
+    if (subscription.contains("visible") && subscription.value("visible").metaType().id() != QMetaType::Bool)
+        return QStringLiteral("主题显示选项无效。");
+    return {};
+}
+
 QString Mqtt::validateSubscription(const QString &topic, int qos) {
     if (topic.isEmpty() || !validString(topic) || mosquitto_sub_topic_check(topic.toUtf8().constData()) != MOSQ_ERR_SUCCESS)
         return QStringLiteral("订阅主题无效：+ 必须独占一层，# 必须位于最后一层。");

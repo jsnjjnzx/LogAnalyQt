@@ -31,9 +31,14 @@ inline QString checkMqttUi(QQuickWindow *window, const QString &screenshot, bool
         require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, 15)), "MQTT navigation failed");
         auto *page = window->findChild<QQuickItem *>("page-15");
         require(page && page->isVisible(), "MQTT page not visible");
+        std::function<QQuickItem *(QQuickItem *, const QString &)> findItem = [&](QQuickItem *parent, const QString &name) -> QQuickItem * {
+            if (parent->objectName() == name) return parent;
+            for (auto *child : parent->childItems()) if (auto *found = findItem(child, name)) return found;
+            return nullptr;
+        };
         auto item = [&](const char *name) {
-            auto *found = window->findChild<QQuickItem *>(QLatin1String(name));
-            require(found, QStringLiteral("Missing MQTT control: ") + QLatin1String(name));
+            QQuickItem *found = nullptr;
+            require(waitFor([&] { found = findItem(window->contentItem(), QLatin1String(name)); return found; }), QStringLiteral("Missing MQTT control: ") + QLatin1String(name));
             return found;
         };
         auto settle = [&] {
@@ -63,10 +68,22 @@ inline QString checkMqttUi(QQuickWindow *window, const QString &screenshot, bool
         auto remote = controller->remote()->configuration();
         remote["name"] = QStringLiteral("本机 MQTT 验收"); remote["host"] = "127.0.0.1"; remote["port"] = port;
         require(controller->saveConnection(remote).value("ok").toBool(), "UI remote profile save");
-        controller->remote()->saveSubscription("terminal/#", 1);
+        controller->remote()->saveSubscription("terminal/001/command", 1, true, {}, "#60a5fa");
         QMetaObject::invokeMethod(page, "changeMode", Q_ARG(QVariant, 0)); settle();
+        for (const auto &subscription : QList<QPair<QString, QString>>{{"terminal/001/telemetry", "#34d399"}, {"terminal/001/status", "#fbbf24"}}) {
+            click(item("mqtt-add-subscription"));
+            item("mqtt-subscription-topic")->setProperty("text", subscription.first);
+            item("mqtt-subscription-color")->setProperty("text", subscription.second);
+            click(item("mqtt-save-subscription"));
+        }
+        require(controller->remote()->subscriptions().size() == 3, "UI must create three colored subscriptions");
         click(item("mqtt-connection-action"));
-        require(waitFor([&] { return controller->remote()->connected() && controller->remote()->subscriptions().first().toMap().value("state").toString().startsWith(QStringLiteral("已订阅")); }), "UI connect button/subscription");
+        require(waitFor([&] {
+            if (!controller->remote()->connected()) return false;
+            for (const auto &subscription : controller->remote()->subscriptions())
+                if (!subscription.toMap().value("state").toString().startsWith(QStringLiteral("已订阅"))) return false;
+            return true;
+        }), "UI connect button/subscriptions");
         item("mqtt-send-topic")->setProperty("text", "terminal/001/command");
         const QString command = QStringLiteral("{\n  \"request_id\": \"local_test_001\",\n  \"command\": \"read_measurements\",\n  \"parameters\": {\n    \"items\": [\"voltage\", \"current\", \"frequency\"],\n    \"phases\": [\"A\", \"B\", \"C\"]\n  }\n}");
         item("mqtt-send-payload")->setProperty("text", command);
@@ -77,9 +94,36 @@ inline QString checkMqttUi(QQuickWindow *window, const QString &screenshot, bool
         require(last.value("payload").toString() == command, "UI text editor changed transmitted bytes");
         const QString telemetry = QStringLiteral("{\n  \"device_id\": \"loopback_test_001\",\n  \"measurements\": {\n    \"voltage\": [229.6, 230.1, 229.8],\n    \"current\": [3.21, 3.18, 3.24],\n    \"active_power\": 2209.5,\n    \"frequency\": 50.02\n  },\n  \"status\": {\n    \"online\": true,\n    \"alarm\": false\n  }\n}");
         controller->localClient()->publishMessage("terminal/001/telemetry", telemetry, "JSON", 1, false);
-        require(waitFor([&] { return item("mqtt-received-payload")->property("text").toString().contains("voltage"); }), "received JSON not rendered in UI");
+        require(waitFor([&] { return item("mqtt-received-payload")->property("text").toString().contains("\"measurements\""); }), "received JSON not rendered in UI");
+        require(item("mqtt-received-topic")->property("color").value<QColor>() == QColor("#34d399"), "received topic uses subscription color");
+        controller->localClient()->publishMessage("terminal/001/status", "status-initial", "Text", 1, false);
+        require(waitFor([&] { return item("mqtt-received-payload")->property("text").toString().contains("status-initial"); }), "third topic visible by default");
+        QMetaObject::invokeMethod(item("mqtt-subscriptions-list"), "positionViewAtEnd"); settle();
+        click(item("mqtt-topic-visible-2"));
+        require(waitFor([&] { return item("mqtt-received-payload")->property("text").toString().contains("\"measurements\""); }), "hidden selected topic must leave the detail view");
+        const auto hiddenBefore = controller->remote()->receivedCount();
+        controller->localClient()->publishMessage("terminal/001/status", "status-while-hidden", "Text", 1, false);
+        require(waitFor([&] { return controller->remote()->receivedCount() > hiddenBefore; }), "unchecked topic still receives messages");
+        require(item("mqtt-received-payload")->property("text").toString().contains("\"measurements\""), "hidden topic must not replace the displayed payload");
+        QMetaObject::invokeMethod(item("mqtt-subscriptions-list"), "positionViewAtEnd"); settle();
+        click(item("mqtt-topic-visible-2"));
+        require(waitFor([&] { return item("mqtt-received-payload")->property("text").toString().contains("status-while-hidden"); }), "checking topic restores cached messages");
+        controller->localClient()->publishMessage("terminal/001/telemetry", telemetry, "JSON", 1, false);
+        require(waitFor([&] { return item("mqtt-received-payload")->property("text").toString().contains("\"measurements\""); }), "return to telemetry detail");
+        const auto appearance = controller->remote()->subscriptions().at(1);
+        QMetaObject::invokeMethod(page, "editSubscription", Q_ARG(QVariant, appearance)); settle();
+        item("mqtt-subscription-color")->setProperty("text", "#a78bfa");
+        click(item("mqtt-save-subscription"));
+        require(item("mqtt-received-topic")->property("color").value<QColor>() == QColor("#a78bfa"), "editing color refreshes existing detail immediately");
         settle();
-        require(item("mqtt-payload-view")->width() > page->width() * 0.6, "connection controls took too much payload space");
+        const auto sidebarWidth = item("mqtt-subscription-sidebar")->width();
+        require(item("mqtt-payload-view")->width() > (page->width() - sidebarWidth) * 0.6 && item("mqtt-payload-view")->width() > 400, "message list took too much payload space");
+        const auto payloadWidth = item("mqtt-payload-view")->width();
+        const auto sendWidth = item("mqtt-send-editor")->width();
+        click(item("mqtt-toggle-subscriptions"));
+        require(!item("mqtt-subscription-sidebar")->isVisible() && item("mqtt-payload-view")->width() > payloadWidth + 100, "collapsing topics restores receive width");
+        require(qAbs(item("mqtt-send-editor")->width() - sendWidth) < 1, "topic sidebar must not shrink the send editor");
+        click(item("mqtt-toggle-subscriptions"));
         require(item("mqtt-send-editor")->height() > 120, "send editor too small");
         require(item("mqtt-payload-view")->height() > 150, "receive editor too small");
         click(item("mqtt-expand-send"));

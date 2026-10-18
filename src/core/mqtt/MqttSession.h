@@ -52,7 +52,9 @@ public:
     Q_INVOKABLE QVariantMap connectToBroker();
     Q_INVOKABLE void disconnectFromBroker();
     Q_INVOKABLE QVariantMap publishMessage(const QString &topic, const QString &text, const QString &format, int qos, bool retain);
-    Q_INVOKABLE QVariantMap saveSubscription(const QString &topic, int qos, bool enabled = true, const QString &previousTopic = {});
+    Q_INVOKABLE QVariantMap saveSubscription(const QString &topic, int qos, bool enabled = true, const QString &previousTopic = {}, const QString &color = {});
+    Q_INVOKABLE QVariantMap setSubscriptionAppearance(const QString &topic, const QString &color, bool visible);
+    Q_INVOKABLE void setAllSubscriptionsVisible(bool visible);
     Q_INVOKABLE QVariantMap removeSubscription(const QString &topic);
     Q_INVOKABLE QVariantMap setFilter(const QString &direction, const QString &topic, const QString &content);
     Q_INVOKABLE QVariantMap message(qulonglong id, const QString &format) const;
@@ -75,6 +77,7 @@ private:
     void acceptMessages(Mqtt::Messages messages);
     void setDelivery(quint64 id, const QString &delivery);
     void sendSubscriptions();
+    void updateSubscriptionDisplay();
     MqttMessageModel m_model;
     MqttMessageFilter m_filter;
     QThread m_thread;

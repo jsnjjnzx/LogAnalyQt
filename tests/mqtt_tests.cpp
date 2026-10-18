@@ -101,6 +101,12 @@ void settings(const QString &helper) {
         config["password"] = "plain_test_password";
         require(controller.saveConnection(config).value("ok").toBool(), "save connection");
         require(controller.remote()->saveSubscription("test/#", 1).value("ok").toBool(), "save subscription");
+        require(controller.remote()->subscriptions().first().toMap().value("visible").toBool(), "new subscriptions are visible by default");
+        require(controller.remote()->setSubscriptionAppearance("test/#", "#AABBCC", false).value("ok").toBool(), "save color and display choice");
+        require(controller.remote()->saveSubscription("renamed/#", 2, false, "test/#").value("ok").toBool(), "edit topic, QoS and enabled state");
+        const auto renamed = controller.remote()->subscriptions().first().toMap();
+        require(renamed.value("topic").toString() == "renamed/#" && renamed.value("color").toString() == "#aabbcc" && !renamed.value("visible").toBool(), "subscription edits retain color and display choice");
+        require(controller.remote()->saveSubscription("test/#", 1, true, "renamed/#").value("ok").toBool(), "restore edited topic");
         controller.remote()->updateDraft({{"topic", "test/request"}, {"payload", "unfinished {"}, {"format", "JSON"}, {"qos", 1}, {"retain", false}});
         controller.setSplitRatio(0.62);
         require(controller.saveNow().value("ok").toBool(), "save workspace");
@@ -114,6 +120,8 @@ void settings(const QString &helper) {
         require(controller.remote()->configuration().value("password").toString() == "plain_test_password", "restore plaintext password");
         require(controller.remote()->draft().value("payload").toString() == "unfinished {", "unfinished draft survives restart");
         require(controller.remote()->subscriptions().size() == 1 && qAbs(controller.splitRatio() - 0.62) < 0.001, "subscription and layout persist");
+        require(controller.remote()->subscriptions().first().toMap().value("color").toString() == "#aabbcc"
+            && !controller.remote()->subscriptions().first().toMap().value("visible").toBool(), "subscription colors and visibility persist");
         require(!controller.remote()->active() && !controller.broker()->active(), "restart must not open network connections");
         require(controller.copyConnection(id).value("ok").toBool() && controller.profiles().size() == 2 && controller.currentProfileId() != id, "duplicate uses a distinct profile/client ID");
         require(controller.selectConnection(id).value("ok").toBool(), "select saved profile");
@@ -126,6 +134,70 @@ void settings(const QString &helper) {
         require(!controller.saveNow().value("ok").toBool(), "corrupt config is not silently overwritten");
     }
     QFile preserved(path); require(preserved.open(QIODevice::ReadOnly) && preserved.readAll() == "broken-config", "preserve corrupt original");
+}
+
+void subscriptionDisplay(const QString &helper) {
+    MqttMessageModel model;
+    MqttMessageFilter filter;
+    filter.setSourceModel(&model);
+    QVariantList rules{
+        QVariantMap{{"topic", "devices/#"}, {"color", "#60a5fa"}, {"visible", true}},
+        QVariantMap{{"topic", "devices/+/status"}, {"color", "#34d399"}, {"visible", false}},
+        QVariantMap{{"topic", "devices/1/status"}, {"color", "#fbbf24"}, {"visible", false}}};
+    Mqtt::Message sample; sample.id = 1; sample.topic = "devices/1/status"; sample.payload = "value";
+    model.append({sample}); filter.setSubscriptions(rules);
+    require(filter.rowCount() == 1 && filter.topicColor(sample.topic) == "#fbbf24", "visible overlap uses most specific color even if that rule is hidden");
+    rules.removeLast(); filter.setSubscriptions(rules);
+    require(filter.topicColor(sample.topic) == "#34d399", "single-level wildcard outranks broad wildcard");
+    filter.setSubscriptions({QVariantMap{{"topic", "devices/+/status"}, {"color", "#60a5fa"}}, QVariantMap{{"topic", "devices/1/+"}, {"color", "#34d399"}}});
+    require(filter.topicColor(sample.topic) == "#60a5fa", "equally specific colors follow list order");
+    filter.setSubscriptions({QVariantMap{{"topic", "#"}, {"color", "#60a5fa"}}});
+    sample.topic = "$SYS/status";
+    require(!filter.acceptsMessage(sample) && filter.topicColor(sample.topic).isEmpty(), "MQTT system topics respect wildcard rules");
+
+    QTemporaryDir directory;
+    MqttController controller(directory.path(), nullptr, helper);
+    auto broker = Mqtt::brokerDefaults(); broker["host"] = "127.0.0.1"; broker["port"] = freePort();
+    require(controller.saveBroker(broker).value("ok").toBool() && controller.broker()->start().value("ok").toBool(), "start topic display fixture");
+    require(waitFor([&] { return controller.localClient()->connected(); }), "topic display publisher ready");
+    auto *receiver = controller.remote();
+    auto config = receiver->configuration(); config["port"] = broker["port"];
+    config["subscriptions"] = QVariantList{QVariantMap{{"topic", "color/a"}, {"qos", 1}, {"enabled", true}}};
+    require(controller.saveConnection(config).value("ok").toBool(), "load legacy subscription without appearance fields");
+    require(receiver->subscriptions().first().toMap().value("visible").toBool() && !receiver->subscriptions().first().toMap().value("color").toString().isEmpty(), "legacy subscriptions default to shown with a color");
+    receiver->saveSubscription("color/b", 1, true, {}, "#34d399");
+    receiver->saveSubscription("color/c", 1, true, {}, "#fbbf24");
+    require(receiver->connectToBroker().value("ok").toBool() && waitFor([&] { return subscribedTo(receiver, "color/a") && subscribedTo(receiver, "color/b") && subscribedTo(receiver, "color/c"); }), "three concurrent subscriptions");
+    receiver->setFilter("received", "", "");
+    for (const auto &topic : {"color/a", "color/b", "color/c"}) controller.localClient()->publishMessage(topic, "initial", "Text", 1, false);
+    require(waitFor([&] { return receiver->receivedCount() == 3 && receiver->messageCount() == 3; }), "all three topics initially visible");
+    const auto before = receiver->configuration();
+    require(!receiver->setSubscriptionAppearance("color/a", "red", false).value("ok").toBool() && receiver->configuration() == before, "invalid color leaves settings unchanged");
+    receiver->setSubscriptionAppearance("color/b", "#34d399", false);
+    require(receiver->messageCount() == 2, "show two subscribed topics");
+    receiver->setSubscriptionAppearance("color/c", "#fbbf24", false);
+    require(receiver->messageCount() == 1, "show one subscribed topic");
+    for (const auto &topic : {"color/b", "color/c"}) controller.localClient()->publishMessage(topic, "hidden", "Text", 1, false);
+    require(waitFor([&] { return receiver->receivedCount() == 5; }) && receiver->messageCount() == 1, "hidden topics stay subscribed and keep receiving");
+    receiver->setSubscriptionAppearance("color/b", "#f472b6", true);
+    require(receiver->messageCount() == 3 && findMessage(receiver, "color/b", true).value("topicColor").toString() == "#f472b6", "re-show cached messages with updated color");
+    const auto exportPath = directory.filePath("selected-topics.jsonl");
+    require(receiver->exportMessages(QUrl::fromLocalFile(exportPath)).value("ok").toBool() && waitFor([&] { return !receiver->exportBusy(); }), "export selected topics");
+    QFile exported(exportPath); require(exported.open(QIODevice::ReadOnly), "open selected export");
+    int exportedRows = 0;
+    while (!exported.atEnd()) {
+        const auto entry = QJsonDocument::fromJson(exported.readLine()).object();
+        require(entry.value("topic").toString() != "color/c", "display-only export excludes hidden topic");
+        ++exportedRows;
+    }
+    require(exportedRows == 3, "export includes selected-topic history only");
+    receiver->setAllSubscriptionsVisible(false);
+    require(receiver->messageCount() == 0, "unchecking every topic hides all received messages");
+    receiver->setAllSubscriptionsVisible(true);
+    require(receiver->messageCount() == 5, "select all restores hidden history without resubscribing");
+    require(subscribedTo(receiver, "color/a") && subscribedTo(receiver, "color/b") && subscribedTo(receiver, "color/c"), "display choices preserve protocol subscription states");
+    receiver->disconnectFromBroker(); controller.localClient()->disconnectFromBroker(); controller.broker()->stop();
+    require(waitFor([&] { return !receiver->active() && !controller.localClient()->active() && !controller.broker()->active(); }), "topic display fixture cleanup");
 }
 
 void integration(const QString &helper) {
@@ -252,9 +324,10 @@ void integration(const QString &helper) {
     require(waitFor([&] { return remote->connected() && remote->configuration().value("cancelledSubscriptions").toStringList().isEmpty(); }), "offline cancellation synchronizes on reconnect");
     remote->saveSubscription("after/barrier", 0);
     require(waitFor([&] { return subscribedTo(remote, "after/barrier"); }), "subscription barrier");
+    const auto beforeCancelledPublish = remote->receivedCount();
     local->publishMessage("persist/remove", "must not arrive", "Text", 1, false);
-    waitFor([&] { return !findMessage(remote, "persist/remove", true).isEmpty(); }, 400);
-    require(findMessage(remote, "persist/remove", true).isEmpty(), "cancelled persistent subscription stays cancelled");
+    waitFor([&] { return remote->receivedCount() > beforeCancelledPublish; }, 400);
+    require(remote->receivedCount() == beforeCancelledPublish, "cancelled persistent subscription stays cancelled in the background");
 
     controller.broker()->stop();
     require(waitFor([&] { return !controller.broker()->active() && remote->state() == "reconnecting"; }), "network interruption enters reconnect state");
@@ -472,6 +545,8 @@ int main(int argc, char **argv) {
         QTextStream(stdout) << "PASS formats, validation and bounded cache\n";
         settings(QString::fromLocal8Bit(argv[1]));
         QTextStream(stdout) << "PASS plaintext settings, restart and corrupt-file preservation\n";
+        subscriptionDisplay(QString::fromLocal8Bit(argv[1]));
+        QTextStream(stdout) << "PASS subscription colors, overlap, display-only selection, hidden reception and history restoration\n";
         integration(QString::fromLocal8Bit(argv[1]));
         QTextStream(stdout) << "PASS broker, QoS 0/1/2, binary, filters, pause, retain, will, export, MQTT 5 and port ownership\n";
         authentication(QString::fromLocal8Bit(argv[1]));

@@ -21,6 +21,11 @@ Item {
     property string actionMessage: ""
     property string panel: "subscriptions"
     property string editingTopic: ""
+    property int editingQos: 0
+    property bool editingEnabled: true
+    property bool editingVisible: true
+    property bool subscriptionsOpen: true
+    readonly property var topicColors: ["#60a5fa", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#22d3ee", "#fb923c", "#f87171", "#a3e635", "#2dd4bf", "#818cf8", "#fb7185"]
     property string pendingDeleteId: ""
     property var exportOwner: null
 
@@ -49,7 +54,14 @@ Item {
         loadingDraft = false
         refreshDetail()
     }
-    function refreshDetail() { selectedMessage = session.message(selectedMessageId, receiveFormat.currentText) }
+    function refreshDetail() {
+        let message = session.message(selectedMessageId, receiveFormat.currentText)
+        if (!message.id || !message.visible) {
+            selectedMessageId = session.idAt(session.messageCount - 1)
+            message = session.message(selectedMessageId, receiveFormat.currentText)
+        }
+        selectedMessage = message
+    }
     function applyFilter() { showResult(session.setFilter(["all", "received", "sent"][direction.currentIndex], topicFilter.text, contentFilter.text)) }
     function changeMode(next) {
         if (next === mode) return
@@ -66,6 +78,17 @@ Item {
         if (showResult(mqtt.selectConnection(id))) loadDraft()
     }
     function openPanel(which) { saveDraft(); panel = which; sidePanel.open() }
+    function editSubscription(subscription) {
+        actionMessage = ""
+        editingTopic = subscription ? subscription.topic : ""
+        editingQos = subscription ? subscription.qos : 0
+        editingEnabled = subscription ? subscription.enabled : true
+        editingVisible = subscription ? subscription.visible : true
+        subscriptionTopic.text = editingTopic
+        subscriptionQos.currentIndex = editingQos
+        subscriptionColor.text = subscription ? subscription.color : topicColors[session.subscriptions.length % topicColors.length]
+        openPanel("subscriptions")
+    }
     function send() {
         saveDraft()
         if (showResult(session.publishMessage(sendTopic.text, sendPayload.text, sendFormat.currentText, sendQos.currentIndex, retain.checked))) {
@@ -160,7 +183,7 @@ Item {
                     else root.showResult(mqtt.broker.start())
                 }
             }
-            Next.GlassButton { text: "主题订阅 " + root.session.subscriptions.length; onClicked: root.openPanel("subscriptions") }
+            Next.GlassButton { objectName: "mqtt-toggle-subscriptions"; text: (root.subscriptionsOpen ? "收起订阅 " : "显示订阅 ") + root.session.subscriptions.length; onClicked: root.subscriptionsOpen = !root.subscriptionsOpen }
         }
         RowLayout {
             Layout.fillWidth: true
@@ -232,9 +255,71 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
                         ColumnLayout {
-                            Layout.preferredWidth: root.width < 1150 ? 250 : 285
-                            Layout.minimumWidth: root.width < 1150 ? 250 : 285
-                            Layout.maximumWidth: root.width < 1150 ? 250 : 285
+                            objectName: "mqtt-subscription-sidebar"
+                            visible: root.subscriptionsOpen
+                            Layout.preferredWidth: 184; Layout.minimumWidth: 184; Layout.maximumWidth: 184
+                            Layout.fillHeight: true; spacing: 0
+                            RowLayout {
+                                Layout.fillWidth: true; Layout.margins: 8
+                                Label { text: "订阅主题"; color: root.theme.text; font.bold: true; Layout.fillWidth: true }
+                                Next.GlassButton { objectName: "mqtt-add-subscription"; text: "＋ 新增"; implicitHeight: 28; implicitWidth: 65; font.pixelSize: 11; onClicked: root.editSubscription(null) }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8
+                                Next.GlassButton { objectName: "mqtt-show-all-topics"; text: "全选"; implicitHeight: 26; implicitWidth: 54; font.pixelSize: 11; onClicked: root.session.setAllSubscriptionsVisible(true) }
+                                Next.GlassButton { objectName: "mqtt-hide-all-topics"; text: "全不选"; implicitHeight: 26; implicitWidth: 66; font.pixelSize: 11; onClicked: root.session.setAllSubscriptionsVisible(false) }
+                                Item { Layout.fillWidth: true }
+                            }
+                            Label { Layout.fillWidth: true; Layout.margins: 8; text: "勾选控制接收显示"; font.pixelSize: 10; color: root.theme.subText }
+                            ListView {
+                                id: subscriptionsList
+                                objectName: "mqtt-subscriptions-list"
+                                Layout.fillWidth: true; Layout.fillHeight: true
+                                model: root.session.subscriptions; clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+                                ScrollBar.vertical: ScrollBar {}
+                                delegate: Rectangle {
+                                    id: subscriptionRow
+                                    required property var modelData
+                                    required property int index
+                                    width: subscriptionsList.width; height: 64; color: "transparent"
+                                    RowLayout {
+                                        anchors.fill: parent; anchors.margins: 6; spacing: 5
+                                        Next.GlassCheckBox {
+                                            objectName: "mqtt-topic-visible-" + subscriptionRow.index
+                                            checked: subscriptionRow.modelData.visible
+                                            Accessible.name: "显示接收：" + subscriptionRow.modelData.topic
+                                            onClicked: root.showResult(root.session.setSubscriptionAppearance(subscriptionRow.modelData.topic, subscriptionRow.modelData.color, checked))
+                                        }
+                                        ColumnLayout {
+                                            Layout.fillWidth: true; spacing: 4
+                                            Label { textFormat: Text.PlainText; text: subscriptionRow.modelData.topic; color: subscriptionRow.modelData.color; Layout.fillWidth: true; font.pixelSize: 11; font.family: Next.PlatformFonts.monospaceFamily; wrapMode: Text.WrapAnywhere; maximumLineCount: 2; elide: Text.ElideRight }
+                                            Label { textFormat: Text.PlainText; text: subscriptionRow.modelData.state.startsWith("已订阅") ? subscriptionRow.modelData.state : "QoS " + subscriptionRow.modelData.qos + " · " + subscriptionRow.modelData.state; Layout.fillWidth: true; elide: Text.ElideRight; color: root.theme.subText; font.pixelSize: 9 }
+                                        }
+                                        Next.GlassButton {
+                                            text: "⋯"; implicitWidth: 26; implicitHeight: 28; padding: 0
+                                            Accessible.name: "配置订阅：" + subscriptionRow.modelData.topic
+                                            ToolTip.visible: hovered
+                                            ToolTip.text: "编辑颜色、停用或删除"
+                                            onClicked: subscriptionMenu.popup()
+                                        }
+                                    }
+                                    Next.GlassMenu {
+                                        id: subscriptionMenu
+                                        MenuItem { text: "编辑主题 / 颜色"; onTriggered: root.editSubscription(subscriptionRow.modelData) }
+                                        MenuItem { text: subscriptionRow.modelData.enabled ? "停用订阅" : "启用订阅"; onTriggered: root.showResult(root.session.saveSubscription(subscriptionRow.modelData.topic, subscriptionRow.modelData.qos, !subscriptionRow.modelData.enabled)) }
+                                        MenuItem { text: "取消订阅并删除"; onTriggered: root.showResult(root.session.removeSubscription(subscriptionRow.modelData.topic)) }
+                                    }
+                                    Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: root.theme.separator }
+                                }
+                                Label { anchors.centerIn: parent; visible: subscriptionsList.count === 0; text: "点击新增订阅主题"; color: root.theme.subText; font.pixelSize: 11 }
+                            }
+                        }
+                        Rectangle { visible: root.subscriptionsOpen; width: 1; Layout.fillHeight: true; color: root.theme.groupBorder }
+                        ColumnLayout {
+                            Layout.preferredWidth: root.subscriptionsOpen ? 220 : (root.width < 1150 ? 250 : 285)
+                            Layout.minimumWidth: Layout.preferredWidth
+                            Layout.maximumWidth: Layout.preferredWidth
                             Layout.fillHeight: true; spacing: 0
                             ColumnLayout {
                                 Layout.fillWidth: true; Layout.margins: 9; spacing: 6
@@ -255,6 +340,7 @@ Item {
                                     required property var messageId
                                     required property string messageTime
                                     required property string topic
+                                    required property string topicColor
                                     required property string preview
                                     required property int qos
                                     required property bool received
@@ -264,7 +350,7 @@ Item {
                                     onClicked: { root.selectedMessageId = messageId; root.followLatest = false; root.refreshDetail() }
                                     background: Rectangle {
                                         color: root.selectedMessageId === row.messageId ? root.theme.tableHighlight : row.hovered ? root.theme.surfaceHover : "transparent"
-                                        Rectangle { width: 3; height: parent.height; color: root.theme.accent; visible: root.selectedMessageId === row.messageId }
+                                        Rectangle { width: 3; height: parent.height; color: row.topicColor || root.theme.accent; visible: root.selectedMessageId === row.messageId }
                                         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: root.theme.separator }
                                     }
                                     contentItem: ColumnLayout {
@@ -275,7 +361,7 @@ Item {
                                             Item { Layout.fillWidth: true }
                                             Label { textFormat: Text.PlainText; text: row.messageTime; color: root.theme.subText; font.pixelSize: 10; font.family: Next.PlatformFonts.monospaceFamily }
                                         }
-                                        Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: row.topic; elide: Text.ElideMiddle; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 12; color: root.theme.text }
+                                        Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: row.topic; elide: Text.ElideMiddle; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 12; color: row.topicColor || root.theme.text }
                                         Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: row.received ? row.preview : row.delivery; elide: Text.ElideRight; color: root.theme.subText; font.pixelSize: 11 }
                                     }
                                 }
@@ -289,7 +375,7 @@ Item {
                                 Layout.fillWidth: true; Layout.preferredHeight: 40
                                 Layout.leftMargin: 12; Layout.rightMargin: 10
                                 Label { textFormat: Text.PlainText; text: root.selectedMessage.received === false ? "↑" : "↓"; color: root.selectedMessage.received === false ? root.theme.accent : root.theme.success }
-                                Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.selectedMessage.topic || "完整消息内容"; color: root.theme.text; elide: Text.ElideMiddle; font.pixelSize: 12; font.family: Next.PlatformFonts.monospaceFamily }
+                                Label { objectName: "mqtt-received-topic"; textFormat: Text.PlainText; Layout.fillWidth: true; text: root.selectedMessage.topic || "完整消息内容"; color: root.selectedMessage.topicColor || root.theme.text; elide: Text.ElideMiddle; font.pixelSize: 12; font.family: Next.PlatformFonts.monospaceFamily }
                                 Next.GlassComboBox { id: receiveFormat; implicitWidth: 90; implicitHeight: 28; model: ["Text", "JSON", "Hex"]; currentIndex: 1; font.pixelSize: 11; onActivated: root.refreshDetail() }
                                 Next.GlassButton { text: "复制"; implicitHeight: 28; implicitWidth: 56; font.pixelSize: 11; enabled: !!root.selectedMessage.id; onClicked: root.session.copyMessage(root.selectedMessageId, receiveFormat.currentText) }
                             }
@@ -388,8 +474,8 @@ Item {
         id: sidePanel
         focus: true
         parent: Overlay.overlay
-        modal: true; width: 480; height: parent ? parent.height - 24 : 740
-        x: parent ? parent.width - width - 12 : 0; y: 12
+        modal: true; width: 480; height: root.panel === "subscriptions" ? Math.min(400, parent ? parent.height - 24 : 400) : (parent ? parent.height - 24 : 740)
+        x: parent ? parent.width - width - 12 : 0; y: root.panel === "subscriptions" && parent ? (parent.height - height) / 2 : 12
         title: ({connections:"连接管理", subscriptions:"主题订阅", clients:"接入终端与服务事件", history:"发送历史"})[root.panel] || "MQTT"
         palette.window: root.theme.popupBackground; palette.windowText: root.theme.text; palette.mid: root.theme.groupBorder
         contentItem: ColumnLayout {
@@ -426,34 +512,39 @@ Item {
                     ColumnLayout {
                         Layout.fillWidth: true; visible: root.panel === "subscriptions"
                         Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: "订阅决定接收哪些主题；主界面过滤只改变显示。"; wrapMode: Text.Wrap; color: root.theme.subText; font.pixelSize: 12 }
-                        Next.GlassTextField { id: subscriptionTopic; Layout.fillWidth: true; placeholderText: "主题，例如 terminal/+/status 或 #" }
+                        Next.GlassTextField { id: subscriptionTopic; objectName: "mqtt-subscription-topic"; Layout.fillWidth: true; placeholderText: "主题，例如 terminal/+/status 或 #" }
+                        Label { text: "主题颜色"; color: root.theme.text }
                         RowLayout {
-                            Next.GlassComboBox { id: subscriptionQos; model: ["QoS 0", "QoS 1", "QoS 2"] }
+                            Repeater {
+                                model: root.topicColors
+                                delegate: Next.GlassButton {
+                                    required property string modelData
+                                    implicitWidth: 30; implicitHeight: 28
+                                    Accessible.name: "选择颜色 " + modelData
+                                    background: Rectangle { color: modelData; radius: 5; border.width: subscriptionColor.text.toLowerCase() === modelData ? 2 : 0; border.color: root.theme.text }
+                                    onClicked: subscriptionColor.text = modelData
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+                        Next.GlassTextField { id: subscriptionColor; objectName: "mqtt-subscription-color"; Layout.fillWidth: true; placeholderText: "自定义颜色，例如 #60a5fa"; maximumLength: 7 }
+                        RowLayout {
+                            Next.GlassComboBox { id: subscriptionQos; objectName: "mqtt-subscription-qos"; model: ["QoS 0", "QoS 1", "QoS 2"] }
                             Next.GlassButton {
+                                objectName: "mqtt-save-subscription"
                                 text: root.editingTopic ? "保存修改" : "新增订阅"
                                 onClicked: {
-                                    if (root.showResult(root.session.saveSubscription(subscriptionTopic.text, subscriptionQos.currentIndex, true, root.editingTopic))) {
-                                        root.editingTopic = ""; subscriptionTopic.text = ""
+                                    const result = root.editingTopic && root.editingTopic === subscriptionTopic.text && root.editingQos === subscriptionQos.currentIndex
+                                        ? root.session.setSubscriptionAppearance(root.editingTopic, subscriptionColor.text, root.editingVisible)
+                                        : root.session.saveSubscription(subscriptionTopic.text, subscriptionQos.currentIndex, root.editingEnabled, root.editingTopic, subscriptionColor.text)
+                                    if (root.showResult(result)) {
+                                        root.editingTopic = ""; sidePanel.close()
                                     }
                                 }
                             }
-                            Next.GlassButton { text: "取消编辑"; visible: root.editingTopic.length > 0; onClicked: { root.editingTopic = ""; subscriptionTopic.text = "" } }
+                            Next.GlassButton { text: "取消"; onClicked: sidePanel.close() }
                         }
-                        Repeater {
-                            model: root.session.subscriptions
-                            delegate: ColumnLayout {
-                                required property var modelData
-                                Layout.fillWidth: true; spacing: 6
-                                Label { textFormat: Text.PlainText; text: modelData.topic; font.family: Next.PlatformFonts.monospaceFamily; color: root.theme.text; Layout.fillWidth: true; wrapMode: Text.WrapAnywhere }
-                                Label { textFormat: Text.PlainText; text: modelData.state; color: root.theme.subText; font.pixelSize: 11 }
-                                RowLayout {
-                                    Next.GlassButton { text: "编辑"; onClicked: { root.editingTopic = modelData.topic; subscriptionTopic.text = modelData.topic; subscriptionQos.currentIndex = modelData.qos } }
-                                    Next.GlassButton { text: modelData.enabled ? "停用" : "启用"; onClicked: root.showResult(root.session.saveSubscription(modelData.topic, modelData.qos, !modelData.enabled)) }
-                                    Next.GlassButton { text: "删除"; onClicked: root.showResult(root.session.removeSubscription(modelData.topic)) }
-                                }
-                                Rectangle { Layout.fillWidth: true; height: 1; color: root.theme.groupBorder }
-                            }
-                        }
+                        Label { textFormat: Text.PlainText; text: root.actionMessage; visible: text.length > 0; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.theme.warning }
                     }
                     ColumnLayout {
                         Layout.fillWidth: true; visible: root.panel === "clients"

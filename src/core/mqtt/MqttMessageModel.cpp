@@ -28,7 +28,7 @@ QVariant MqttMessageModel::data(const QModelIndex &index, int role) const {
 QHash<int, QByteArray> MqttMessageModel::roleNames() const {
     return {{IdRole, "messageId"}, {TimeRole, "messageTime"}, {TopicRole, "topic"},
         {PreviewRole, "preview"}, {QosRole, "qos"}, {RetainedRole, "retained"},
-        {ReceivedRole, "received"}, {DeliveryRole, "delivery"}, {SizeRole, "byteCount"}};
+        {ReceivedRole, "received"}, {DeliveryRole, "delivery"}, {SizeRole, "byteCount"}, {TopicColorRole, "topicColor"}};
 }
 
 void MqttMessageModel::append(const Mqtt::Messages &messages) {
@@ -125,20 +125,70 @@ QString MqttMessageFilter::setCriteria(const QString &direction, const QString &
     return {};
 }
 
+void MqttMessageFilter::setSubscriptions(const QVariantList &subscriptions) {
+    m_subscriptions.clear();
+    for (const auto &entry : subscriptions) {
+        const auto subscription = entry.toMap();
+        const auto topic = subscription.value("topic").toString();
+        const auto levels = topic.split('/');
+        qint64 literals = 0;
+        for (const auto &level : levels) if (level != "+" && level != "#") ++literals;
+        // Prefer literal levels, then fixed depth, then a longer minimum path; ties keep list order.
+        const qint64 specificity = (literals << 32) + (topic.contains('#') ? 0 : (qint64(1) << 31)) + levels.size();
+        m_subscriptions.append({topic.toUtf8(), subscription.value("color", Mqtt::defaultSubscriptionColor(m_subscriptions.size())).toString(),
+                                subscription.value("visible", true).toBool(), specificity});
+    }
+    invalidateFilter();
+    if (rowCount()) emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {MqttMessageModel::TopicColorRole});
+}
+
+QString MqttMessageFilter::topicColor(const QString &topic) const {
+    const auto bytes = topic.toUtf8();
+    QString color;
+    qint64 specificity = -1;
+    for (const auto &rule : m_subscriptions) {
+        bool matches = false;
+        mosquitto_topic_matches_sub(rule.topic.constData(), bytes.constData(), &matches);
+        if (matches && rule.specificity > specificity) { color = rule.color; specificity = rule.specificity; }
+    }
+    return color;
+}
+
+QVariant MqttMessageFilter::data(const QModelIndex &index, int role) const {
+    if (!index.isValid()) return {};
+    if (role == MqttMessageModel::TopicColorRole)
+        return topicColor(QSortFilterProxyModel::data(index, MqttMessageModel::TopicRole).toString());
+    return QSortFilterProxyModel::data(index, role);
+}
+
 bool MqttMessageFilter::filterAcceptsRow(int row, const QModelIndex &) const {
     const auto *model = qobject_cast<const MqttMessageModel *>(sourceModel());
     const auto *message = model ? model->messageAt(row) : nullptr;
     if (!message) return false;
-    if (m_direction == "received" && !message->received) return false;
-    if (m_direction == "sent" && message->received) return false;
+    return acceptsMessage(*message);
+}
+
+bool MqttMessageFilter::acceptsMessage(const Mqtt::Message &message) const {
+    if (message.received && !m_subscriptions.isEmpty()) {
+        bool visible = false;
+        const auto topic = message.topic.toUtf8();
+        for (const auto &rule : m_subscriptions) {
+            bool matches = false;
+            if (rule.visible) mosquitto_topic_matches_sub(rule.topic.constData(), topic.constData(), &matches);
+            if (matches) { visible = true; break; }
+        }
+        if (!visible) return false;
+    }
+    if (m_direction == "received" && !message.received) return false;
+    if (m_direction == "sent" && message.received) return false;
     if (!m_topic.isEmpty()) {
         bool matches = false;
-        mosquitto_topic_matches_sub(m_topic.constData(), message->topic.toUtf8().constData(), &matches);
+        mosquitto_topic_matches_sub(m_topic.constData(), message.topic.toUtf8().constData(), &matches);
         if (!matches) return false;
     }
     if (!m_content.isEmpty()) {
-        return QString::fromUtf8(message->payload).contains(m_content, Qt::CaseInsensitive)
-            || QString::fromLatin1(message->payload.toHex(' ')).contains(m_content, Qt::CaseInsensitive);
+        return QString::fromUtf8(message.payload).contains(m_content, Qt::CaseInsensitive)
+            || QString::fromLatin1(message.payload.toHex(' ')).contains(m_content, Qt::CaseInsensitive);
     }
     return true;
 }
