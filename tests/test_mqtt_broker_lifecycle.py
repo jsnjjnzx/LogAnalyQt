@@ -58,7 +58,7 @@ def main(helper):
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
         Path(directory, "broker.conf").write_text(
-            f"listener {port} 127.0.0.1\nallow_anonymous true\npersistence false\nlog_dest stdout\n",
+            f"listener {port} 127.0.0.1\nallow_anonymous true\npersistence false\nlog_dest stdout\nlog_type all\n",
             encoding="utf-8",
         )
         owner = subprocess.Popen(
