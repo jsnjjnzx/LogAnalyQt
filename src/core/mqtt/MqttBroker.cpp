@@ -92,12 +92,12 @@ QString MqttBroker::configure(const QVariantMap &config) {
 void MqttBroker::refreshInterfaces() {
     m_interfaces = {QVariantMap{{"address", "0.0.0.0"}, {"label", QStringLiteral("全部 IPv4 网卡 · 0.0.0.0")}},
                     QVariantMap{{"address", "127.0.0.1"}, {"label", QStringLiteral("仅本机 · 127.0.0.1")}}};
-    for (const auto &interface : QNetworkInterface::allInterfaces()) {
-        if (!(interface.flags() & QNetworkInterface::IsUp) || interface.flags() & QNetworkInterface::IsLoopBack) continue;
-        for (const auto &entry : interface.addressEntries()) {
+    for (const auto &networkInterface : QNetworkInterface::allInterfaces()) {
+        if (!(networkInterface.flags() & QNetworkInterface::IsUp) || networkInterface.flags() & QNetworkInterface::IsLoopBack) continue;
+        for (const auto &entry : networkInterface.addressEntries()) {
             if (entry.ip().protocol() != QAbstractSocket::IPv4Protocol) continue;
             const auto address = entry.ip().toString();
-            m_interfaces.append(QVariantMap{{"address", address}, {"label", interface.humanReadableName() + " · " + address}});
+            m_interfaces.append(QVariantMap{{"address", address}, {"label", networkInterface.humanReadableName() + " · " + address}});
         }
     }
     emit interfacesChanged();

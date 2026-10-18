@@ -54,7 +54,8 @@ jobs:
           python tests/prot698_qml_tests.py
           if ($LASTEXITCODE -ne 0) { throw 'QML test tools failed' }
       - name: Cache static MQTT OpenSSL
-        uses: actions/cache@v4
+        id: mqtt-openssl-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.LOGANALYQT_MQTT_OPENSSL_DIR }}
           key: windows-2022-openssl-3.5.9-mingw1310-${{ hashFiles('scripts/ci/build_mqtt_openssl.ps1') }}
@@ -66,6 +67,15 @@ jobs:
           install: make perl
       - name: Locate OpenSSL build tools
         run: '"LOGANALYQT_MSYS2_DIR=${{ steps.mqtt-msys2.outputs.msys2-location }}" >> $env:GITHUB_ENV'
+      - name: Build static MQTT OpenSSL
+        shell: pwsh
+        run: ./scripts/ci/build_mqtt_openssl.ps1 -InstallDir $env:LOGANALYQT_MQTT_OPENSSL_DIR -MingwDir $env:MINGW_DIR
+      - name: Save static MQTT OpenSSL before building the application
+        if: steps.mqtt-openssl-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.LOGANALYQT_MQTT_OPENSSL_DIR }}
+          key: ${{ steps.mqtt-openssl-cache.outputs.cache-primary-key }}
       - name: Restore static Qt
         id: qt-cache
         uses: actions/cache/restore@v4
