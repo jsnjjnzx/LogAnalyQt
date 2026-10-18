@@ -42,6 +42,21 @@ Broker 辅助程序的 `otool -L` 仅列出系统库；它不依赖额外安装�
 
 额外验证了更新器与 MQTT Broker 的资源嵌入：两者使用独立符号，零字节和高位字节保持不变。打包/发布工具的原有 25 项测试及新增打包修复测试通过。正式用户 MQTT 配置目录未被本轮验收创建，测试配置位于隔离目录。
 
+## 已验证：Windows 与 macOS 云端构建
+
+2026-10-18，[GitHub Actions 测试构建](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/39111111214)通过。构建源码提交为 `38f4fb763066b5b10ea409c6264790b4add6cb7f`，位于独立分支 `codex/mqtt-windows-preview-20261018`。未合并主分支，未发布正式版本。
+
+- Windows x64：23 组 CTest 全部通过，包括 MQTT 收发、TLS、中文路径、QoS 重连恢复、管理进程异常退出后的 Broker 清理，以及界面与工作区恢复回归。
+- Windows 单 EXE：依赖检查通过；隐藏 Qt 目录并清理开发环境 PATH 后，成品实际提取和启动内置 Broker，完成 MQTT 回环收发、V2 界面操作、辅助程序清理与更新端点 HTTPS 检查。
+- macOS arm64：28 组 CTest 全部通过，成品 MQTT 与界面回归通过。
+- 本地下载的 Windows EXE 已验证 x64 架构及 SHA-256，另存测试版文件名后字节保持一致。压缩包也已解读并核对其中 EXE 的校验值。
+
+Windows 测试版：`output/mqtt-preview/LogAnalyQt-MQTT-Test-Windows-x64.exe`。内部版本号仍为 `4.0.1`。
+
+SHA-256：`42ac35114fb04174a216fb1e1042c39bdd451fecc45a30b4b5e7ccc6d87647fd`。
+
+Windows 实际构建期间修复了网卡变量与系统宏重名、Broker 管道日志缓冲，并补齐界面测试的渲染等待及崩溃清理夹具的显式日志配置。上述结果包含这些修复。
+
 ## 构建与发布验证入口
 
 - CTest：`mqtt_tests`、`mqtt_broker_lifecycle_tests`。
@@ -49,10 +64,10 @@ Broker 辅助程序的 `otool -L` 仅列出系统库；它不依赖额外安装�
 - Windows CI 隐藏 Qt/MinGW 并移除开发环境 PATH 后运行单 EXE；MQTT 验收需实际提取并启动内置 Broker。
 - Windows OpenSSL 3.5.9 通过 MSYS2 的 Perl/make 和项目的 MinGW 工具链静态构建。最终软件不依赖 MSYS2。
 - 固定源码：Mosquitto 2.1.2、cJSON 1.7.19，下载均校验 SHA-256。许可证随应用资源分发。
-- Windows 证书路径使用 UTF-8，Mosquitto 的预检查与 OpenSSL 采用一致的文件读取 API；该 Windows 分支仍待 CI 实机验证。加密私钥不会在客户端后台线程等待控制台口令。
+- Windows 证书路径使用 UTF-8，Mosquitto 的预检查与 OpenSSL 采用一致的文件读取 API，已通过 Windows CI 的 TLS 与中文路径测试。加密私钥不会在客户端后台线程等待控制台口令。
 
 ## 待验证边界
 
-- 当前执行环境为 macOS，尚未取得本次变更的 Windows 实机/CI 通过结果，不能将跨平台代码接入等同于 Windows 验收完成。
+- Windows CI 已通过；用户的远程 Windows 电脑、显示环境及实际部署目录仍待用户实测。
 - 公司终端、公司局域网、终端自带 Broker 的实际兼容性未验证。
 - 本地签名与本机运行不能替代正式签名、公证或公司发布验收。
