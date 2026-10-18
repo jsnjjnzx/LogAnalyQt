@@ -7,6 +7,10 @@
 extern "C" int loganalyqt_mosquitto_main(int argc, char **argv);
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+    // Pipe output must reach the parent's readiness/client-event parser immediately.
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+#endif
     // The parent owns this pipe. EOF also stops the broker after an app crash.
     if (std::getenv("LOGANALYQT_BROKER_MANAGED")) {
         std::thread([] {

@@ -265,6 +265,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(file.open(QIODevice::WriteOnly) && file.write(log) == log.size(), "test log write failed");
     file.close();
     require(QMetaObject::invokeMethod(window, "openLogUrl", Q_ARG(QVariant, QUrl::fromLocalFile(path))), "log URL open failed");
+    settle();
     require(backend->currentFileContent().toUtf8() == log, "local file URL or Unicode path was lost");
     backend->applyFilter("RX");
     require(!backend->currentFileContent().contains("[TX]"), "filter not applied");
@@ -282,6 +283,8 @@ inline QString checkMigratedUi(QQuickWindow *window) {
             "global preview did not scan the mixed-protocol log");
     for (int row : {1, 0, 2}) {
       backend->clearAllParses();
+      settle();
+      qInfo() << "UI_CHECK_PREVIEW_ROW" << row;
       click(uiItem(QString("global-preview-row-%1").arg(row)));
       const QString raw = backend->globalPreviewModel()->data(backend->globalPreviewModel()->index(row), GlobalPreviewModel::RawDataRole).toString();
       require(backend->resultModel()->rowCount() > 2 && backend->parseResult().contains(QString::fromUtf8("解析成功")),
