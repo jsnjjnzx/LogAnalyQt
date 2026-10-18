@@ -16,10 +16,15 @@ Item {
     property var submittedTerminal: null
     property string clarificationRequestId: ""
     property string clarificationDraft: ""
-    property bool parametersExpanded: false
     readonly property bool working: controller ? controller.busy : false
     readonly property bool clarifying: controller && controller.state === "clarification"
-    readonly property bool showWork: mode === 0 && controller && controller.state !== "idle"
+    readonly property bool showWork: mode === 0 && chatMessages.count > 0
+    property alias conversationModel: chatMessages
+    property int pendingReplyIndex: -1
+    property int promptMessageIndex: -1
+    property string promptSaveError: ""
+
+    ListModel { id: chatMessages; dynamicRoles: true }
     readonly property var result: controller ? controller.result : ({})
     readonly property bool resultValid: !!(controller && controller.state === "succeeded"
         && activeRequestId && result && result.requestId === activeRequestId
@@ -30,21 +35,74 @@ Item {
         && typeof result.inputTreeText === "string" && result.inputTreeText.length > 0
         && typeof result.normalizedTreeText === "string" && result.normalizedTreeText.length > 0)
 
+    function appendMessage(role, body, kind, request, target) {
+        chatMessages.append({speaker: role, body: body, kind: kind, requestToken: request,
+            targetText: target, frameData: {}, saved: false})
+    }
+    function beginReply(text, request, snapshot) {
+        const target = snapshot.name + " · " + snapshot.address
+        appendMessage("user", text, "text", request, target)
+        appendMessage("assistant", "正在处理需求…", "pending", request, target)
+        pendingReplyIndex = chatMessages.count - 1
+        conversation.followTail = true
+        Qt.callLater(function() { if (conversation) conversation.positionViewAtEnd() })
+    }
     function syncLifecycle() {
-        if (controller && (controller.state === "cancelled" || controller.state === "failed")) {
+        if (!controller) return
+        if (pendingReplyIndex < 0 && activeRequestId && activeRequestId === controller.requestId
+                && (controller.state === "failed" || controller.state === "cancelled")) {
+            appendMessage("assistant", controller.statusText, "pending", activeRequestId,
+                submittedTerminal.name + " · " + submittedTerminal.address)
+            pendingReplyIndex = chatMessages.count - 1
+        }
+        if (pendingReplyIndex >= 0 && activeRequestId === controller.requestId) {
+            const index = pendingReplyIndex
+            if (controller.state === "clarification") {
+                chatMessages.setProperty(index, "body", controller.clarification)
+                chatMessages.setProperty(index, "kind", "clarification")
+                pendingReplyIndex = -1
+            } else if (resultValid) {
+                chatMessages.setProperty(index, "frameData", JSON.parse(JSON.stringify(result)))
+                chatMessages.setProperty(index, "kind", "result")
+                chatMessages.setProperty(index, "body", "已构建 · 本地验证")
+                pendingReplyIndex = -1
+            } else if (controller.state === "failed" || controller.state === "cancelled") {
+                chatMessages.setProperty(index, "body", controller.statusText)
+                chatMessages.setProperty(index, "kind", controller.state)
+                pendingReplyIndex = -1
+            } else {
+                chatMessages.setProperty(index, "body", controller.statusText)
+            }
+        }
+        if (controller.state === "cancelled" || controller.state === "failed") {
             activeRequestId = ""; clarificationRequestId = ""
             return
         }
-        if (controller && controller.state === "clarification") {
+        if (controller.state === "clarification") {
             if (clarificationRequestId !== controller.requestId) clarificationDraft = ""
             clarificationRequestId = controller.requestId
         }
+    }
+    function editPrompt(index) {
+        promptMessageIndex = index
+        promptEditor.text = chatMessages.get(index).body
+        promptSaveError = ""
+        promptDialog.open()
+    }
+    function savePrompt() {
+        if (!controller || promptMessageIndex < 0) return
+        const reply = controller.appendPromptExperience(promptEditor.text)
+        if (!reply.ok) { promptSaveError = reply.message; return }
+        chatMessages.setProperty(promptMessageIndex, "saved", true)
+        notice = reply.message
+        promptDialog.close()
     }
     function terminalSnapshot() {
         return {id: terminal.terminalId, name: terminal.name, address: terminal.address.trim().toUpperCase(),
             addressType: terminal.addressType, logicAddress: terminal.logicAddress, clientAddress: terminal.clientAddress}
     }
     function submitRequest() {
+        if (controller && controller.state !== "clarification") syncLifecycle()
         notice = ""
         if (mode !== 0) { notice = "报文解释尚未实现，本轮仅提供自然语言组帧。"; return }
         if (!controller) { notice = "尚未接入组帧控制器，请在实际应用中使用。"; return }
@@ -53,26 +111,44 @@ Item {
             if (clarificationRequestId !== controller.requestId || clarificationRequestId !== activeRequestId) {
                 notice = "这条澄清已失效，请重新提交需求。"; return
             }
-            if (controller.answerClarification(clarificationRequestId, clarificationDraft.trim())) clarificationDraft = ""
+            const answer = clarificationDraft.trim()
+            if (controller.answerClarification(clarificationRequestId, answer)) {
+                beginReply(answer, activeRequestId, submittedTerminal)
+                clarificationDraft = ""
+                syncLifecycle()
+            }
             return
         }
         if (!addressValid || !framingDraft.trim() || working) return
         const snapshot = terminalSnapshot()
         const accepted = controller.submit(framingDraft.trim(), snapshot)
-        if (accepted) { activeRequestId = accepted; submittedTerminal = snapshot; clarificationDraft = ""; parametersExpanded = false; syncLifecycle() }
+        if (accepted) {
+            activeRequestId = accepted; submittedTerminal = snapshot
+            beginReply(framingDraft.trim(), accepted, snapshot)
+            framingDraft = ""; clarificationDraft = ""
+            syncLifecycle()
+        } else {
+            activeRequestId = ""; clarificationRequestId = ""
+            notice = controller.statusText
+        }
     }
     function cancelRequest() {
         if (!controller || !activeRequestId || activeRequestId !== controller.requestId
                 || (!controller.busy && controller.state !== "clarification")) return
-        activeRequestId = ""; clarificationRequestId = ""
+        if (pendingReplyIndex < 0) {
+            appendMessage("assistant", "已取消本次请求", "pending", activeRequestId,
+                submittedTerminal.name + " · " + submittedTerminal.address)
+            pendingReplyIndex = chatMessages.count - 1
+        }
         controller.cancel()
+        syncLifecycle()
     }
     Component.onDestruction: {
         if (controller && activeRequestId && activeRequestId === controller.requestId
                 && (controller.busy || controller.state === "clarification")) cancelRequest()
     }
-    function warningText() {
-        const entries = resultValid && result.warnings ? result.warnings : []
+    function warningText(frame) {
+        const entries = frame && frame.warnings ? frame.warnings : []
         const messages = []
         for (let i = 0; i < entries.length; ++i) {
             const entry = entries[i]
@@ -86,16 +162,11 @@ Item {
         }
         return messages.join("\n")
     }
-    function copyResult() {
-        if (resultValid && backend && typeof backend.copyToClipboard === "function") {
-            backend.copyToClipboard(result.frameHex); notice = "完整报文已复制。"
-        }
-    }
     Connections {
         target: root.controller
         ignoreUnknownSignals: true
-        function onStateChanged() { root.syncLifecycle() }
-        function onClarificationChanged() { root.syncLifecycle() }
+        function onStateChanged() { Qt.callLater(root.syncLifecycle) }
+        function onClarificationChanged() { Qt.callLater(root.syncLifecycle) }
     }
     property int mode: 0
     property string framingDraft: ""
@@ -215,6 +286,36 @@ Item {
             contentItem: Text { text: choice.textAt(index); color: root.theme.text; font.pixelSize: 14; elide: Text.ElideRight }
             background: Rectangle { color: parent.highlighted ? root.theme.tableHighlight : root.theme.surface }
         }
+    }
+
+    component ResultCard: ColumnLayout {
+        id: resultCard
+        required property var frame
+        property string suffix: ""
+        property bool expanded: false
+        function name(value) { return value + suffix }
+        objectName: name("ai-result-panel"); Layout.fillWidth: true; spacing: 10
+        Label { text: "已构建 · 本地验证"; color: root.theme.success; font.pixelSize: 18; font.bold: true }
+        Label { objectName: resultCard.name("ai-result-target"); textFormat: Text.PlainText; text: resultCard.frame ? "结果终端：" + resultCard.frame.terminal.name + " · " + resultCard.frame.terminal.address : ""; color: root.theme.text; Layout.fillWidth: true; wrapMode: Text.Wrap }
+        Label { textFormat: Text.PlainText; text: resultCard.frame ? (resultCard.frame.serviceName || resultCard.frame.serviceCode || "") + "\n" + (resultCard.frame.summary || "") : ""; color: root.theme.text; Layout.fillWidth: true; wrapMode: Text.Wrap }
+        RowLayout {
+            UiButton { objectName: resultCard.name("ai-copy-result"); text: "复制完整报文"; enabled: resultCard.visible && !!resultCard.frame && !!root.backend; onClicked: { root.backend.copyToClipboard(resultCard.frame.frameHex); root.notice = "完整报文已复制。" } }
+            UiButton { objectName: resultCard.name("ai-return-result"); text: "回填手动解析"; enabled: resultCard.visible && !!resultCard.frame; onClicked: root.framingResult(resultCard.frame.frameHex, 1) }
+        }
+        UiButton { objectName: resultCard.name("ai-parameters-toggle"); text: resultCard.expanded ? "收起参数明细" : "查看输入参数 / 编码参数"; onClicked: resultCard.expanded = !resultCard.expanded }
+        ColumnLayout {
+            objectName: resultCard.name("ai-parameters-panel"); visible: resultCard.expanded; Layout.fillWidth: true; spacing: 8
+            Label { text: "输入参数"; color: root.theme.subText }
+            TextArea { objectName: resultCard.name("ai-input-parameters"); text: resultCard.frame ? resultCard.frame.inputTreeText : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: root.theme.text; Layout.fillWidth: true; background: Rectangle { color: root.theme.controlBackground; radius: 6 } }
+            Label { text: "编码参数（本地校验后的线值）"; color: root.theme.subText }
+            TextArea { objectName: resultCard.name("ai-encoded-parameters"); text: resultCard.frame ? resultCard.frame.normalizedTreeText : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: root.theme.text; Layout.fillWidth: true; background: Rectangle { color: root.theme.controlBackground; radius: 6 } }
+        }
+        Label { text: "APDU"; color: root.theme.subText }
+        TextArea { objectName: resultCard.name("ai-result-apdu"); textFormat: TextEdit.PlainText; text: resultCard.frame ? resultCard.frame.apduHex : ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: root.theme.text; Layout.fillWidth: true; font.family: Qt.platform.os === "osx" ? "Menlo" : "Consolas"; background: Rectangle { color: root.theme.controlBackground; radius: 6 } }
+        Label { text: "完整报文"; color: root.theme.subText }
+        TextArea { objectName: resultCard.name("ai-result-frame"); textFormat: TextEdit.PlainText; text: resultCard.frame ? resultCard.frame.frameHex : ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: root.theme.text; Layout.fillWidth: true; font.family: Qt.platform.os === "osx" ? "Menlo" : "Consolas"; background: Rectangle { color: root.theme.controlBackground; radius: 6 } }
+        Label { objectName: resultCard.name("ai-result-warnings"); textFormat: Text.PlainText; text: root.warningText(resultCard.frame); visible: text.length > 0; color: root.theme.warning; Layout.fillWidth: true; wrapMode: Text.Wrap }
+        Label { text: "尚未发送到设备。"; color: root.theme.subText }
     }
 
     RowLayout {
@@ -399,43 +500,105 @@ Item {
                         }
                     }
                 }
-                ScrollView {
+                ListView {
+                    id: conversation
                     objectName: "ai-work-panel"
                     visible: root.showWork
                     Layout.fillWidth: true; Layout.fillHeight: true
-                    contentWidth: availableWidth; clip: true
-                    ColumnLayout {
-                        width: parent.width; spacing: 12
-                        Label { objectName: "ai-status"; textFormat: Text.PlainText; text: root.controller ? root.controller.statusText : ""; color: root.controller && root.controller.state === "failed" ? root.theme.error : root.theme.text; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                        Label { textFormat: Text.PlainText; visible: !!root.submittedTerminal; text: root.submittedTerminal ? "本次请求终端：" + root.submittedTerminal.name + " · " + root.submittedTerminal.address : ""; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                        Label { visible: root.working || root.clarifying; text: "本次请求使用提交时的终端信息。更换目标请取消后重新提交。"; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                        Label { objectName: "ai-clarification"; textFormat: Text.PlainText; visible: root.clarifying; text: root.controller ? root.controller.clarification : ""; color: root.theme.warning; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                        UiButton { objectName: "ai-cancel"; visible: root.working || root.clarifying; text: "取消本次请求"; onClicked: root.cancelRequest() }
+                    clip: true; spacing: 24
+                    topMargin: 12
+                    footer: Item { width: 1; height: 16 }
+                    boundsBehavior: Flickable.StopAtBounds
+                    model: chatMessages
+                    property bool followTail: true
+                    onMovementStarted: followTail = false
+                    onMovementEnded: followTail = atYEnd
+                    onContentHeightChanged: if (followTail) Qt.callLater(function() { if (conversation) conversation.positionViewAtEnd() })
+                    onHeightChanged: if (followTail) Qt.callLater(function() { if (conversation) conversation.positionViewAtEnd() })
+                    ScrollBar.vertical: ScrollBar {
+                        onPressedChanged: conversation.followTail = !pressed && conversation.atYEnd
+                    }
+                    delegate: Item {
+                        id: message
+                        required property int index
+                        required property string speaker
+                        required property string body
+                        required property string kind
+                        required property string requestToken
+                        required property string targetText
+                        required property var frameData
+                        required property bool saved
+                        readonly property bool fromUser: speaker === "user"
+                        readonly property bool latest: requestToken === root.activeRequestId
+                            && root.controller && requestToken === root.controller.requestId
+                        width: conversation.width
+                        height: messageColumn.implicitHeight
                         ColumnLayout {
-                            objectName: "ai-result-panel"; visible: root.resultValid; Layout.fillWidth: true; spacing: 10
-                            Label { text: "已构建 · 本地验证"; color: root.theme.success; font.pixelSize: 18; font.bold: true }
-                            Label { objectName: "ai-result-target"; textFormat: Text.PlainText; text: root.resultValid ? "结果终端：" + root.result.terminal.name + " · " + root.result.terminal.address : ""; color: root.theme.text; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                            Label { textFormat: Text.PlainText; text: root.resultValid ? (root.result.serviceName || root.result.serviceCode || "") + "\n" + (root.result.summary || "") : ""; color: root.theme.text; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                            RowLayout {
-                                UiButton { objectName: "ai-copy-result"; text: "复制完整报文"; enabled: root.resultValid && !!root.backend; onClicked: root.copyResult() }
-                                UiButton { objectName: "ai-return-result"; text: "回填手动解析"; enabled: root.resultValid; onClicked: if (root.resultValid) root.framingResult(root.result.frameHex, 1) }
+                            id: messageColumn
+                            anchors.right: message.fromUser ? parent.right : undefined
+                            anchors.left: message.fromUser ? undefined : parent.left
+                            width: message.fromUser ? Math.min(parent.width * 0.85, Math.max(240, messageText.implicitWidth + 32)) : parent.width - 12
+                            spacing: 8
+                            Label {
+                                text: message.fromUser ? "你" : "AI · 698 组帧助手"
+                                color: root.theme.subText; font.pixelSize: 12
+                                Layout.alignment: message.fromUser ? Qt.AlignRight : Qt.AlignLeft
                             }
-                            UiButton { objectName: "ai-parameters-toggle"; text: root.parametersExpanded ? "收起参数明细" : "查看输入参数 / 编码参数"; onClicked: root.parametersExpanded = !root.parametersExpanded }
-                            ColumnLayout {
-                                objectName: "ai-parameters-panel"; visible: root.parametersExpanded; Layout.fillWidth: true; spacing: 8
-                                Label { text: "输入参数"; color: root.theme.subText }
-                                TextArea { objectName: "ai-input-parameters"; text: root.resultValid ? root.result.inputTreeText : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: root.theme.text; Layout.fillWidth: true; background: Rectangle { color: root.theme.controlBackground; radius: 6 } }
-                                Label { text: "编码参数（本地校验后的线值）"; color: root.theme.subText }
-                                TextArea { objectName: "ai-encoded-parameters"; text: root.resultValid ? root.result.normalizedTreeText : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: root.theme.text; Layout.fillWidth: true; background: Rectangle { color: root.theme.controlBackground; radius: 6 } }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: messageText.implicitHeight + 24
+                                radius: 16
+                                color: message.fromUser ? root.theme.tableHighlight : "transparent"
+                                visible: message.kind !== "result"
+                                TextEdit {
+                                    id: messageText
+                                    objectName: message.kind === "clarification" ? "ai-clarification" : message.fromUser ? "ai-user-message-" + message.index : "ai-status"
+                                    x: 14; y: 12; width: parent.width - 28
+                                    text: message.body; textFormat: TextEdit.PlainText
+                                    readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere
+                                    font.pixelSize: 15
+                                    color: message.kind === "failed" ? root.theme.error : root.theme.text
+                                    Accessible.name: (message.fromUser ? "你：" : "AI：") + message.body
+                                }
                             }
-                            Label { text: "APDU"; color: root.theme.subText }
-                            TextArea { objectName: "ai-result-apdu"; text: root.resultValid ? root.result.apduHex : ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: root.theme.text; Layout.fillWidth: true; font.family: Qt.platform.os === "osx" ? "Menlo" : "Consolas"; background: Rectangle { color: root.theme.controlBackground; radius: 6 } }
-                            Label { text: "完整报文"; color: root.theme.subText }
-                            TextArea { objectName: "ai-result-frame"; text: root.resultValid ? root.result.frameHex : ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; color: root.theme.text; Layout.fillWidth: true; font.family: Qt.platform.os === "osx" ? "Menlo" : "Consolas"; background: Rectangle { color: root.theme.controlBackground; radius: 6 } }
-                            Label { objectName: "ai-result-warnings"; textFormat: Text.PlainText; text: root.warningText(); visible: text.length > 0; color: root.theme.warning; Layout.fillWidth: true; wrapMode: Text.Wrap }
-                            Label { text: "尚未发送到设备。"; color: root.theme.subText }
+                            ResultCard {
+                                visible: message.kind === "result" && (!message.latest || root.resultValid)
+                                frame: message.kind !== "result" ? null : message.latest && root.resultValid ? root.result : message.frameData
+                                suffix: message.kind !== "result" ? "-unused-" + message.index : message.latest ? "" : "-history-" + message.index
+                            }
+                            Label {
+                                text: message.targetText; textFormat: Text.PlainText
+                                visible: message.fromUser
+                                color: root.theme.subText; font.pixelSize: 11
+                                Layout.fillWidth: true; wrapMode: Text.WrapAnywhere
+                                horizontalAlignment: Text.AlignRight
+                            }
+                            UiButton {
+                                objectName: "ai-save-prompt-" + message.index
+                                visible: message.fromUser
+                                text: message.saved ? "已加入 698 提示词" : "加入 698 提示词"
+                                enabled: !message.saved && !!root.controller
+                                implicitHeight: 30; font.pixelSize: 12
+                                Layout.alignment: Qt.AlignRight
+                                onClicked: root.editPrompt(message.index)
+                            }
                         }
                     }
+                }
+                RowLayout {
+                    visible: root.showWork
+                    Layout.fillWidth: true
+                    Label {
+                        text: root.working || root.clarifying ? "本次组帧使用提交时的终端信息" : "记录仅在本次打开期间保留 · 新组帧为独立请求"
+                        color: root.theme.subText; font.pixelSize: 12
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                    }
+                    UiButton {
+                        objectName: "ai-scroll-bottom"; text: "回到最新"
+                        visible: !conversation.followTail
+                        onClicked: { conversation.followTail = true; conversation.positionViewAtEnd() }
+                    }
+                    UiButton { objectName: "ai-cancel"; visible: root.working || root.clarifying; text: "取消本次请求"; onClicked: root.cancelRequest() }
                 }
                 Label {
                     objectName: "ai-preview-notice"
@@ -445,7 +608,7 @@ Item {
                 }
                 Rectangle {
                     Layout.fillWidth: true; implicitHeight: root.compact ? 146 : 160
-                    radius: 9; color: "transparent"; border.color: root.theme.groupBorder
+                    radius: 18; color: root.theme.controlBackground; border.color: composer.activeFocus ? root.theme.accent : root.theme.groupBorder
                     ColumnLayout {
                         anchors.fill: parent; anchors.margins: 8; spacing: 6
                         ScrollView {
@@ -458,10 +621,10 @@ Item {
                                 placeholderText: root.mode === 0 ? (root.clarifying ? "补充本次需求缺少的信息…" : "例如：读取当前终端的日期时间") : "报文解释尚未实现"
                                 color: root.theme.text; placeholderTextColor: root.theme.placeholderText
                                 selectionColor: root.theme.tableHighlight
-                                font.pixelSize: 14; padding: 12
+                                font.pixelSize: 15; padding: 12
                                 wrapMode: TextEdit.Wrap
                                 Accessible.name: root.mode === 0 ? "组帧需求" : "待解释的报文"
-                                background: Rectangle { radius: 6; color: root.theme.controlBackground; border.color: composer.activeFocus ? root.theme.accent : root.theme.controlBorder }
+                                background: Item {}
                             }
                         }
                         RowLayout {
@@ -486,6 +649,45 @@ Item {
                     Glyph { code: 0xF02FD; font.pixelSize: 19 }
                     Label { objectName: "ai-credential-status"; textFormat: Text.PlainText; text: root.controller ? (root.controller.credentialStatus !== "ready" ? (root.controller.credentialMessage || "安全凭据状态尚未确认") : root.controller.hasApiKey ? "模型：" + root.controller.model : "请先在模型设置中保存接入信息") : "静态预览 · 尚未接入组帧控制器"; color: root.theme.subText; font.pixelSize: 12; Layout.fillWidth: true; elide: Text.ElideRight }
                 }
+            }
+        }
+    }
+
+    Next.GlassDialog {
+        id: promptDialog
+        objectName: "ai-prompt-dialog"
+        parent: Overlay.overlay; anchors.centerIn: parent
+        width: Math.min(620, root.width - 32)
+        height: Math.min(540, root.height - 32)
+        modal: true; title: "加入 698 提示词"
+        palette.window: root.theme.popupBackground; palette.windowText: root.theme.text
+        palette.mid: root.theme.controlBorder
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: "保存你已确认有效的经验。可先删去本次专用的终端地址、日期等内容，整理成可复用的规则。"
+                color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap
+            }
+            ScrollView {
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                TextArea {
+                    id: promptEditor; objectName: "ai-prompt-editor"
+                    textFormat: TextEdit.PlainText; selectByMouse: true; wrapMode: TextEdit.Wrap
+                    color: root.theme.text; font.pixelSize: 14
+                    Accessible.name: "待保存的 698 组帧经验"
+                    background: Rectangle { radius: 8; color: root.theme.controlBackground; border.color: root.theme.controlBorder }
+                }
+            }
+            Label {
+                text: "追加到：" + (root.controller ? root.controller.promptFilePath : "") + "\n保存后从下一次新组帧生效，当前追问不受影响。"
+                textFormat: Text.PlainText; color: root.theme.subText; font.pixelSize: 12
+                Layout.fillWidth: true; wrapMode: Text.WrapAnywhere
+            }
+            Label { objectName: "ai-prompt-error"; text: root.promptSaveError; textFormat: Text.PlainText; visible: text.length > 0; color: root.theme.error; Layout.fillWidth: true; wrapMode: Text.Wrap }
+            RowLayout {
+                Item { Layout.fillWidth: true }
+                UiButton { objectName: "ai-prompt-cancel"; text: "取消"; onClicked: promptDialog.close() }
+                UiButton { objectName: "ai-prompt-save"; text: "确认追加"; primary: true; enabled: promptEditor.text.trim().length > 0 && promptEditor.text.length <= 8192; onClicked: root.savePrompt() }
             }
         }
     }

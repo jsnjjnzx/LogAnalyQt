@@ -11,6 +11,7 @@
 #include <QNetworkReply>
 #include <QThread>
 #include <QSemaphore>
+#include <QLockFile>
 #include <atomic>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -709,11 +710,54 @@ void testEditablePrompt() {
   expect(QFile::remove(path) && AiPromptFile::ensure(path, &error) && AiPromptFile::read(path, &text, &error) && text.contains("DL/T 698"), "缺失提示词恢复默认文件");
 }
 
+void testAppendPromptExperience() {
+  Harness h;
+  const QString path = h.controller.promptFilePath();
+  QByteArray original, saved;
+  QString error;
+  expect(AiPromptFile::readBytes(path, &original, &error), "读取追加前的原文");
+  const QString entry = QStringLiteral("读取日期时间时使用 OI 4000 的属性 2，不要修改终端地址。");
+  h.network.respond = [](int, const QJsonObject &) { return response({}, QStringLiteral("请补充参数")); };
+  const QString id = h.submit(); h.wait();
+  expect(h.controller.appendPromptExperience(entry)["ok"].toBool(), "通过控制器追加用户确认的经验");
+  expect(AiPromptFile::readBytes(path, &saved, &error) && saved.startsWith(original) &&
+         saved.endsWith(entry.toUtf8() + '\n'), "追加保存原文并保留中文经验");
+  const auto system = [&]() { return h.network.bodies.last()["messages"].toArray().first().toObject()["content"].toString(); };
+  expect(h.controller.answerClarification(id, "补充参数"), "保存经验不打断当前追问"); h.wait();
+  expect(!system().contains(entry), "当前追问仍使用提交时的提示词快照");
+  h.controller.cancel(); h.submit(); h.wait();
+  expect(system().contains(entry), "下次新请求使用刚保存的经验");
+  h.controller.cancel();
+  for (const auto &text : QStringList{entry, "  ", QString(8193, QLatin1Char('x')), QString(QChar::Null)}) {
+    expect(!h.controller.appendPromptExperience(text)["ok"].toBool(), "拒绝重复、空白、过长或空字符经验");
+    QByteArray current;
+    expect(AiPromptFile::readBytes(path, &current, &error) && current == saved, "保存被拒绝后原文件字节不变");
+  }
+  QLockFile lock(path + ".lock");
+  expect(lock.tryLock(0), "锁定隔离提示词");
+  expect(!h.controller.appendPromptExperience("another entry")["ok"].toBool(), "另一写入占用时失败而不覆盖");
+  lock.unlock();
+  const auto write = [&](const QByteArray &bytes) {
+    QFile file(path); expect(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "准备边界文件");
+    expect(file.write(bytes) == bytes.size(), "写入边界文件");
+  };
+  for (const auto &bytes : QList<QByteArray>{QByteArray(AiPromptFile::MaxBytes - 1, 'x'), QByteArray::fromHex("e4b8")}) {
+    write(bytes);
+    expect(!h.controller.appendPromptExperience(entry)["ok"].toBool(), "文档超限或原UTF8非法时不追加");
+    QFile file(path); expect(file.open(QIODevice::ReadOnly) && file.readAll() == bytes, "原始文件完整保留");
+  }
+  write(saved);
+  const QString link = h.directory.filePath("linked-prompt.md");
+  expect(QFile::link(path, link), "创建隔离符号链接");
+  expect(!AiPromptFile::appendExperience(link, entry, &error), "拒绝通过符号链接写入提示词");
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
   QCoreApplication application(argc, argv);
   testEditablePrompt();
+  testAppendPromptExperience();
   testMultiRoundAndFrozenResult();
   testClarificationAndTextCannotBuild();
   testTargetConflictContextIsVisibleAndFrozen();

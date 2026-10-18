@@ -189,7 +189,7 @@ void testFirstSaveDoesNotOwnFallbackCredentials() {
   const QString path = directory.filePath(QStringLiteral("first-save.ini"));
   {
     QSettings ini(path, QSettings::IniFormat);
-    ini.setValue(QStringLiteral("ui/next/appearance/dark"), true);
+    ini.setValue(QStringLiteral("ui/next/appearance/reducedTransparency"), true);
     ini.sync();
   }
   MemoryCredentials credentials;

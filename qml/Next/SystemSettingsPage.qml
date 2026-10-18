@@ -150,18 +150,12 @@ Item {
                         visible: root.section === 0
                         Layout.fillWidth: true; spacing: 20
                         Label { text: "界面外观"; color: root.theme.text; font.pixelSize: 23; font.bold: true }
-                        Label { text: "选择适合当前工作环境的显示方式"; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                        Label { text: "固定使用深色毛玻璃，必要时可减少透明度。"; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
                         Rectangle {
                             Layout.fillWidth: true; implicitHeight: appearanceRows.implicitHeight
                             radius: 14; color: root.theme.surface; border.color: root.theme.groupBorder
                             ColumnLayout {
                                 id: appearanceRows; width: parent.width; spacing: 0
-                                AppearanceSwitch { objectName: "settings-dark"; text: "深色外观"; checked: root.theme.isDark; palette.windowText: root.theme.text
-                                    onToggled: { root.theme.followSystem = false; root.theme.isDark = checked; root.persistAppearance("next/appearance/dark", checked); root.persistAppearance("next/appearance/followSystem", false) } }
-                                Rectangle { Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; height: 1; color: root.theme.separator }
-                                AppearanceSwitch { objectName: "settings-follow-system"; text: "跟随系统外观"; checked: root.theme.followSystem; palette.windowText: root.theme.text
-                                    onToggled: { root.theme.followSystem = checked; if (checked) root.theme.isDark = Qt.styleHints.colorScheme === Qt.ColorScheme.Dark; root.persistAppearance("next/appearance/followSystem", checked) } }
-                                Rectangle { Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; height: 1; color: root.theme.separator }
                                 AppearanceSwitch { objectName: "settings-reduced-transparency"; text: "减少透明度"; checked: root.theme.reducedTransparency; palette.windowText: root.theme.text
                                     onToggled: { root.theme.reducedTransparency = checked; root.persistAppearance("next/appearance/reducedTransparency", checked) } }
                             }

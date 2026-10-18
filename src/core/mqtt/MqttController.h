@@ -1,0 +1,60 @@
+#pragma once
+
+#include "MqttBroker.h"
+#include "MqttSession.h"
+
+class MqttController : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(MqttSession *remote READ remote CONSTANT)
+    Q_PROPERTY(MqttSession *localClient READ localClient CONSTANT)
+    Q_PROPERTY(MqttBroker *broker READ broker CONSTANT)
+    Q_PROPERTY(QVariantList profiles READ profiles NOTIFY profilesChanged)
+    Q_PROPERTY(QString currentProfileId READ currentProfileId NOTIFY profilesChanged)
+    Q_PROPERTY(QString configPath READ configPath CONSTANT)
+    Q_PROPERTY(QString storageError READ storageError NOTIFY storageChanged)
+    Q_PROPERTY(double splitRatio READ splitRatio WRITE setSplitRatio NOTIFY layoutChanged)
+public:
+    explicit MqttController(QObject *parent = nullptr);
+    MqttController(const QString &dataRoot, QObject *parent, const QString &helperOverride = {});
+    ~MqttController() override;
+    MqttSession *remote() { return &m_remote; }
+    MqttSession *localClient() { return &m_local; }
+    MqttBroker *broker() { return &m_broker; }
+    QVariantList profiles() const;
+    QString currentProfileId() const { return m_remote.configuration().value("id").toString(); }
+    QString configPath() const { return m_configPath; }
+    QString storageError() const { return m_storageError; }
+    double splitRatio() const { return m_splitRatio; }
+    void setSplitRatio(double ratio);
+    Q_INVOKABLE QVariantMap newConnection() const;
+    Q_INVOKABLE QVariantMap saveConnection(const QVariantMap &config);
+    Q_INVOKABLE QVariantMap selectConnection(const QString &id);
+    Q_INVOKABLE QVariantMap copyConnection(const QString &id);
+    Q_INVOKABLE QVariantMap removeConnection(const QString &id);
+    Q_INVOKABLE QVariantMap saveBroker(const QVariantMap &config);
+    Q_INVOKABLE QVariantMap connectLocalClient();
+    Q_INVOKABLE QVariantMap saveNow();
+    Q_INVOKABLE QString filePath(const QUrl &url) const { return url.isLocalFile() ? url.toLocalFile() : QString(); }
+    Q_INVOKABLE QString thirdPartyNotices() const;
+signals:
+    void profilesChanged();
+    void storageChanged();
+    void layoutChanged();
+private:
+    void load();
+    void scheduleSave();
+    static QVariantMap normalizedConnection(const QVariantMap &input);
+    static QString validateWorkspace(const QVariantMap &config);
+    QVariantMap storageResult(const QString &error);
+    MqttSession m_remote;
+    MqttSession m_local;
+    MqttBroker m_broker;
+    QVariantList m_profiles;
+    QString m_configPath;
+    QString m_storageError;
+    QTimer m_saveTimer;
+    bool m_loading = true;
+    bool m_dirty = false;
+    bool m_badFile = false;
+    double m_splitRatio = 0.56;
+};

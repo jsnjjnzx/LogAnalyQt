@@ -738,11 +738,10 @@ GlassPage {
         }
     }
 
-    // 终端背景色：深色模式用暗色，浅色模式用近白色
-    readonly property color terminalBg: (theme && theme.isDark) ? "#1a1d21" : "#f5f6f7"
-    readonly property color terminalText: (theme && theme.isDark) ? "#d4d4d4" : "#1e1e1e"
-    readonly property color terminalMatchBg: (theme && theme.isDark) ? "#5a4a00" : "#fff3a0"
-    readonly property color terminalBorder: (theme && theme.isDark) ? "#3c3f44" : "#d0d3d8"
+    readonly property color terminalBg: "#1a1d21"
+    readonly property color terminalText: "#d4d4d4"
+    readonly property color terminalMatchBg: "#5a4a00"
+    readonly property color terminalBorder: "#3c3f44"
     readonly property color cardBg: theme ? theme.surface : "#ffffff"
     readonly property color cardBorder: theme ? theme.controlBorder : "#d0d3d8"
     readonly property color labelColor: theme ? theme.subText : "#606060"
@@ -753,10 +752,10 @@ GlassPage {
     readonly property color warningColor: liveLogDialog.theme ? liveLogDialog.theme.warning : "#FF9800"
     readonly property color errorColor: liveLogDialog.theme ? liveLogDialog.theme.error : "#F44336"
     readonly property color mutedColor: liveLogDialog.theme ? liveLogDialog.theme.subText : "#888888"
-    readonly property color successWeakBg: liveLogDialog.theme ? Qt.rgba(liveLogDialog.theme.success.r, liveLogDialog.theme.success.g, liveLogDialog.theme.success.b, liveLogDialog.theme.isDark ? 0.22 : 0.16) : "#dff0d8"
-    readonly property color warningWeakBg: liveLogDialog.theme ? Qt.rgba(liveLogDialog.theme.warning.r, liveLogDialog.theme.warning.g, liveLogDialog.theme.warning.b, liveLogDialog.theme.isDark ? 0.22 : 0.16) : "#fef9e7"
-    readonly property color errorWeakBg: liveLogDialog.theme ? Qt.rgba(liveLogDialog.theme.error.r, liveLogDialog.theme.error.g, liveLogDialog.theme.error.b, liveLogDialog.theme.isDark ? 0.22 : 0.16) : "#f0d4d4"
-    readonly property color neutralWeakBg: liveLogDialog.theme ? Qt.rgba(liveLogDialog.theme.controlBorder.r, liveLogDialog.theme.controlBorder.g, liveLogDialog.theme.controlBorder.b, liveLogDialog.theme.isDark ? 0.28 : 0.22) : "#f0f0f0"
+    readonly property color successWeakBg: Qt.rgba(successColor.r, successColor.g, successColor.b, 0.22)
+    readonly property color warningWeakBg: Qt.rgba(warningColor.r, warningColor.g, warningColor.b, 0.22)
+    readonly property color errorWeakBg: Qt.rgba(errorColor.r, errorColor.g, errorColor.b, 0.22)
+    readonly property color neutralWeakBg: Qt.rgba(cardBorder.r, cardBorder.g, cardBorder.b, 0.28)
     readonly property color dangerBtnBg: "#d44a3a"
     readonly property color connBtnBg: {
         switch (sshTerminal.connectionState) {
@@ -1330,7 +1329,7 @@ GlassPage {
                                 font.pixelSize: 13
                                 color: terminalText
                                 selectedTextColor: terminalText
-                                selectionColor: (theme && theme.isDark) ? "#446688" : "#9ec6ff"
+                                selectionColor: "#446688"
                             }
 
                             function applyHexSelection() {

@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QStringDecoder>
 #include <QTemporaryFile>
+#include <QLockFile>
+#include <QSaveFile>
 
 namespace AiPromptFile {
 bool ensure(const QString &path, QString *error) {
@@ -60,5 +62,45 @@ bool decode(const QByteArray &bytes, QString *text, QString *error) {
 bool read(const QString &path, QString *text, QString *error) {
   QByteArray bytes;
   return readBytes(path, &bytes, error) && decode(bytes, text, error);
+}
+
+bool appendExperience(const QString &path, const QString &entry, QString *error) {
+  const QString trimmed = entry.trimmed();
+  if (trimmed.isEmpty() || trimmed.size() > 8192 || trimmed.contains(QChar::Null)) {
+    if (error) *error = QStringLiteral("补充经验须为 1–8192 字的非空文本，不能含空字符");
+    return false;
+  }
+  if (!ensure(path, error)) return false;
+  QLockFile lock(path + QStringLiteral(".lock"));
+  if (!lock.tryLock(0)) {
+    if (error) *error = QStringLiteral("提示词文件正在保存，请稍后重试");
+    return false;
+  }
+  QByteArray original;
+  QString text;
+  if (!readBytes(path, &original, error) || !decode(original, &text, error)) return false;
+  const QByteArray addition = (QStringLiteral("\n\n### 用户补充经验\n\n") + trimmed + QLatin1Char('\n')).toUtf8();
+  if (original.contains(addition)) {
+    if (error) *error = QStringLiteral("这条经验已在提示词文档中，无需重复添加");
+    return false;
+  }
+  const QByteArray updated = original + addition;
+  if (!decode(updated, &text, error)) return false;
+  QSaveFile destination(path);
+  if (!destination.open(QIODevice::WriteOnly) || destination.write(updated) != updated.size()) {
+    if (error) *error = QStringLiteral("无法保存补充经验，原提示词未修改：") + destination.errorString();
+    return false;
+  }
+  QByteArray latest;
+  // Keep edits made by an external editor or prompt sync while preparing the save.
+  if (!readBytes(path, &latest, error) || latest != original) {
+    if (error) *error = QStringLiteral("提示词文件已发生变化，请重试；原文件已保留");
+    return false;
+  }
+  if (!destination.commit()) {
+    if (error) *error = QStringLiteral("保存失败，原提示词未修改：") + destination.errorString();
+    return false;
+  }
+  return true;
 }
 }

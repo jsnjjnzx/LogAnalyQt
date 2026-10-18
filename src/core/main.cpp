@@ -2,6 +2,7 @@
 #include "LogMerger.h"
 #include "SshTerminal.h"
 #include "UpdateChecker.h"
+#include "mqtt/MqttController.h"
 #include "../common/AppPaths.h"
 #include <QDateTime>
 #include <QDir>
@@ -19,9 +20,13 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <memory>
+#ifdef Q_OS_MACOS
+#include "MacWindowBackdrop.h"
+#endif
 #ifdef LOGANALYQT_UI_TESTING
 #include "../../tests/MigrationUiChecks.h"
 #include "../../tests/ParseWorkspaceChecks.h"
+#include "../../tests/MqttUiChecks.h"
 #endif
 
 Q_IMPORT_QML_PLUGIN(NextUiPlugin)
@@ -93,7 +98,6 @@ static void qtMessageToFile(QtMsgType type, const QMessageLogContext &context,
 int main(int argc, char *argv[]) {
   QGuiApplication app(argc, argv);
   QCoreApplication::setApplicationName(QStringLiteral("LogAnalyQt"));
-  const bool legacyUi = app.arguments().contains(QStringLiteral("--legacy-ui"));
 #ifdef LOGANALYQT_UI_TESTING
   const bool updateTest = app.arguments().contains(QStringLiteral("--update-test")) ||
                           app.arguments().contains(QStringLiteral("--update-probe"));
@@ -114,8 +118,7 @@ int main(int argc, char *argv[]) {
 #else
   const bool uiSmokeMode = false;
 #endif
-  if (!legacyUi)
-    QQuickStyle::setStyle(QStringLiteral("Basic"));
+  QQuickStyle::setStyle(QStringLiteral("Basic"));
 
   QString migrationError;
   if (!AppPaths::initialize(&migrationError)) {
@@ -137,18 +140,22 @@ int main(int argc, char *argv[]) {
   qmlRegisterType<LogMerger>("LogAnalyQt", 1, 2, "LogMerger");
   qmlRegisterType<UpdateChecker>("LogAnalyQt", 1, 2, "UpdateChecker");
   qmlRegisterType<SshTerminal>("LogAnalyQt", 1, 2, "SshTerminal");
+  qmlRegisterType<MqttController>("LogAnalyQt", 1, 2, "MqttController");
+  qmlRegisterUncreatableType<MqttSession>("LogAnalyQt", 1, 2, "MqttSession", QStringLiteral("由 MqttController 提供"));
+  qmlRegisterUncreatableType<MqttBroker>("LogAnalyQt", 1, 2, "MqttBroker", QStringLiteral("由 MqttController 提供"));
 
   QQmlApplicationEngine engine;
   engine.rootContext()->setContextProperty(QStringLiteral("uiSmokeMode"), uiSmokeMode);
   QObject::connect(
       &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
       []() { QCoreApplication::exit(-1); }, Qt::QueuedConnection);
-  engine.loadFromModule(legacyUi ? "LogAnalyQt" : "LogAnalyQt.Next", "Main");
+  engine.loadFromModule("LogAnalyQt.Next", "Main");
 
 #ifdef Q_OS_MACOS
   if (app.platformName() == QStringLiteral("cocoa") && !engine.rootObjects().isEmpty()) {
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     if (window) {
+      new MacWindowBackdrop(window, window->property("uiTheme").value<QObject *>());
 #ifdef LOGANALYQT_UI_TESTING
       const int stateArg = app.arguments().indexOf(QStringLiteral("--ui-start-visibility"));
       if (uiSmokeMode && stateArg >= 0 && stateArg + 1 < app.arguments().size()) {
@@ -201,10 +208,6 @@ int main(int argc, char *argv[]) {
     const int sizeArg = args.indexOf(QStringLiteral("--size"));
     if (window && sizeArg >= 0 && sizeArg + 2 < args.size())
       window->resize(args[sizeArg + 1].toInt(), args[sizeArg + 2].toInt());
-    if (window && args.contains(QStringLiteral("--light"))) {
-      if (auto *theme = window->property("uiTheme").value<QObject *>())
-        theme->setProperty("isDark", false);
-    }
     const int pageArg = args.indexOf(QStringLiteral("--page"));
     const int screenshotArg = args.indexOf(QStringLiteral("--screenshot"));
     QTimer::singleShot(250, &app, [window, args, pageArg] {
@@ -227,6 +230,13 @@ int main(int argc, char *argv[]) {
         QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, args[pageArg + 1].toInt()));
     });
     QTimer::singleShot(1500, &app, [&, window, args, pageArg, screenshotArg] {
+      if (args.contains(QStringLiteral("--mqtt-checks"))) {
+        const QString path = screenshotArg >= 0 && screenshotArg + 1 < args.size() ? args[screenshotArg + 1] : QString();
+        const QString error = checkMqttUi(window, path, args.contains(QStringLiteral("--mqtt-broker-view")));
+        if (!error.isEmpty()) fprintf(stderr, "MQTT UI CHECK FAILED: %s\n", qPrintable(error));
+        app.exit(error.isEmpty() ? 0 : 4);
+        return;
+      }
       const int workspacePhase = args.indexOf(QStringLiteral("--workspace-phase"));
       if (workspacePhase >= 0 && workspacePhase + 1 < args.size()) {
         const QString error = checkParseWorkspace(window, args[workspacePhase + 1]);

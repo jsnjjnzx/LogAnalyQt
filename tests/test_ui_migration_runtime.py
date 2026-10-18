@@ -13,7 +13,10 @@ def main():
         runtime = pathlib.Path(directory)
         if binary.parent.name == "MacOS":
             bundle = binary.parents[2]
-            shutil.copytree(bundle, runtime / bundle.name, symlinks=True)
+            # Old debug bundles can contain real portable data; use only synthetic test data.
+            portable_data = {"LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log"}
+            shutil.copytree(bundle, runtime / bundle.name, symlinks=True,
+                            ignore=lambda path, names: portable_data.intersection(names) if pathlib.Path(path) == binary.parent else set())
             executable = runtime / bundle.name / "Contents" / "MacOS" / binary.name
         else:
             executable = runtime / binary.name
@@ -21,6 +24,11 @@ def main():
         environment = dict(os.environ, LOGANALYQT_TEST_HOME=str(runtime / "home"))
         data_root = runtime / "home/Library/Application Support/LogAnalyQt" if sys.platform == "darwin" else runtime
         log_path = runtime / "home/Library/Logs/LogAnalyQt/log.txt" if sys.platform == "darwin" else runtime / "log/log.txt"
+        data_root.mkdir(parents=True, exist_ok=True)
+        (data_root / "LogAnalyQt.ini").write_text(
+            "[ui]\nnext\\appearance\\dark=false\nnext\\appearance\\followSystem=true\n",
+            encoding="utf-8",
+        )
 
         def run(*arguments):
             log_path.unlink(missing_ok=True)
@@ -32,12 +40,15 @@ def main():
             errors = [line for line in log.splitlines()
                       if (" WARN " in line or " CRIT " in line or " FATAL " in line)
                       and "Populating font family aliases" not in line]
+            if "--mqtt-checks" in arguments and "MQTT_UI_CHECK_PASSED" not in log:
+                errors.append("Packaged executable did not complete MQTT UI/backend checks")
             if result.returncode or errors:
-                diagnostics = [line for line in log.splitlines() if line in errors or "UI_CHECK_" in line]
+                diagnostics = errors + [line for line in log.splitlines() if "UI_CHECK_" in line]
                 print(arguments, result.stdout, result.stderr, "\n".join(dict.fromkeys(diagnostics)), sep="\n")
                 raise SystemExit(result.returncode or 1)
 
         run("--ui-checks")
+        run("--mqtt-checks", "--size", "1200", "800")
         prompt_path = data_root / "prompts" / "ai_698_framing.md"
         assert prompt_path.is_file() and "DL/T 698" in prompt_path.read_text(encoding="utf-8"), "prompt not extracted to application data directory"
         prompt_path.write_text("User edited prompt survives app restart.\n", encoding="utf-8")
@@ -48,6 +59,7 @@ def main():
         if sys.platform == "darwin":
             assert not any((runtime / name).exists() for name in ("LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log")), "Mac app generated data beside its bundle"
         print("PASS: platform data directories, prompt extraction and restart preservation")
+        print("PASS: packaged MQTT broker, loopback publish/subscribe, V2 layout, editor controls and helper cleanup")
         print("PASS: migrated routes/parsers, 11 isolated tabs, close/add, restart restoration, empty workspace, corrupt-state backup and save-failure protection")
 
 

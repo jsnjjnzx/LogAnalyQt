@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 
-MAIN_QML = Path(__file__).resolve().parents[1] / "qml" / "Main.qml"
+MAIN_QML = Path(__file__).resolve().parents[1] / "qml" / "Next" / "Main.qml"
 
 
 class MainWindowMinimumWidthTest(unittest.TestCase):
@@ -11,25 +11,9 @@ class MainWindowMinimumWidthTest(unittest.TestCase):
     def setUpClass(cls):
         cls.source = MAIN_QML.read_text(encoding="utf-8")
 
-    def test_minimum_width_includes_every_horizontal_margin(self):
-        required_terms = (
-            "mainContentLayout.anchors.leftMargin",
-            "mainContentLayout.anchors.rightMargin",
-            "folderGroupBox.leftPadding",
-            "folderGroupBox.rightPadding",
-            "folderLayout.anchors.leftMargin",
-            "folderLayout.anchors.rightMargin",
-        )
-        for term in required_terms:
-            self.assertIn(term, self.source)
-
-        self.assertRegex(
-            self.source,
-            re.compile(
-                r"minimumWidth:\s*Math\.max\(800,\s*Math\.ceil\("
-                r"folderLayout\.implicitWidth\s*\+\s*toolbarHorizontalChrome\)\)"
-            ),
-        )
+    def test_workspace_has_minimum_size(self):
+        self.assertRegex(self.source, r"minimumWidth:\s*1200\b")
+        self.assertRegex(self.source, r"minimumHeight:\s*740\b")
 
     def test_saved_width_is_clamped_to_the_current_minimum(self):
         self.assertRegex(

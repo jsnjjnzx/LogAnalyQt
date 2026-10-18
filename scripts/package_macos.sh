@@ -78,6 +78,8 @@ rm -f "$APP_BUNDLE/Contents/PlugIns/sqldrivers/libqsqlodbc.dylib" \
   "$APP_BUNDLE/Contents/PlugIns/sqldrivers/libqsqlpsql.dylib" \
   "$APP_BUNDLE/Contents/PlugIns/sqldrivers/libqsqlmimer.dylib"
 
+python3 "$ROOT_DIR/scripts/fix_macos_bundle_ids.py" "$APP_BUNDLE"
+
 if [[ "$IDENTITY" == "-" ]]; then
   codesign --force --deep --sign - "$APP_BUNDLE"
 else

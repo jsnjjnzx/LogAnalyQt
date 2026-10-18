@@ -12,11 +12,8 @@ Rectangle {
     property color buttonHoverColor: "#40536d"
     property color closeButtonHoverColor: "#ab4650"
     property color closeButtonIconHoverColor: "white"
-    property bool isDarkTheme: true
-    property bool showThemeToggle: false
-    signal themeToggleClicked()
     readonly property bool embedded: targetWindow && targetWindow.embedded === true
-    height: embedded ? 0 : 64
+    height: embedded ? 0 : 60
     visible: !embedded
     color: titleBarColor
     gradient: Gradient {
@@ -28,19 +25,35 @@ Rectangle {
         onPressed: if (bar.targetWindow) bar.targetWindow.startSystemMove()
         onDoubleClicked: if (bar.targetWindow) { if (bar.targetWindow.visibility === Window.Maximized) bar.targetWindow.showNormal(); else bar.targetWindow.showMaximized(); }
     }
-    Label { anchors.left: parent.left; anchors.leftMargin: 22; anchors.verticalCenter: parent.verticalCenter; width: parent.width - buttons.width - 55; elide: Text.ElideRight; text: bar.title; color: bar.titleTextColor; font.pixelSize: 24; font.bold: true }
+    Label { anchors.left: parent.left; anchors.leftMargin: 22; anchors.verticalCenter: parent.verticalCenter; width: parent.width - buttons.width - 55; elide: Text.ElideRight; text: bar.title; color: bar.titleTextColor; font.pixelSize: 21; font.weight: Font.DemiBold }
     Row {
-        id: buttons; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; spacing: 5
-        Next.GlassButton { visible: bar.showThemeToggle; text: bar.isDarkTheme ? "浅色" : "深色"; onClicked: bar.themeToggleClicked() }
+        id: buttons; anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter; spacing: 2
         Repeater {
-            model: [{label:"−",name:"最小化"},{label:"□",name:"最大化 / 还原"},{label:"×",name:"关闭"}]
+            model: [{icon:0xF05B0,name:"最小化"},{icon:0xF05AF,name:"最大化"},{icon:0xF05AD,name:"关闭"}]
             delegate: Next.GlassButton {
+                id: windowButton
                 required property var modelData
                 required property int index
+                objectName: "window-control-" + index
                 width: 36; height: 32
-                Accessible.name: modelData.name
-                background: Rectangle { radius: 8; color: parent.hovered ? (parent.index === 2 ? bar.closeButtonHoverColor : bar.buttonHoverColor) : "transparent" }
-                contentItem: Text { text: modelData.label; font.pixelSize: 21; color: bar.titleTextColor; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                readonly property bool restore: !!(index === 1 && bar.targetWindow && bar.targetWindow.visibility === Window.Maximized)
+                Accessible.name: restore ? "还原" : modelData.name
+                ToolTip.visible: hovered
+                ToolTip.delay: 700
+                ToolTip.text: windowButton.Accessible.name
+                background: Rectangle {
+                    radius: 7
+                    color: windowButton.hovered ? (windowButton.index === 2 ? bar.closeButtonHoverColor : bar.buttonHoverColor) : "transparent"
+                    border.width: windowButton.visualFocus ? 1 : 0
+                    border.color: bar.titleTextColor
+                }
+                contentItem: Text {
+                    text: String.fromCodePoint(windowButton.restore ? 0xF05B2 : windowButton.modelData.icon)
+                    font.family: "Material Design Icons"; font.pixelSize: 16
+                    color: windowButton.index === 2 && windowButton.hovered ? bar.closeButtonIconHoverColor : bar.titleTextColor
+                    opacity: windowButton.hovered || windowButton.visualFocus ? 1 : 0.78
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                }
                 onClicked: {
                     if (!bar.targetWindow) return;
                     if (index === 0) bar.targetWindow.showMinimized();
@@ -51,5 +64,5 @@ Rectangle {
             }
         }
     }
-    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: bar.isDarkTheme ? "#26ffffff" : "#20000000" }
+    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#26ffffff" }
 }

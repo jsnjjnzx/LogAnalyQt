@@ -662,8 +662,6 @@ GlassPage {
             titleTextColor: theme ? theme.text : "#333333"
             buttonHoverColor: theme ? theme.buttonHover : "#e0e0e0"
             closeButtonHoverColor: theme ? theme.error : "#ff0000"
-            isDarkTheme: theme ? theme.isDark : false
-            showThemeToggle: false
         }
 
         // 边缘缩放区域

@@ -38,7 +38,8 @@ Pane {
         property var view
         function init() {
             failOnWarning(/Binding loop|TypeError|ReferenceError|Unable to assign/)
-            theme.isDark = true; theme.reducedTransparency = false
+            theme.reducedTransparency = false
+            theme.nativeBackdropAvailable = false; theme.systemReducedTransparency = false
             view = createTemporaryObject(controls, scene)
             verify(view); wait(20)
         }
@@ -73,15 +74,24 @@ Pane {
             view.toggle.enabled = false; mouseClick(view.toggle)
             verify(view.toggle.checked)
         }
-        function test_appearancePaletteAndReducedTransparency() {
+        function test_reducedTransparency() {
             verify(theme.surface.a < 1); verify(theme.sidebar.a < 1)
-            const dark = view.field.background.baseColor.toString()
-            theme.isDark = false
-            tryVerify(() => view.field.background.baseColor.toString() !== dark)
             theme.reducedTransparency = true
             compare(theme.surface.a, 1); compare(theme.sidebar.a, 1)
-            theme.isDark = true
-            compare(theme.surface.a, 1); compare(theme.sidebar.a, 1)
+        }
+        function test_nativeGlassAndAccessibilityFallback() {
+            const fallbackAlpha = theme.surface.a
+            theme.nativeBackdropAvailable = true
+            verify(theme.nativeGlass); verify(theme.surface.a < fallbackAlpha)
+            verify(theme.controlBackground.a > theme.surface.a)
+            theme.systemReducedTransparency = true
+            verify(!theme.nativeGlass); compare(theme.surface.a, 1); compare(theme.sidebar.a, 1)
+            theme.systemReducedTransparency = false
+            verify(theme.nativeGlass)
+            theme.reducedTransparency = true
+            verify(!theme.nativeGlass); compare(theme.surface.a, 1); compare(theme.sidebar.a, 1)
+            theme.reducedTransparency = false
+            verify(theme.nativeGlass)
         }
     }
 }

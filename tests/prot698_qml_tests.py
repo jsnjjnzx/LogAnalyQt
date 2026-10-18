@@ -1,4 +1,4 @@
-"""Run actual legacy/Next framing QML with temporary import metadata, without an app build."""
+"""Run actual Next framing QML with temporary import metadata, without an app build."""
 import os
 from pathlib import Path
 import shutil
@@ -35,7 +35,10 @@ def main():
     print(f"QML test runner: {runner}", flush=True)
     with tempfile.TemporaryDirectory(prefix="prot698-qml-imports-") as temporary:
         imports = Path(temporary)
-        module(imports / "LogAnalyQt", "LogAnalyQt", source / "qml")
+        backend = imports / "LogAnalyQt"
+        backend.mkdir()
+        shutil.copy2(source / "tests/qml-stage10/MockSshTerminal.qml", backend / "SshTerminal.qml")
+        (backend / "qmldir").write_text("module LogAnalyQt\nSshTerminal 1.0 SshTerminal.qml\n")
         module(imports / "LogAnalyQt" / "Next", "LogAnalyQt.Next", source / "qml" / "Next")
         environment = os.environ.copy()
         environment["QT_QUICK_CONTROLS_STYLE"] = "Basic"

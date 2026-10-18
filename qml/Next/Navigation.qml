@@ -8,6 +8,7 @@ Rectangle {
     required property var theme
     property int currentPage: 0
     property string version: ""
+    property var targetWindow: null
     signal navigate(int page)
     color: theme.sidebar
     readonly property var items: [
@@ -21,23 +22,22 @@ Rectangle {
         {section:"日志工具"},
         {page:5,title:"实时监控",icon:0xF0430},
         {page:6,title:"日志合并",icon:0xF0219},
+        {section:"通信调试"},
+        {page:15,title:"MQTT 调试",icon:0xF0318},
         {section:"资源管理"},
         {page:7,title:"预置报文",icon:0xF09EE},
         {page:8,title:"协议同步",icon:0xF04E6}
     ]
     FontLoader { id: mdi; source: "qrc:/qt/qml/LogAnalyQt/assets/materialdesignicons-webfont.ttf" }
     Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: nav.theme.groupBorder }
-    RowLayout {
-        x: 20; y: 24; width: parent.width - 36; spacing: 12
-        Image { source: "assets/app-logo.png"; Layout.preferredWidth: 44; Layout.preferredHeight: 44; smooth: true }
-        Column {
-            spacing: 4
-            Text { text: "多协议解析器"; font.pixelSize: 18; font.bold: true; color: nav.theme.text }
-            Text { text: "LogAnalyQt"; font.pixelSize: 13; color: nav.theme.subText }
-        }
+    MouseArea {
+        width: parent.width; height: 18
+        onPressed: if (nav.targetWindow) nav.targetWindow.startSystemMove()
     }
     Flickable {
-        x: 14; y: 105; width: parent.width - 28; height: parent.height - 242
+        objectName: "nav-menu"
+        x: 14; y: 22; width: parent.width - 28
+        height: Math.max(0, footer.y - y - 14)
         clip: true; contentHeight: menu.height
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar {}
@@ -50,7 +50,7 @@ Rectangle {
                     required property int index
                     width: menu.width
                     height: modelData.section ? (index === 0 ? 24 : (nav.height < 800 ? 36 : 43)) : (nav.height < 800 ? 38 : 43)
-                    Text { visible: !!modelData.section; x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; text: modelData.section || ""; font.pixelSize: 13; color: nav.theme.subText }
+                    Text { visible: !!modelData.section; x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; text: modelData.section || ""; font.pixelSize: 12; font.weight: Font.DemiBold; color: nav.theme.subText }
                     Next.GlassButton {
                         objectName: modelData.section ? "" : "nav-" + modelData.page
                         anchors.fill: parent; visible: !modelData.section
@@ -58,15 +58,15 @@ Rectangle {
                         Accessible.name: modelData.title || ""
                         onClicked: nav.navigate(modelData.page)
                         background: Rectangle {
-                            radius: 9
+                            radius: 10
                             color: nav.currentPage === modelData.page ? nav.theme.navigationSelected : parent.hovered ? nav.theme.surfaceHover : "transparent"
-                            border.width: nav.currentPage === modelData.page || parent.activeFocus ? 1 : 0
+                            border.width: parent.visualFocus ? 1 : 0
                             border.color: parent.activeFocus ? nav.theme.accent : nav.theme.groupBorder
                         }
                         contentItem: RowLayout {
                             spacing: 15
-                            Text { text: String.fromCodePoint(modelData.icon || 0); font.family: mdi.name; font.pixelSize: 22; color: nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.subText; Layout.leftMargin: 7 }
-                            Text { text: modelData.title || ""; font.pixelSize: 15; color: nav.theme.text; Layout.fillWidth: true }
+                            Text { text: String.fromCodePoint(modelData.icon || 0); font.family: mdi.name; font.pixelSize: 20; color: nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.subText; Layout.leftMargin: 7 }
+                            Text { text: modelData.title || ""; font.pixelSize: 14; color: nav.theme.text; Layout.fillWidth: true }
                         }
                     }
                 }
@@ -74,8 +74,10 @@ Rectangle {
         }
     }
     Column {
-        anchors.bottom: parent.bottom; anchors.bottomMargin: 14
-        x: 20; width: parent.width - 40; spacing: 6
+        id: footer
+        objectName: "nav-footer"
+        anchors.bottom: parent.bottom; anchors.bottomMargin: 16
+        x: 18; width: parent.width - 36; spacing: 8
         Rectangle { width: parent.width; height: 1; color: nav.theme.groupBorder }
         Repeater {
             model: [{page:9,title:"系统设置",icon:0xF08BB},{page:10,title:"帮助与更新",icon:0xF0625}]
@@ -88,11 +90,25 @@ Rectangle {
                 background: Rectangle { radius: 9; color: nav.currentPage === modelData.page ? nav.theme.navigationSelected : parent.hovered ? nav.theme.surfaceHover : "transparent"; border.color: parent.visualFocus ? nav.theme.accent : "transparent" }
                 contentItem: RowLayout {
                     spacing: 15
-                    Text { text: String.fromCodePoint(modelData.icon); font.family: mdi.name; font.pixelSize: 23; color: nav.theme.subText }
-                    Text { text: modelData.title; color: nav.theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                    Text { text: String.fromCodePoint(modelData.icon); font.family: mdi.name; font.pixelSize: 20; color: nav.theme.subText }
+                    Text { text: modelData.title; color: nav.theme.text; font.pixelSize: 14; Layout.fillWidth: true }
                 }
             }
         }
-        Text { anchors.right: parent.right; text: "v" + nav.version; color: nav.theme.subText; font.pixelSize: 12 }
+        Rectangle { width: parent.width; height: 1; color: nav.theme.separator }
+        RowLayout {
+            objectName: "nav-brand"
+            width: parent.width; height: 44; spacing: 10
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 3
+                Text { text: "多协议解析器"; font.pixelSize: 13; font.weight: Font.DemiBold; color: nav.theme.text }
+                RowLayout {
+                    Layout.fillWidth: true; spacing: 4
+                    Text { text: "LogAnalyQt"; font.pixelSize: 10; color: nav.theme.subText }
+                    Item { Layout.fillWidth: true }
+                    Text { text: "v" + nav.version; font.pixelSize: 10; color: nav.theme.subText }
+                }
+            }
+        }
     }
 }

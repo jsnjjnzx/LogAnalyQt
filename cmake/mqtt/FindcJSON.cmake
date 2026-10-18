@@ -1,0 +1,11 @@
+# Mosquitto uses <cjson/cJSON.h>; use the pinned static target from our build.
+if(NOT TARGET cjson)
+    message(FATAL_ERROR "The bundled cJSON target must be configured first")
+endif()
+if(NOT TARGET cJSON)
+    add_library(cJSON ALIAS cjson)
+endif()
+set(CJSON_FOUND TRUE)
+set(cJSON_FOUND TRUE)
+set(CJSON_INCLUDE_DIRS "${LOGANALYQT_MQTT_INCLUDE_DIR}")
+set(CJSON_LIBRARIES cjson)

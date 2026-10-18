@@ -82,6 +82,7 @@ public:
   Q_INVOKABLE bool answerClarification(const QString &requestId,
                                        const QString &answer);
   Q_INVOKABLE void cancel();
+  Q_INVOKABLE QVariantMap appendPromptExperience(const QString &text);
 
 signals:
   void settingsChanged();

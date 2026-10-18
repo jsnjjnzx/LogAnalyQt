@@ -2,6 +2,7 @@ param(
     [string]$Version = "",
     [string]$QtDir = $env:QT_STATIC_DIR,
     [string]$MingwDir = $env:MINGW_DIR,
+    [string]$OpenSSLDir = $env:LOGANALYQT_MQTT_OPENSSL_DIR,
     [string]$BuildDir = "build_release",
     [string]$ReleaseDir = "release_package",
     [switch]$BuildTests
@@ -51,6 +52,12 @@ if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
 # Add MinGW to PATH
 $env:PATH = "$MingwDir/bin;$env:PATH"
 
+if ([string]::IsNullOrWhiteSpace($OpenSSLDir)) {
+    $OpenSSLDir = Join-Path $RootDir "build/mqtt-openssl-3.5.9"
+}
+& "$RootDir/scripts/ci/build_mqtt_openssl.ps1" -InstallDir $OpenSSLDir -MingwDir $MingwDir
+if ($LASTEXITCODE -ne 0) { throw "MQTT OpenSSL preparation failed" }
+
 Write-Host "Starting static packaging process for $AppName v$Version..."
 $TestsOption = if ($BuildTests) { "ON" } else { "OFF" }
 
@@ -67,6 +74,7 @@ Write-Host "Configuring CMake (Release) with Static Qt..."
 cmake -S "$RootDir" -B $BuildDir -G "MinGW Makefiles" `
     -DCMAKE_BUILD_TYPE=Release `
     -DQT_STATIC_DIR="$QtDir" `
+    -DOPENSSL_ROOT_DIR="$OpenSSLDir" `
     -DAPP_VERSION_STR="$Version" `
     -DLOGANALYQT_BUILD_PROTOCOL_TESTS="$TestsOption" `
     -DCMAKE_CXX_COMPILER="$MingwDir/bin/g++.exe" `

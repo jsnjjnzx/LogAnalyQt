@@ -1,4 +1,4 @@
-"""Exercise both real sync/terminal QML views with isolated backend substitutes only."""
+"""Exercise real Next sync/terminal QML views with isolated backend substitutes only."""
 import os
 from pathlib import Path
 import shutil
@@ -14,11 +14,12 @@ def main():
     runner = runner or "/opt/homebrew/opt/qtdeclarative/bin/qmltestrunner"
     with tempfile.TemporaryDirectory(prefix="loganalyqt-stage10-qml-") as temporary:
         imports = Path(temporary)
-        legacy = imports / "LogAnalyQt"
-        module(legacy, "LogAnalyQt", source / "qml")
-        module(legacy / "Next", "LogAnalyQt.Next", source / "qml/Next")
-        (legacy / "SshTerminal.qml").symlink_to(source / "tests/qml-stage10/MockSshTerminal.qml")
-        with (legacy / "qmldir").open("a") as stream:
+        backend = imports / "LogAnalyQt"
+        backend.mkdir()
+        (backend / "qmldir").write_text("module LogAnalyQt\n")
+        module(backend / "Next", "LogAnalyQt.Next", source / "qml/Next")
+        (backend / "SshTerminal.qml").symlink_to(source / "tests/qml-stage10/MockSshTerminal.qml")
+        with (backend / "qmldir").open("a") as stream:
             stream.write("SshTerminal 1.0 SshTerminal.qml\n")
         icon_directory = imports / "assets"
         icon_directory.mkdir()

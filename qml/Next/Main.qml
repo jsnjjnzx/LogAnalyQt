@@ -23,7 +23,7 @@ ApplicationWindow {
         popupWindow.show();
         popupPane.autoFitCols();
     }
-    readonly property var pageTitles: ["日志解析", "手动解析", "差异对比", "多窗口解析", "智能组帧", "实时监控", "日志合并", "预置报文", "协议同步", "系统设置", "帮助与更新", "功能说明", "升级日志", "检查更新", "AI 助手"]
+    readonly property var pageTitles: ["日志解析", "手动解析", "差异对比", "多窗口解析", "智能组帧", "实时监控", "日志合并", "预置报文", "协议同步", "系统设置", "帮助与更新", "功能说明", "升级日志", "检查更新", "AI 助手", "MQTT 调试"]
     function navigate(page) {
         currentPage = page;
         if (page < 3) {
@@ -55,13 +55,12 @@ ApplicationWindow {
     FileDialog { id: logFileDialog; title: "打开日志"; nameFilters: ["日志文件 (*.log *.txt)", "所有文件 (*)"]; onAccepted: mainWindow.openLogUrl(file) }
     Shortcut { sequences: [StandardKey.Open]; onActivated: logFileDialog.open() }
     Shortcut { sequences: [StandardKey.Find]; enabled: currentPage === 0; onActivated: searchField.forceActiveFocus() }
-    Shortcut { sequence: "Ctrl+T"; onActivated: { theme.followSystem = false; theme.isDark = !theme.isDark; backend.setUiSetting("next/appearance/dark", theme.isDark); backend.setUiSetting("next/appearance/followSystem", false); } }
     Shortcut { sequence: "F3"; enabled: currentPage === 0; onActivated: logContentLayout.findNext() }
     Shortcut { sequence: "Shift+F3"; enabled: currentPage === 0; onActivated: logContentLayout.findPrev() }
     Connections {
         target: backend
         function onHighlightRange(start, end, modelId) {
-            if (mainWindow.currentPage === 0 && modelId === 1) {
+            if (mainWindow.currentPage === 0 && modelId === 1 && !mainWindow.isGlobalPreviewMode) {
                 mainWindow.reflectingHighlight = true;
                 logContentArea.select(mainWindow.selectedLogStart + start, mainWindow.selectedLogStart + end);
                 mainWindow.reflectingHighlight = false;
@@ -114,7 +113,7 @@ ApplicationWindow {
     color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
     readonly property real windowCornerRadius: visibility === Window.Maximized || visibility === Window.FullScreen ? 0 : 18
-    background: Rectangle { color: theme.background; radius: mainWindow.windowCornerRadius }
+    background: Rectangle { color: theme.nativeGlass ? "transparent" : theme.background; radius: mainWindow.windowCornerRadius }
     contentItem.layer.enabled: windowCornerRadius > 0
     contentItem.layer.effect: MultiEffect {
         maskEnabled: true
@@ -188,10 +187,7 @@ ApplicationWindow {
     Component.onCompleted: {
         loadMainUiSettings();
         restoreParseWorkspace();
-        theme.isDark = Boolean(backend.getUiSetting("next/appearance/dark", true));
         theme.reducedTransparency = Boolean(backend.getUiSetting("next/appearance/reducedTransparency", false));
-        theme.followSystem = Boolean(backend.getUiSetting("next/appearance/followSystem", false));
-        if (theme.followSystem) theme.isDark = Qt.styleHints.colorScheme === Qt.ColorScheme.Dark;
         Qt.callLater(ensureMinimumWindowWidth);
         // 延迟调用确保窗口完全创建
 
@@ -320,6 +316,7 @@ ApplicationWindow {
     onMinimumWidthChanged: ensureMinimumWindowWidth()
     property bool installingUpdate: false
     onClosing: close => {
+        mqttPage.saveDraft();
         if (!saveParseWorkspace()) {
             close.accepted = false;
             navigate(3);
@@ -522,13 +519,6 @@ ApplicationWindow {
             Connections {
                 target: control
                 function onPressedChanged() {
-                    canvas.requestPaint();
-                }
-            }
-
-            Connections {
-                target: theme
-                function onIsDarkChanged() {
                     canvas.requestPaint();
                 }
             }
@@ -965,7 +955,7 @@ ApplicationWindow {
                 Label { text: "当前选中报文"; color: theme.subText; font.pixelSize: 13 }
                 ScrollView {
                     anchors.top: parent.top; anchors.topMargin: 23; width: parent.width; height: 54
-                    TextArea { id: selectedFrameText; text: frameText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 13; color: theme.accent; selectionColor: theme.tableHighlight; background: Rectangle { color: theme.controlBackground; radius: 6 } }
+                    TextArea { id: selectedFrameText; objectName: "selected-frame-" + targetModelId; text: frameText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 13; color: theme.accent; selectionColor: theme.tableHighlight; background: Rectangle { color: theme.controlBackground; radius: 6 } }
                 }
                 Connections { target: backend; function onHighlightRange(start, end, modelId) { if (!showInput && modelId === targetModelId) selectedFrameText.select(start,end); } }
             }
@@ -1162,7 +1152,7 @@ ApplicationWindow {
                 delegate: Rectangle {
                     width: cols.total
                     height: model.isFrameSeparator ? 20 : 30
-                    color: model.isFrameSeparator ? theme.tableHighlight : (model.isDiff ? Qt.rgba(theme.error.r, theme.error.g, theme.error.b, theme.isDark ? 0.28 : 0.20) : (model.highlighted ? theme.tableHighlight : (index % 2 == 0 ? Qt.rgba(0, 0, 0, 0) : theme.rowAlt)))
+                    color: model.isFrameSeparator ? theme.tableHighlight : (model.isDiff ? Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.28) : (model.highlighted ? theme.tableHighlight : (index % 2 == 0 ? Qt.rgba(0, 0, 0, 0) : theme.rowAlt)))
 
                     // 分隔符显示
                     Item {
@@ -1425,7 +1415,8 @@ ApplicationWindow {
     }
     Navigation {
         id: navigation
-        width: mainWindow.width < 1340 ? 226 : 244
+        targetWindow: mainWindow
+        width: mainWindow.currentPage === 15 ? 190 : mainWindow.width < 1340 ? 226 : 244
         anchors.top: parent.top; anchors.bottom: parent.bottom
         theme: mainWindow.uiTheme; currentPage: mainWindow.currentPage; version: mainWindow.appVersion
         onNavigate: page => mainWindow.navigate(page)
@@ -1436,14 +1427,20 @@ ApplicationWindow {
         targetWindow: mainWindow
         title: mainWindow.pageTitles[mainWindow.currentPage]
         titleBarColor: theme.sidebar; titleTextColor: theme.text
-        buttonHoverColor: theme.buttonHover; isDarkTheme: theme.isDark
-        showThemeToggle: false
+        buttonHoverColor: theme.buttonHover
     }
     Item {
         id: pageDeck
         anchors.top: customTitleBar.bottom; anchors.left: navigation.right
         anchors.right: parent.right; anchors.bottom: parent.bottom
-        anchors.margins: 18
+        anchors.margins: mainWindow.currentPage === 15 ? 12 : 18
+    }
+    Next.MqttPage {
+        id: mqttPage
+        objectName: "page-15"
+        parent: pageDeck; anchors.fill: parent
+        visible: mainWindow.currentPage === 15
+        theme: mainWindow.uiTheme
     }
     Rectangle {
         parent: customTitleBar
@@ -1519,7 +1516,7 @@ ApplicationWindow {
                 Connections { target: backend; function onProtocolTypeChanged() { protocolComboMain.currentIndex = backend.protocolType; } }
             }
             Item { Layout.fillWidth: true; visible: theme.isManualMode }
-            StyledButton { text: isGlobalPreviewMode ? "返回日志" : "全局预览"; visible: !theme.isManualMode; onClicked: { isGlobalPreviewMode = !isGlobalPreviewMode; if (isGlobalPreviewMode) backend.scanGlobalPreview(); } }
+            StyledButton { objectName: "globalPreviewButton"; text: isGlobalPreviewMode ? "返回日志" : "全局预览"; visible: !theme.isManualMode; onClicked: { isGlobalPreviewMode = !isGlobalPreviewMode; if (isGlobalPreviewMode) backend.scanGlobalPreview(); } }
         }
         RowLayout {
             Layout.fillWidth: true; visible: !theme.isManualMode; spacing: 10
@@ -1642,8 +1639,7 @@ ApplicationWindow {
                             leftPadding: 54
                             wrapMode: TextEdit.NoWrap
                             font.pixelSize: 14
-                            Component.onCompleted: { backend.disableTextAreaUndo(textDocument); backend.styleLogDocument(textDocument, theme.isDark); }
-                            Connections { target: theme; function onIsDarkChanged() { backend.styleLogDocument(logContentArea.textDocument, theme.isDark); } }
+                            Component.onCompleted: { backend.disableTextAreaUndo(textDocument); backend.styleLogDocument(textDocument); }
 
                             DropArea {
                                 anchors.fill: parent
@@ -1950,12 +1946,14 @@ ApplicationWindow {
                     // 表格内容
                     ListView {
                         id: globalPreviewList
+                        objectName: "globalPreviewList"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
                         model: backend.globalPreviewModel
 
                         delegate: Rectangle {
+                            objectName: "global-preview-row-" + index
                             width: globalPreviewList.width
                             height: 30
                             color: ListView.isCurrentItem ? theme.tableHighlight : (index % 2 == 0 ? Qt.rgba(0, 0, 0, 0) : theme.rowAlt)
@@ -1969,7 +1967,8 @@ ApplicationWindow {
                                         contextMenu.popup();
                                     } else {
                                         // 点击后在右侧显示该报文的详细解析
-                                        backend.parseHex(model.rawData, 1, "auto", 1);
+                                        mainWindow.selectedLogHex = model.rawData;
+                                        backend.parseHex(model.rawData, "auto", 1, 0);
                                     }
                                 }
                             }
@@ -3046,7 +3045,7 @@ ApplicationWindow {
             Rectangle {
                 Layout.fillWidth: true
                 radius: 6
-                color: theme.isDark ? "#2b1d12" : "#fff1df"
+                color: "#2b1d12"
                 border.color: theme.warning
                 border.width: 1
 

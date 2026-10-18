@@ -22,6 +22,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     if (!ok) throw QString::fromUtf8(message);
   };
   try {
+    require(!QFile::exists(":/qt/qml/LogAnalyQt/qml/Main.qml"), "legacy UI is still embedded in the app");
     for (auto *model : QList<QAbstractItemModel *>{new ParseResultModel, new GlobalPreviewModel}) {
       bool reset = false;
       QObject::connect(model, &QAbstractItemModel::modelReset, [&] { reset = true; });
@@ -56,6 +57,15 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       return nullptr;
     };
     auto uiItem = [&](const QString &name) { return findItem(window->contentItem(), name); };
+    auto click = [&](QQuickItem *item) {
+      require(item && item->isVisible(), "click target is missing or hidden");
+      const QPointF point = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
+      QMouseEvent press(QEvent::MouseButtonPress, point, window->mapToGlobal(point.toPoint()), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+      QMouseEvent release(QEvent::MouseButtonRelease, point, window->mapToGlobal(point.toPoint()), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(window, &press);
+      QCoreApplication::sendEvent(window, &release);
+      settle();
+    };
     auto navigate = [&](int page) {
       qInfo() << "UI_CHECK_PAGE" << page;
       require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, page)), "navigation invocation failed");
@@ -69,8 +79,27 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     for (const QPoint corner : {QPoint(0, 0), QPoint(windowImage.width() - 1, 0),
                                 QPoint(0, windowImage.height() - 1), QPoint(windowImage.width() - 1, windowImage.height() - 1)})
       require(windowImage.pixelColor(corner).alpha() < 32, "window corner is not transparent");
-    require(windowImage.pixelColor(windowImage.width() / 2, 0).alpha() > 240,
-            "window edge must remain opaque between rounded corners");
+    auto *theme = window->property("uiTheme").value<QObject *>();
+    require(theme, "window theme missing");
+    require(theme->metaObject()->indexOfProperty("isDark") == -1 &&
+            theme->metaObject()->indexOfProperty("followSystem") == -1,
+            "new workspace must not expose theme switching state");
+    require(theme->property("background").value<QColor>().lightnessF() < 0.2 &&
+            theme->property("text").value<QColor>().lightnessF() > 0.8,
+            "old light-mode settings must not change the fixed dark palette");
+    require(!uiItem("settings-dark") && !uiItem("settings-follow-system"),
+            "removed theme switches are still present");
+    if (!theme->property("nativeGlass").toBool())
+      require(windowImage.pixelColor(windowImage.width() / 2, 0).alpha() > 240,
+              "fallback window edge must remain opaque between rounded corners");
+    auto *brand = uiItem("nav-brand");
+    auto *menu = uiItem("nav-menu");
+    auto *footer = uiItem("nav-footer");
+    require(brand && menu && footer, "navigation sections missing");
+    require(brand->mapToScene(QPointF()).y() > window->height() - 90,
+            "brand must be in the bottom-left footer");
+    require(menu->mapToScene(QPointF(0, menu->height())).y() <= footer->mapToScene(QPointF()).y(),
+            "navigation menu overlaps footer");
     trace("manual parsing");
     navigate(1);
     backend->setProtocolType(0);
@@ -81,14 +110,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     QEventLoop ready;
     QTimer::singleShot(50, &ready, &QEventLoop::quit);
     ready.exec();
-    auto clickParse = [&] {
-      const QPointF click = parseButton->mapToScene(QPointF(parseButton->width() / 2, parseButton->height() / 2));
-      QMouseEvent press(QEvent::MouseButtonPress, click, window->mapToGlobal(click.toPoint()), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-      QMouseEvent release(QEvent::MouseButtonRelease, click, window->mapToGlobal(click.toPoint()), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-      QCoreApplication::sendEvent(window, &press);
-      QCoreApplication::sendEvent(window, &release);
-      settle();
-    };
+    auto clickParse = [&] { click(parseButton); };
     clickParse();
     require(backend->resultModel()->rowCount() > 2, "clicking manual parse did not produce fields");
     require(!uiItem("encodingCombo")->isVisible(), "manual parsing must not show file encoding");
@@ -235,7 +257,10 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     QTemporaryDir files;
     require(files.isValid(), "temporary log directory failed");
     const QString path = files.filePath(QString::fromUtf8("设备 日志.log"));
-    const QByteArray log("10:24:16 [TX] 68 04 07 00 00 00\n10:24:17 [RX] 68 04 0B 00 00 00\n");
+    const QString preview698 = backend->buildFullFrame("05 01 01 40 00 02 00 00", {{"serverAddrHex", "000000000001"}});
+    require(!preview698.isEmpty() && !preview698.startsWith("ERR:"), "preview 698 fixture failed");
+    const QByteArray log = QByteArray("10:24:16 [TX] 68 04 07 00 00 00\n10:24:17 [RX] 68 04 0B 00 00 00\n")
+        + "10:24:18 [TX] " + preview698.toUtf8() + "\n";
     QFile file(path);
     require(file.open(QIODevice::WriteOnly) && file.write(log) == log.size(), "test log write failed");
     file.close();
@@ -250,8 +275,32 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(backend->currentFileContent() == filtered, "Qt regex syntax must remain supported");
     backend->applyFilter("");
     require(backend->currentFileContent().toUtf8() == log, "clearing filter lost unfiltered source text");
-    backend->scanGlobalPreview();
-    require(backend->globalPreviewModel()->rowCount() == 2, "global preview did not parse both frames");
+    trace("global preview row clicks");
+    backend->setProtocolType(1);
+    click(uiItem("globalPreviewButton"));
+    require(window->property("isGlobalPreviewMode").toBool() && backend->globalPreviewModel()->rowCount() == 3,
+            "global preview did not scan the mixed-protocol log");
+    for (int row : {1, 0, 2}) {
+      backend->clearAllParses();
+      click(uiItem(QString("global-preview-row-%1").arg(row)));
+      const QString raw = backend->globalPreviewModel()->data(backend->globalPreviewModel()->index(row), GlobalPreviewModel::RawDataRole).toString();
+      require(backend->resultModel()->rowCount() > 2 && backend->parseResult().contains(QString::fromUtf8("解析成功")),
+              "clicking a preview row did not produce parsed fields");
+      if (row < 2)
+        require(backend->resultModel()->rowCount() == 3 &&
+                    backend->resultModel()->data(backend->resultModel()->index(2), ParseResultModel::ValueRole).toString() == raw.mid(6),
+                "104 preview fields did not follow the clicked row with 698 selected in the toolbar");
+      else
+        require(backend->resultModel()->rowCount() > 5, "698 preview fields are missing");
+      require(uiItem("selected-frame-1")->property("text").toString() == raw,
+              "selected frame text did not follow the preview row");
+      backend->handleLink("highlight:0,1", 1);
+      require(uiItem("selected-frame-1")->property("selectedText").toString() == "68" && backend->resultModel()->rowCount() > 2,
+              "preview byte highlighting cleared the parsed fields");
+    }
+    click(uiItem("globalPreviewButton"));
+    require(!window->property("isGlobalPreviewMode").toBool() && backend->currentFileContent().toUtf8() == log,
+            "leaving global preview changed the log content");
 
     navigate(1);
     backend->setProtocolType(3);

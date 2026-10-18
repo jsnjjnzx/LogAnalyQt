@@ -85,6 +85,13 @@ QUrl AiFramingController::promptDirectoryUrl() const {
   return QUrl::fromLocalFile(QFileInfo(m_promptPath).absolutePath());
 }
 
+QVariantMap AiFramingController::appendPromptExperience(const QString &text) {
+  QString error;
+  if (!AiPromptFile::appendExperience(m_promptPath, text, &error))
+    return operationFailure(QStringLiteral("prompt_write_failed"), error);
+  return AiOperationResult{true, {}, QStringLiteral("已加入 698 提示词，下次新组帧生效")}.toVariantMap();
+}
+
 bool AiFramingController::busy() const {
   return m_state == QStringLiteral("preparing") ||
          m_state == QStringLiteral("running") ||

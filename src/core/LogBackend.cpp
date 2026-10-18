@@ -39,14 +39,12 @@
 
 static constexpr bool kSecurityControlEnabled = false;
 
-void LogBackend::styleLogDocument(QObject *quickTextDocument, bool dark) {
+void LogBackend::styleLogDocument(QObject *quickTextDocument) {
   auto *quick = qobject_cast<QQuickTextDocument *>(quickTextDocument);
   if (!quick || !quick->textDocument()) return;
   auto *document = quick->textDocument();
   auto *existing = document->findChild<QSyntaxHighlighter *>("logSyntaxHighlight");
-  auto *highlighter = existing ? static_cast<LogTextHighlighter *>(existing)
-                              : new LogTextHighlighter(document);
-  highlighter->setDark(dark);
+  if (!existing) new LogTextHighlighter(document);
 }
 
 static constexpr const char *kLegacySecurityLastVerifiedKey =

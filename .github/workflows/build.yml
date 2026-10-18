@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 180
     env:
       QT_STATIC_DIR: D:/qt-static/6.11.1
+      LOGANALYQT_MQTT_OPENSSL_DIR: D:/mqtt-openssl/3.5.9
       QT_QPA_PLATFORM: windows
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +53,19 @@ jobs:
         run: |
           python tests/prot698_qml_tests.py
           if ($LASTEXITCODE -ne 0) { throw 'QML test tools failed' }
+      - name: Cache static MQTT OpenSSL
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LOGANALYQT_MQTT_OPENSSL_DIR }}
+          key: windows-2022-openssl-3.5.9-mingw1310-${{ hashFiles('scripts/ci/build_mqtt_openssl.ps1') }}
+      - name: Prepare OpenSSL build tools
+        id: mqtt-msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: make perl
+      - name: Locate OpenSSL build tools
+        run: '"LOGANALYQT_MSYS2_DIR=${{ steps.mqtt-msys2.outputs.msys2-location }}" >> $env:GITHUB_ENV'
       - name: Restore static Qt
         id: qt-cache
         uses: actions/cache/restore@v4
@@ -78,7 +92,7 @@ jobs:
           $Package = Get-ChildItem release_package/*_Windows_x64.exe | Select-Object -First 1
           $Imports = & "$env:MINGW_DIR/bin/objdump.exe" -p $Package.FullName | Out-String
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Windows imports' }
-          if ($Imports -match 'DLL Name:\s+(Qt6|libgcc|libstdc|libwinpthread)') { throw 'Package still depends on Qt or MinGW DLLs' }
+          if ($Imports -match 'DLL Name:\s+(Qt6|libgcc|libstdc|libwinpthread|libssl|libcrypto|mosquitto|cjson)') { throw 'Package still depends on external runtime DLLs' }
       - name: Run packaged EXE without Qt or MinGW on PATH
         shell: pwsh
         run: |

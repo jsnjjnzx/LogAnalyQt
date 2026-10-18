@@ -19,7 +19,7 @@ Item {
         property var page
         function init() {
             failOnWarning(/Binding loop|TypeError|ReferenceError|Unable to assign/)
-            control.reset(); fakeBackend.writes = ({}); testTheme.isDark = true; testTheme.followSystem = false; testTheme.reducedTransparency = false
+            control.reset(); fakeBackend.writes = ({}); testTheme.reducedTransparency = false
             page = createTemporaryObject(settingsComponent,scene,{width:1144,height:752}); verify(page); wait(30)
         }
         function item(name) { const found = findChild(page,name); verify(found !== null,name); return found }
@@ -33,14 +33,15 @@ Item {
             verify(!item("settings-open-prompts").enabled)
         }
         function test_preserveAppearanceSettings() {
-            mouseClick(item("settings-dark")); compare(fakeBackend.writes["next/appearance/dark"],false); compare(fakeBackend.writes["next/appearance/followSystem"],false)
-            mouseClick(item("settings-follow-system")); compare(fakeBackend.writes["next/appearance/followSystem"],true)
+            compare(findChild(page,"settings-dark"),null)
+            compare(findChild(page,"settings-follow-system"),null)
             mouseClick(item("settings-reduced-transparency")); compare(fakeBackend.writes["next/appearance/reducedTransparency"],true)
+            compare(Object.keys(fakeBackend.writes).length,1)
         }
         function test_appearanceRowsKeepSwitchesClearOfLabels() {
             for (const width of [1144, 850]) {
                 page.width = width; wait(20)
-                for (const name of ["settings-dark", "settings-follow-system", "settings-reduced-transparency"]) {
+                for (const name of ["settings-reduced-transparency"]) {
                     const row = item(name)
                     verify(row.indicator.x > row.width / 2, name + " must put its switch on the right")
                     verify(row.indicator.x + row.indicator.width <= row.width - row.rightPadding)

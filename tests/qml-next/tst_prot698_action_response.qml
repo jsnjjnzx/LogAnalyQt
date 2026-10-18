@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtTest
 import "../../qml/Next" as Next
 import "../../qml/Next/SmartFraming" as Migrated
-import "../../qml/SmartFraming" as Original
 
 Item {
     id: scene
@@ -19,7 +18,6 @@ Item {
         }
     }
     Component { id: migrated; Migrated.ServiceTreeEditor { theme: testTheme; backend: definitions } }
-    Component { id: original; Original.ServiceTreeEditor { theme: testTheme; backend: definitions } }
     SignalSpy { id: errorSignal; signalName: "statusMessage" }
     TestCase {
         name: "Prot698ActionResponseEditors"
@@ -60,11 +58,10 @@ Item {
             picker.currentIndex = position; wait(30)
         }
         function test_typedReturn_data() {
-            return [{tag:"next-normal", next:true, list:false}, {tag:"next-list", next:true, list:true},
-                {tag:"original-normal", next:false, list:false}, {tag:"original-list", next:false, list:true}]
+            return [{tag:"normal", list:false}, {tag:"list", list:true}]
         }
         function test_typedReturn(data) {
-            editor = (data.next ? migrated : original).createObject(scene, {
+            editor = migrated.createObject(scene, {
                 width: 1060, serviceCode: data.list ? "ACTION_RESPONSE_LIST" : "ACTION_RESPONSE_NORMAL"})
             verify(editor !== null); wait(60)
             errorSignal.target = editor; errorSignal.clear()

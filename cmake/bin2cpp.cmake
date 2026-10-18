@@ -5,6 +5,13 @@ if(NOT DEFINED INPUT_FILE OR NOT DEFINED OUTPUT_FILE)
     message(FATAL_ERROR "用法: cmake -DINPUT_FILE=<binary> -DOUTPUT_FILE=<output.cpp> -P bin2cpp.cmake")
 endif()
 
+if(NOT DEFINED SYMBOL_PREFIX)
+    set(SYMBOL_PREFIX updater_exe)
+endif()
+if(NOT SYMBOL_PREFIX MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
+    message(FATAL_ERROR "Invalid embedded binary symbol prefix")
+endif()
+
 # 读取二进制文件为十六进制字符串
 file(READ "${INPUT_FILE}" hex_content HEX)
 string(LENGTH "${hex_content}" hex_len)
@@ -23,11 +30,11 @@ file(WRITE "${OUTPUT_FILE}"
 // 嵌入的 updater.exe 二进制数据\n\
 #include <cstddef>\n\
 \n\
-extern const unsigned char updater_exe_data[] = {\n\
+extern const unsigned char ${SYMBOL_PREFIX}_data[] = {\n\
 ${result}\n\
 };\n\
 \n\
-extern const size_t updater_exe_size = ${byte_count};\n"
+extern const size_t ${SYMBOL_PREFIX}_size = ${byte_count};\n"
 )
 
 message(STATUS "Embedded ${byte_count} bytes from ${INPUT_FILE} -> ${OUTPUT_FILE}")

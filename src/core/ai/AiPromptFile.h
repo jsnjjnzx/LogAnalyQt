@@ -10,4 +10,5 @@ bool ensure(const QString &path, QString *error);
 bool readBytes(const QString &path, QByteArray *bytes, QString *error);
 bool decode(const QByteArray &bytes, QString *text, QString *error);
 bool read(const QString &path, QString *text, QString *error);
+bool appendExperience(const QString &path, const QString &entry, QString *error);
 }

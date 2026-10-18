@@ -50,16 +50,16 @@ Item {
             mouseClick(item("ai-copy-result")); compare(fakeBackend.copied,control.result.frameHex)
             mouseClick(item("ai-return-result")); compare(resultSignal.count,1); compare(resultSignal.signalArguments[0][0],control.result.frameHex); compare(resultSignal.signalArguments[0][1],1)
             control.result = {requestId:"old",terminal:control.lastTerminal,frameHex:"GG",apduHex:"05"}; verify(!page.resultValid)
-            fakeBackend.copied = ""; page.copyResult(); compare(fakeBackend.copied,""); compare(resultSignal.count,1)
+            fakeBackend.copied = ""; verify(!item("ai-copy-result").enabled); compare(fakeBackend.copied,""); compare(resultSignal.count,1)
         }
         function test_clarificationUsesOriginalRequestAndCancel() {
             prepare(); mouseClick(item("ai-preview-submit")); const request = control.requestId
             control.ask(); wait(20); compare(page.clarificationRequestId,request)
             page.addTerminal(); enter(item("ai-composer"),"date and time")
             verify(item("ai-preview-submit").enabled)
-            mouseClick(item("ai-preview-submit")); compare(control.answers,1); compare(page.framingDraft,"read time"); compare(control.lastAnswerId,request); compare(control.lastTerminal.address,"010203040506")
+            mouseClick(item("ai-preview-submit")); compare(control.answers,1); compare(page.framingDraft,""); compare(page.conversationModel.get(0).body,"read time"); compare(control.lastAnswerId,request); compare(control.lastTerminal.address,"010203040506")
             mouseClick(item("ai-cancel")); compare(control.cancels,1); verify(!page.resultValid)
-            control.succeed(request); wait(20); verify(!page.resultValid); verify(!item("ai-return-result").enabled)
+            control.succeed(request); wait(20); verify(!page.resultValid); verify(findChild(page,"ai-return-result") === null || !findChild(page,"ai-return-result").enabled)
         }
         function test_lateCancelClickKeepsCompletedResult() {
             prepare(); mouseClick(item("ai-preview-submit")); const request = control.requestId
@@ -92,7 +92,7 @@ Item {
             page.submitRequest(); compare(control.answers,0); verify(page.notice.indexOf("失效") >= 0)
             control.busy = false; control.statusText = "错误 <b>不应渲染</b>"; control.state = "failed"; wait(20)
             verify(!page.resultValid); compare(item("ai-status").textFormat,Text.PlainText)
-            verify(!item("ai-return-result").enabled)
+            verify(findChild(page,"ai-return-result") === null || !findChild(page,"ai-return-result").enabled)
         }
         function test_exactParameterTextsAndFrozenTarget() {
             prepare(); mouseClick(item("ai-preview-submit")); control.succeed();
@@ -102,7 +102,7 @@ Item {
             result.inputTreeText = input; result.normalizedTreeText = normalized; control.result = result; wait(20)
             const toggle = item("ai-parameters-toggle")
             tryCompare(toggle,"visible",true); verify(waitForPolish(toggle.parent)); renderPage()
-            mouseClick(toggle); tryCompare(page,"parametersExpanded",true)
+            mouseClick(toggle); tryCompare(item("ai-parameters-panel"),"visible",true)
             compare(item("ai-input-parameters").text,input); compare(item("ai-encoded-parameters").text,normalized)
             compare(item("ai-input-parameters").textFormat,TextEdit.PlainText)
             verify(item("ai-encoded-parameters").text.indexOf("18446744073709551615") >= 0)
@@ -158,6 +158,69 @@ Item {
             page.submitRequest(); compare(control.submits,1)
             control.credentialStatus = "failed"; control.credentialMessage = "系统凭据读取失败"; control.settingsBusy = false
             compare(item("ai-credential-status").text,"系统凭据读取失败")
+        }
+        function test_conversationKeepsRoundsAndHistoricalFrames() {
+            prepare(); page.submitRequest(); wait(20)
+            compare(page.conversationModel.count,2); compare(item("ai-composer").text,"")
+            control.ask(); wait(20)
+            compare(page.conversationModel.get(1).body,control.clarification)
+            enter(item("ai-composer"),"attribute 2"); page.submitRequest(); wait(20)
+            compare(page.conversationModel.count,4); compare(page.conversationModel.get(2).body,"attribute 2")
+            control.succeed(); wait(20)
+            const originalFrame = page.conversationModel.get(3).frameData.frameHex
+            page.visible = false; wait(10); page.visible = true
+            enter(item("ai-composer"),"another request"); page.submitRequest(); wait(20)
+            compare(page.conversationModel.count,6)
+            compare(page.conversationModel.get(3).frameData.frameHex,originalFrame)
+            page.cancelRequest(); wait(20)
+            compare(page.conversationModel.get(5).kind,"cancelled")
+            const view = item("ai-work-panel")
+            view.followTail = false; view.positionViewAtIndex(3,ListView.Beginning); renderPage()
+            mouseClick(item("ai-copy-result-history-3")); compare(fakeBackend.copied,originalFrame)
+            mouseClick(item("ai-return-result-history-3")); compare(resultSignal.signalArguments[0][0],originalFrame)
+            compare(page.conversationModel.count,6)
+        }
+        function test_promptPreviewCancelFailureAndEditedSave() {
+            prepare(); page.submitRequest(); control.ask(); wait(20); renderPage()
+            mouseClick(item("ai-save-prompt-0")); tryCompare(item("ai-prompt-dialog"),"opened",true)
+            compare(item("ai-prompt-editor").text,"read time")
+            mouseClick(item("ai-prompt-cancel")); tryCompare(item("ai-prompt-dialog"),"opened",false)
+            compare(control.savedPrompt,""); verify(!page.conversationModel.get(0).saved)
+            page.editPrompt(0); tryCompare(item("ai-prompt-dialog"),"opened",true)
+            item("ai-prompt-editor").text = "Use attribute 2 for this object."
+            control.failPromptSave = true; mouseClick(item("ai-prompt-save"))
+            verify(item("ai-prompt-dialog").opened); verify(item("ai-prompt-error").text.length > 0)
+            verify(!page.conversationModel.get(0).saved)
+            control.failPromptSave = false; mouseClick(item("ai-prompt-save"))
+            tryCompare(item("ai-prompt-dialog"),"opened",false)
+            compare(control.savedPrompt,"Use attribute 2 for this object.")
+            compare(page.conversationModel.get(0).body,"read time"); verify(page.conversationModel.get(0).saved)
+            compare(control.state,"clarification")
+        }
+        function test_longConversationScrollAndCompactBounds() {
+            prepare(); page.submitRequest(); control.succeed(); wait(20)
+            for(let i=0;i<12;++i) {
+                page.framingDraft = "Request " + i + " <b>literal</b> " + "long text ".repeat(20)
+                page.submitRequest(); control.ask(); wait(10); page.cancelRequest(); wait(10)
+            }
+            compare(page.conversationModel.count,38)
+            const view = item("ai-work-panel")
+            page.framingDraft = "response while reading history"; page.submitRequest(); wait(30)
+            mouseWheel(view,40,100,0,240); wait(100)
+            verify(!view.followTail)
+            const readingPosition = view.contentY
+            control.ask(); wait(30)
+            verify(Math.abs(view.contentY - readingPosition) < 2)
+            page.cancelRequest(); wait(20)
+            view.followTail = false; view.positionViewAtBeginning(); wait(20)
+            const before = view.contentY
+            page.height = 632; page.width = 920; renderPage(); wait(20)
+            verify(Math.abs(view.contentY - before) < 2)
+            mouseClick(item("ai-scroll-bottom")); tryCompare(view,"atYEnd",true)
+            for(const name of ["ai-preview-submit","ai-composer","ai-work-panel"]) {
+                const node = item(name); const bottom = node.mapToItem(page,node.width,node.height)
+                verify(bottom.x <= page.width && bottom.y <= page.height,name+" outside")
+            }
         }
         function test_compactLayout() {
             page.width = 920; page.height = 632; renderPage()

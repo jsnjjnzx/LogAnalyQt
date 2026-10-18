@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.16)
+﻿cmake_minimum_required(VERSION 3.24)
 
 # 1. 寮哄埗闈欐€佺紪璇戞ā寮?(蹇呴』鍦?project 涔嬪墠)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build bundled dependencies statically" FORCE)
@@ -62,6 +62,14 @@ foreach(_pkg
 endforeach()
 endif()
 
+# MQTT helpers must remain relocatable and the Windows download remains one EXE.
+set(OPENSSL_USE_STATIC_LIBS TRUE)
+foreach(openssl_library OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY)
+    if("${${openssl_library}}" MATCHES "\\.(dylib|so)$")
+        unset(${openssl_library} CACHE)
+    endif()
+endforeach()
+
 # === libssh2 闈欐€佺紪璇?(浣跨敤 WinCNG 鍚庣锛屾棤闇€ OpenSSL) ===
 if(WIN32)
     set(CRYPTO_BACKEND "WinCNG" CACHE STRING "libssh2 crypto backend" FORCE)
@@ -76,6 +84,11 @@ set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
 project(LogAnalyQt VERSION 4.0.1 LANGUAGES CXX)
+if(APPLE)
+    enable_language(OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 17)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+endif()
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -98,13 +111,27 @@ if(WIN32 AND MINGW)
     set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Xml Network QuickControls2 Svg)
+find_package(Qt6 REQUIRED COMPONENTS Quick Xml Network QuickControls2 Svg Concurrent)
+include(cmake/MqttDependencies.cmake)
 
 option(LOGANALYQT_BUILD_PROTOCOL_TESTS
        "Build LogAnalyQt protocol tests"
        OFF)
 
 qt_standard_project_setup(REQUIRES 6.5)
+
+qt_add_library(loganalyqt_mqtt STATIC
+    src/core/mqtt/MqttTypes.h src/core/mqtt/MqttTypes.cpp
+    src/core/mqtt/MqttMessageModel.h src/core/mqtt/MqttMessageModel.cpp
+    src/core/mqtt/MqttWorker.h src/core/mqtt/MqttWorker.cpp
+    src/core/mqtt/MqttSession.h src/core/mqtt/MqttSession.cpp
+    src/core/mqtt/MqttBroker.h src/core/mqtt/MqttBroker.cpp
+    src/core/mqtt/MqttController.h src/core/mqtt/MqttController.cpp
+    ${LOGANALYQT_MQTT_BROKER_RESOURCE})
+target_include_directories(loganalyqt_mqtt PUBLIC src)
+target_link_libraries(loganalyqt_mqtt PUBLIC Qt6::Core Qt6::Gui Qt6::Network Qt6::Concurrent libmosquitto_static)
+target_link_libraries(loganalyqt_mqtt PRIVATE OpenSSL::SSL)
+set_target_properties(loganalyqt_mqtt PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 # 灏嗙増鏈彿浼犻€掔粰 C++ 浠ｇ爜
 if(DEFINED APP_VERSION_STR)
@@ -213,6 +240,9 @@ target_sources(appLogAnalyQt PRIVATE ${AI_FRAMING_BASE_SOURCES}
     src/core/ai/AiFramingController.h src/core/ai/AiFramingController.cpp
     src/protocols/698_prot/Ai698Tools.h src/protocols/698_prot/Ai698Tools.cpp)
 if(APPLE)
+    target_sources(appLogAnalyQt PRIVATE src/core/MacWindowBackdrop.h src/core/MacWindowBackdrop.mm)
+    find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
+    target_link_libraries(appLogAnalyQt PRIVATE ${APPKIT_FRAMEWORK})
     find_library(AI_SECURITY_FRAMEWORK Security REQUIRED)
     find_library(AI_CORE_FOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
     target_link_libraries(appLogAnalyQt PRIVATE ${AI_SECURITY_FRAMEWORK} ${AI_CORE_FOUNDATION_FRAMEWORK})
@@ -220,8 +250,29 @@ endif()
 
 if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     enable_testing()
+    target_compile_definitions(loganalyqt_mqtt PUBLIC LOGANALYQT_UI_TESTING)
+    add_executable(mqtt_tests tests/mqtt_tests.cpp)
+    target_link_libraries(mqtt_tests PRIVATE loganalyqt_mqtt OpenSSL::Crypto)
+    set_target_properties(mqtt_tests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    add_dependencies(mqtt_tests mosquitto)
+    add_test(NAME mqtt_tests COMMAND mqtt_tests $<TARGET_FILE:mosquitto>)
+    set_tests_properties(mqtt_tests PROPERTIES TIMEOUT 90)
     target_compile_definitions(appLogAnalyQt PRIVATE LOGANALYQT_UI_TESTING)
+    if(APPLE)
+        find_package(Qt6 REQUIRED COMPONENTS Test)
+        add_executable(mac_backdrop_tests tests/mac_backdrop_tests.mm src/core/MacWindowBackdrop.mm src/core/MacWindowBackdrop.h)
+        target_include_directories(mac_backdrop_tests PRIVATE src)
+        target_link_libraries(mac_backdrop_tests PRIVATE Qt6::Quick Qt6::Test ${APPKIT_FRAMEWORK})
+        add_test(NAME mac_backdrop_tests COMMAND mac_backdrop_tests)
+        set_tests_properties(mac_backdrop_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" TIMEOUT 30)
+    endif()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME mqtt_broker_lifecycle_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_mqtt_broker_lifecycle.py $<TARGET_FILE:mosquitto>)
+    set_tests_properties(mqtt_broker_lifecycle_tests PROPERTIES TIMEOUT 30)
+    add_test(NAME mqtt_resource_embedding_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_mqtt_resource_embedding.py ${CMAKE_COMMAND} ${CMAKE_CXX_COMPILER})
+    set_tests_properties(mqtt_resource_embedding_tests PROPERTIES TIMEOUT 30)
     add_executable(update_checker_tests tests/update_checker_tests.cpp
         src/core/UpdateChecker.h src/core/UpdateChecker.cpp)
     target_include_directories(update_checker_tests PRIVATE src)
@@ -652,6 +703,8 @@ qt_add_resources(appLogAnalyQt "documentation"
     PREFIX "/docs"
     FILES README.md CHANGELOG.md
 )
+qt_add_resources(appLogAnalyQt "mqtt_licenses"
+    PREFIX "/mqtt" BASE licenses FILES licenses/MQTT-THIRD-PARTY.txt)
 
 # 灏嗗崗璁?XML 鏂囦欢澶嶅埗鍒版瀯寤虹洰褰曪紝鏂逛究璋冭瘯鍜屽厑璁稿閮ㄤ慨鏀?
 foreach(xml_file ${PROTOCOL_XML_FILES})
@@ -661,35 +714,12 @@ foreach(xml_file ${PROTOCOL_XML_FILES})
     configure_file(${xml_file} ${CMAKE_CURRENT_BINARY_DIR}/${xml_name} COPYONLY)
 endforeach()
 
-set_source_files_properties(qml/Icons.qml qml/PlatformFonts.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
-
 add_subdirectory(qml/Next)
 target_link_libraries(appLogAnalyQt PRIVATE nextUiPlugin)
 
 qt_add_qml_module(appLogAnalyQt
     URI LogAnalyQt
     VERSION 1.3
-    QML_FILES
-        qml/Main.qml
-        qml/Icons.qml
-        qml/PlatformFonts.qml
-        qml/LogMergeDialog.qml
-        qml/TitleBar.qml
-        qml/ProtocolSyncDialog.qml
-        qml/LiveLogDialog.qml
-        qml/SmartFramingDialog.qml
-        qml/SmartFraming/ProtocolSelector.qml
-        qml/SmartFraming/HexPreview.qml
-        qml/SmartFraming/FrameHeaderPanel.qml
-        qml/SmartFraming/AppMsgHeaderPanel.qml
-        qml/SmartFraming/AppMsgFramingPage.qml
-        qml/SmartFraming/OadPicker.qml
-        qml/SmartFraming/OadSelector.qml
-        qml/SmartFraming/FieldEditor.qml
-        qml/SmartFraming/RsdEditor.qml
-        qml/SmartFraming/RcsdEditor.qml
-        qml/SmartFraming/ServiceSelector.qml
-        qml/SmartFraming/ServiceTreeEditor.qml
     RESOURCES
         assets/logo.ico
         assets/materialdesignicons-webfont.ttf
@@ -751,7 +781,7 @@ endif()
 
 target_link_libraries(appLogAnalyQt
     PRIVATE Qt6::Quick Qt6::Xml Qt6::Network Qt6::QuickControls2 Qt6::Svg
-    PRIVATE libssh2_static
+    PRIVATE libssh2_static loganalyqt_mqtt
 )
 
 if(WIN32)
@@ -812,6 +842,11 @@ endif()
 endif()
 
 if(APPLE)
+    add_custom_target(bundle_mqtt_broker ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:appLogAnalyQt>/Contents/Helpers"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mosquitto>"
+            "$<TARGET_BUNDLE_DIR:appLogAnalyQt>/Contents/Helpers/LogAnalyQtBroker"
+        DEPENDS appLogAnalyQt mosquitto VERBATIM)
     add_executable(updater
         updater/updater_main_macos.cpp
     )

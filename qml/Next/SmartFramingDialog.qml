@@ -130,11 +130,6 @@ GlassPage {
                 function onPressedChanged() { arrowCanvas.requestPaint() }
             }
 
-            Connections {
-                target: dialog.theme
-                function onIsDarkChanged() { arrowCanvas.requestPaint() }
-            }
-
             onPaint: {
                 context.reset()
                 context.moveTo(0, 0)

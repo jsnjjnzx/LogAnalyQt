@@ -12,14 +12,14 @@ class CsgUpstreamWiringTest(unittest.TestCase):
         cls.backend = (
             cls.root / "src/core/LogBackend.cpp"
         ).read_text(encoding="utf-8")
-        cls.main_qml = (cls.root / "qml/Main.qml").read_text(
+        cls.main_qml = (cls.root / "qml/Next/Main.qml").read_text(
             encoding="utf-8"
         )
         cls.sync_cpp = (
             cls.root / "src/core/ProtocolSyncManager.cpp"
         ).read_text(encoding="utf-8")
         cls.sync_qml = (
-            cls.root / "qml/ProtocolSyncDialog.qml"
+            cls.root / "qml/Next/ProtocolSyncDialog.qml"
         ).read_text(encoding="utf-8")
         cls.detector_header = (
             cls.root / "src/core/ProtocolDetector.h"
@@ -71,7 +71,7 @@ class CsgUpstreamWiringTest(unittest.TestCase):
         self.assertEqual(self.main_qml.count('"南网计量上行规约"'), 3)
 
     def test_main_protocol_selector_has_room_for_display_name(self):
-        self.assertIn("Layout.preferredWidth: 170", self.main_qml)
+        self.assertIn("Layout.preferredWidth: 180", self.main_qml)
 
     def test_smart_framing_scope_is_unchanged(self):
         smart_section = self.backend.split(

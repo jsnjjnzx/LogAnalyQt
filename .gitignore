@@ -119,6 +119,7 @@ Terminal3.log
 /LogAnalyQt.ini.*
 /log/
 /preset/
+/mqtt/
 /.env
 /.env.*
 !.env.example

@@ -29,6 +29,13 @@ QtObject {
     property string pendingSettingsId: ""
     property var pendingMutation: ({})
     signal settingsOperationFinished(string operationId, var reply)
+    property string savedPrompt: ""
+    property bool failPromptSave: false
+    function appendPromptExperience(text) {
+        if (failPromptSave) return {ok:false,message:"文件不可写，原内容保留"}
+        savedPrompt = text
+        return {ok:true,message:"已加入 698 提示词，下次新组帧生效"}
+    }
     property int submits: 0
     property int answers: 0
     property int cancels: 0
@@ -41,6 +48,7 @@ QtObject {
     property var cancelledIds: ({})
     signal settingsChanged()
     function reset() {
+        savedPrompt = ""; failPromptSave = false
         baseUrl = "https://api.deepseek.com"; model = "mock-model"; hasApiKey = true; credentialAvailable = true
         busy = false; state = "idle"; requestId = ""; statusText = ""; errorCode = ""; clarification = ""; result = ({})
         connectionRequestId = ""; pendingProbeReadId = ""; connectionCancels = 0; connectionBusy = false; connectionStatus = "idle"; connectionMessage = "尚未测试连接"

@@ -1,6 +1,8 @@
 import hashlib
 import importlib.util
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,6 +16,27 @@ spec.loader.exec_module(ci)
 
 
 class PackageChecks(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin", "macOS install-name tooling")
+    def test_copied_library_id_is_relative_and_source_is_untouched(self):
+        helper = Path(__file__).resolve().parents[1] / "scripts/fix_macos_bundle_ids.py"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.c"
+            source.write_text("int fixture(void) { return 7; }\n")
+            original = root / "original.dylib"
+            subprocess.run(["cc", "-dynamiclib", str(source), "-Wl,-install_name,/opt/developer/original.dylib", "-o", str(original)], check=True, capture_output=True)
+            digest = hashlib.sha256(original.read_bytes()).hexdigest()
+            bundle = root / "Test.app"
+            frameworks = bundle / "Contents/Frameworks"
+            frameworks.mkdir(parents=True)
+            copied = frameworks / "copied.dylib"
+            copied.write_bytes(original.read_bytes())
+            (frameworks / "linked.dylib").symlink_to(original)
+            subprocess.run([sys.executable, str(helper), str(bundle)], check=True, capture_output=True)
+            install_id = subprocess.check_output(["otool", "-D", str(copied)], text=True)
+            self.assertIn("@rpath/copied.dylib", install_id)
+            self.assertEqual(digest, hashlib.sha256(original.read_bytes()).hexdigest())
+
     def test_windows_architecture_and_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
