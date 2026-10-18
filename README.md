@@ -1,6 +1,6 @@
 # MultiProtocolParser (Log Analyzer)
 
-**当前项目版本：** v4.0.1 — see `CHANGELOG.md`
+**当前项目版本：** v4.1.0 — see `CHANGELOG.md`
 
 一个功能强大的多协议报文分析与日志查看工具，专为分析 16 进制数据和调试通讯协议而设计。
 
@@ -30,11 +30,13 @@ macOS 可双击 `scripts/run_new_ui.command` 构建并启动。
 新版 QML 位于 `qml/Next/`；验收范围与外部环境待验证项见
 `validation/ui-migration/README.md`。
 
-## MQTT 调试（当前工作区）
+## MQTT 调试（v4.1.0）
 
 左侧新增独立的 MQTT 调试页，采用上下大数据区布局，支持连接终端 Broker，以及在软件内启动本机 Broker 供终端接入。包含主题订阅、过滤、文本/JSON/Hex 收发、QoS、Retain、可选 TLS、消息导出与配置保存。用户名和密码按内部测试用途直接保存到本地 JSON 文件，不使用系统凭据存储。
 
 Windows 保持单 EXE 分发，Broker 辅助程序内置后按需释放；macOS 将辅助程序放入应用包。使用方式见 [MQTT 使用说明](docs/mqtt/user-guide.md)，已验证与待验证范围见 [MQTT 验证记录](validation/mqtt/README.md)。
+
+接收区左侧提供可收起的订阅列表，每个主题可选择 12 种预设颜色或自定义色值。勾选决定显示哪些接收消息，后台订阅继续接收，重新勾选可恢复缓存中的历史；主题颜色和显示选择随连接保存。
 
 ## 698 自然语言组帧（当前工作区）
 
@@ -46,15 +48,15 @@ macOS 原生窗口已完成真实 DeepSeek 的读取时间、设置时间、多�
 
 Mac 的 SSH 实时监控增加首次指纹确认、目标绑定的系统密码保存及后台凭据操作；协议同步在应用输入 SMB 地址后交由 macOS/Finder 认证，3.1.3 起使用用户标准数据目录，并保留旧目录完成复制迁移。操作和迁移说明见 [Mac 使用说明](docs/macos-stage10/user-guide.md)，本地测试、公司 SMB 只读验证及实际 SSH 待验收边界见 [验收记录](docs/macos-stage10/acceptance.md)。本阶段仅 Mac，Windows 保留原行为，未作实机通过声明。
 
-## 🚀 最新特性 (v4.0.0)
+## 🚀 最新特性 (v4.1.0)
 
 ### ✨ 新增功能 (New Features)
-- **南网计量上行规约**：新增南网计量自动化终端上行通信规约解析，支持 XML 数据字典、AFN/DI 组合解析及任务、测量、告警等数据项。
-- **双平台构建**：提供 Windows 与 macOS Release 构建、测试及打包流程；当前云端入口为 GitHub Actions。
-- **GitHub 发布与更新**：版本标签触发正式发布，程序从 GitHub 获取并校验更新；Gitee 旧版需手动安装迁移版一次。
+- **MQTT 双模式调试**：连接终端 Broker，或一键启动本机 Broker，支持主题订阅和文本 / JSON / Hex 收发。
+- **彩色订阅与多选显示**：12 种预设颜色、自定义色值、独立的接收显示选择和配置恢复，保留后台接收与缓存。
+- **AI 聊天工作区**：保留多轮对话和历史组帧结果，支持编辑并保存提示词经验。
 
 ### 🛠️ 系统优化 (System Improvements)
-- **便携配置与协议同步**：完善应用同路径数据目录、协议配置校验与同步流程。
+- **原生窗口与打包**：完善 macOS 原生毛玻璃、窗口控制和固定深色界面；Windows 保持单 EXE，双平台经 GitHub Actions 构建和验证。
 
 ### 🎉 3.0.1 回顾
 - **APP 智能组帧默认值初始化**：为可选字段、数组和 Choice 分支自动设置初始值。
