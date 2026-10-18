@@ -38,20 +38,29 @@ CFMutableDictionaryRef credentialQuery(const QString &profileId, SecureCredentia
       kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(account.constData()),
       account.size(), kCFStringEncodingUTF8, false);
   CFDictionarySetValue(query, kSecClass, kSecClassGenericPassword);
-  CFStringRef service = CFSTR("LogAnalyQt.AiFraming");
-  if (domain == SecureCredentialStore::Domain::Ssh)
-    service = CFSTR("LogAnalyQt.Ssh");
-  else if (domain == SecureCredentialStore::Domain::ProtocolSync)
-    service = CFSTR("LogAnalyQt.ProtocolSync");
+  QString serviceName = QStringLiteral("LogAnalyQt.");
+#ifdef LOGANALYQT_UI_TESTING
+  if (qEnvironmentVariable("LOGANALYQT_CONFIG_PREVIEW") == "1") serviceName += QStringLiteral("ConfigPreview.");
+#endif
+  if (domain == SecureCredentialStore::Domain::Ssh) serviceName += "Ssh";
+  else if (domain == SecureCredentialStore::Domain::ProtocolSync) serviceName += "ProtocolSync";
+  else if (domain == SecureCredentialStore::Domain::Mqtt) serviceName += "Mqtt";
+  else serviceName += "AiFraming";
+  auto service = CFStringCreateWithCString(kCFAllocatorDefault, serviceName.toUtf8().constData(), kCFStringEncodingUTF8);
   CFDictionarySetValue(query, kSecAttrService, service);
+  CFRelease(service);
   CFDictionarySetValue(query, kSecAttrAccount, accountString);
   CFDictionarySetValue(query, kSecAttrSynchronizable, kCFBooleanFalse);
   CFRelease(accountString);
   return query;
 }
 #elif defined(Q_OS_WIN)
-std::wstring credentialTarget(const QString &profileId) {
-  return (QStringLiteral("LogAnalyQt/AiFraming/") + profileId).toStdWString();
+std::wstring credentialTarget(const QString &profileId, SecureCredentialStore::Domain domain) {
+  QString name = "AiFraming";
+  if (domain == SecureCredentialStore::Domain::Ssh) name = "Ssh";
+  else if (domain == SecureCredentialStore::Domain::ProtocolSync) name = "ProtocolSync";
+  else if (domain == SecureCredentialStore::Domain::Mqtt) name = "Mqtt";
+  return ("LogAnalyQt/" + name + "/" + profileId).toStdWString();
 }
 #endif
 } // namespace
@@ -60,7 +69,7 @@ bool SecureCredentialStore::isAvailable() const {
 #ifdef Q_OS_MACOS
   return true;
 #elif defined(Q_OS_WIN)
-  return m_domain == Domain::AiFraming;
+  return true;
 #else
   return false;
 #endif
@@ -91,10 +100,8 @@ bool SecureCredentialStore::contains(const QString &profileId, bool *exists,
   *exists = true;
   return true;
 #elif defined(Q_OS_WIN)
-  if (m_domain != Domain::AiFraming)
-    return storeError(error, QStringLiteral("当前平台没有可用的安全凭据存储"));
   PCREDENTIALW credential = nullptr;
-  const auto target = credentialTarget(profileId);
+  const auto target = credentialTarget(profileId, m_domain);
   if (!CredReadW(target.c_str(), CRED_TYPE_GENERIC, 0, &credential)) {
     if (GetLastError() == ERROR_NOT_FOUND)
       return true;
@@ -148,10 +155,8 @@ bool SecureCredentialStore::read(const QString &profileId, QByteArray *key,
   CFRelease(value);
   return true;
 #elif defined(Q_OS_WIN)
-  if (m_domain != Domain::AiFraming)
-    return storeError(error, QStringLiteral("当前平台没有可用的安全凭据存储"));
   PCREDENTIALW credential = nullptr;
-  const auto target = credentialTarget(profileId);
+  const auto target = credentialTarget(profileId, m_domain);
   if (!CredReadW(target.c_str(), CRED_TYPE_GENERIC, 0, &credential)) {
     if (GetLastError() == ERROR_NOT_FOUND)
       return true;
@@ -202,9 +207,7 @@ bool SecureCredentialStore::write(const QString &profileId, const QByteArray &ke
   return status == errSecSuccess ||
          storeError(error, QStringLiteral("无法保存系统钥匙串凭据"));
 #elif defined(Q_OS_WIN)
-  if (m_domain != Domain::AiFraming)
-    return storeError(error, QStringLiteral("当前平台没有可用的安全凭据存储"));
-  auto target = credentialTarget(profileId);
+  auto target = credentialTarget(profileId, m_domain);
   CREDENTIALW credential{};
   credential.Type = CRED_TYPE_GENERIC;
   credential.TargetName = target.data();
@@ -231,9 +234,7 @@ bool SecureCredentialStore::remove(const QString &profileId, QString *error) {
   return status == errSecSuccess || status == errSecItemNotFound ||
          storeError(error, QStringLiteral("无法删除系统钥匙串凭据"));
 #elif defined(Q_OS_WIN)
-  if (m_domain != Domain::AiFraming)
-    return storeError(error, QStringLiteral("当前平台没有可用的安全凭据存储"));
-  const auto target = credentialTarget(profileId);
+  const auto target = credentialTarget(profileId, m_domain);
   if (CredDeleteW(target.c_str(), CRED_TYPE_GENERIC, 0) ||
       GetLastError() == ERROR_NOT_FOUND)
     return true;

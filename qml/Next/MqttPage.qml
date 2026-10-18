@@ -8,6 +8,7 @@ import QtQuick.Dialogs as Dialogs
 Item {
     id: root
     required property var theme
+    signal requestConfigManagement()
     property alias controller: mqtt
     property int mode: 0
     readonly property var session: mode === 0 ? mqtt.remote : mqtt.localClient
@@ -494,7 +495,7 @@ Item {
                 RowLayout {
                     Next.GlassButton { objectName: "mqtt-new-common-subscription"; text: "新增常用"; onClicked: root.editCommonSubscription(null) }
                     Next.GlassButton { objectName: "mqtt-reload-common-subscriptions"; text: "重新加载"; onClicked: root.showResult(mqtt.reloadCommonSubscriptions()) }
-                    Next.GlassButton { text: "打开文件"; onClicked: root.showResult(mqtt.openCommonSubscriptionsFile()) }
+                    Next.GlassButton { text: "配置管理"; onClicked: root.requestConfigManagement() }
                 }
                 Next.GlassTextField { Layout.fillWidth: true; readOnly: true; text: mqtt.commonSubscriptionsPath; font.pixelSize: 10; selectByMouse: true }
                 Label { Layout.fillWidth: true; visible: text.length > 0; text: mqtt.commonSubscriptionsError || root.actionMessage; color: root.theme.warning; wrapMode: Text.Wrap; font.pixelSize: 11 }

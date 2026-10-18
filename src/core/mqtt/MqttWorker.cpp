@@ -1,5 +1,6 @@
 #include "MqttWorker.h"
 #include <QFile>
+#include "../config/CredentialAccess.h"
 #include <QHostInfo>
 #include <QUrl>
 #include <mosquitto.h>
@@ -44,6 +45,10 @@ void MqttWorker::start(quint64 generation, const QVariantMap &config) {
     stop(generation);
     m_generation = generation;
     m_config = config;
+    QString credentialError;
+    if (!CredentialAccess::loadMqtt(&m_config, &credentialError)) {
+        emit connectionChanged(generation, "error", credentialError); return;
+    }
     m_subscriptions = config.value("subscriptions").toList();
     m_cancelled = config.value("cancelledSubscriptions").toStringList();
     m_wanted = true;

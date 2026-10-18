@@ -1,5 +1,6 @@
 """Run UI/backend checks from a disposable portable app root, never the user's data."""
 import os
+import json
 import pathlib
 import shutil
 import subprocess
@@ -14,7 +15,7 @@ def main():
         if binary.parent.name == "MacOS":
             bundle = binary.parents[2]
             # Old debug bundles can contain real portable data; use only synthetic test data.
-            portable_data = {"LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log"}
+            portable_data = {"settings.json", "mqtt", "LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log"}
             shutil.copytree(bundle, runtime / bundle.name, symlinks=True,
                             ignore=lambda path, names: portable_data.intersection(names) if pathlib.Path(path) == binary.parent else set())
             executable = runtime / bundle.name / "Contents" / "MacOS" / binary.name
@@ -47,17 +48,30 @@ def main():
                 print(arguments, result.stdout, result.stderr, "\n".join(dict.fromkeys(diagnostics)), sep="\n")
                 raise SystemExit(result.returncode or 1)
 
-        run("--ui-checks")
+        original = (data_root / "LogAnalyQt.ini").read_bytes()
+        run("--migration-action", "cancel")
+        assert (data_root / "LogAnalyQt.ini").read_bytes() == original and not (data_root / "settings.json").exists(), "cancel must not write or delete configuration"
+        run("--migration-action", "confirm", "--ui-checks")
+        assert not (data_root / "LogAnalyQt.ini").exists() and (data_root / "settings.json").exists(), "only confirmed, verified migration deletes old INI"
+        conflict_home = runtime / "conflict-home"
+        conflict_data = conflict_home / "Library/Application Support/LogAnalyQt" if sys.platform == "darwin" else runtime
+        if sys.platform == "darwin":
+            conflict_data.mkdir(parents=True)
+            (conflict_data / "settings.json").write_text(json.dumps({"schemaVersion": 1, "parser": {"protocolType": 1}}))
+            (conflict_data / "LogAnalyQt.ini").write_text("[General]\nprotocolType=2\n")
+            conflict_run = subprocess.run([str(executable), "-platform", os.environ.get("QT_QPA_PLATFORM", "offscreen"), "--ui-smoke", "--migration-action", "retry-conflict"], cwd=runtime, env=dict(environment, LOGANALYQT_TEST_HOME=str(conflict_home)), capture_output=True, text=True, timeout=30)
+            assert conflict_run.returncode == 0, conflict_run.stderr
+            assert json.loads((conflict_data / "settings.json").read_text())["parser"]["protocolType"] == 2 and not (conflict_data / "LogAnalyQt.ini").exists(), "unresolved conflict must allow selection and retry through the same confirmation dialog"
         run("--mqtt-checks", "--size", "1200", "800")
         prompt_path = data_root / "prompts" / "ai_698_framing.md"
         assert prompt_path.is_file() and "DL/T 698" in prompt_path.read_text(encoding="utf-8"), "prompt not extracted to application data directory"
         prompt_path.write_text("User edited prompt survives app restart.\n", encoding="utf-8")
-        (data_root / "LogAnalyQt.ini").unlink(missing_ok=True)
-        for phase in ["write", "read", "empty", "corrupt-write", "corrupt-read", "write-failure"]:
+        (data_root / "settings.json").unlink(missing_ok=True)
+        for phase in ["write", "read", "empty", "write-failure"]:
             run("--workspace-phase", phase)
         assert prompt_path.read_text(encoding="utf-8") == "User edited prompt survives app restart.\n", "restart overwrote the user's prompt"
         if sys.platform == "darwin":
-            assert not any((runtime / name).exists() for name in ("LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log")), "Mac app generated data beside its bundle"
+            assert not any((runtime / name).exists() for name in ("settings.json", "device-state.ini", "mqtt", "LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log")), "Mac app generated data beside its bundle"
         print("PASS: platform data directories, prompt extraction and restart preservation")
         print("PASS: packaged MQTT broker, loopback publish/subscribe, V2 layout, editor controls and helper cleanup")
         print("PASS: migrated routes/parsers, 11 isolated tabs, close/add, restart restoration, empty workspace, corrupt-state backup and save-failure protection")

@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 4.1.1 LANGUAGES CXX)
+project(LogAnalyQt VERSION 4.2.0 LANGUAGES CXX)
 if(APPLE)
     enable_language(OBJCXX)
     set(CMAKE_OBJCXX_STANDARD 17)
@@ -120,6 +120,14 @@ option(LOGANALYQT_BUILD_PROTOCOL_TESTS
 
 qt_standard_project_setup(REQUIRES 6.5)
 
+qt_add_library(loganalyqt_credentials STATIC src/core/SecureCredentialStore.h src/core/SecureCredentialStore.cpp)
+target_link_libraries(loganalyqt_credentials PUBLIC Qt6::Core)
+if(APPLE)
+    target_link_libraries(loganalyqt_credentials PUBLIC "-framework Security" "-framework CoreFoundation")
+elseif(WIN32)
+    target_link_libraries(loganalyqt_credentials PUBLIC advapi32)
+endif()
+
 qt_add_library(loganalyqt_mqtt STATIC
     src/core/mqtt/MqttTypes.h src/core/mqtt/MqttTypes.cpp
     src/core/mqtt/MqttMessageModel.h src/core/mqtt/MqttMessageModel.cpp
@@ -129,7 +137,7 @@ qt_add_library(loganalyqt_mqtt STATIC
     src/core/mqtt/MqttController.h src/core/mqtt/MqttController.cpp
     ${LOGANALYQT_MQTT_BROKER_RESOURCE})
 target_include_directories(loganalyqt_mqtt PUBLIC src)
-target_link_libraries(loganalyqt_mqtt PUBLIC Qt6::Core Qt6::Gui Qt6::Network Qt6::Concurrent libmosquitto_static)
+target_link_libraries(loganalyqt_mqtt PUBLIC Qt6::Core Qt6::Gui Qt6::Network Qt6::Concurrent libmosquitto_static loganalyqt_credentials)
 target_link_libraries(loganalyqt_mqtt PRIVATE OpenSSL::SSL)
 set_target_properties(loganalyqt_mqtt PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
@@ -142,6 +150,8 @@ endif()
 
 qt_add_executable(appLogAnalyQt
     src/core/main.cpp
+    src/core/config/ConfigManager.h src/core/config/ConfigManager.cpp
+    src/core/config/ConfigMigration.h src/core/config/ConfigMigration.cpp
     src/core/LogBackend.h
     src/core/LogBackend.cpp
     src/core/ProtocolDetector.h
@@ -230,7 +240,7 @@ qt_add_executable(appLogAnalyQt
 )
 
 set(AI_FRAMING_BASE_SOURCES
-    src/core/SecureCredentialStore.h src/core/SecureCredentialStore.cpp
+    src/core/SecureCredentialStore.h
     src/core/ai/DeepSeekClient.h src/core/ai/DeepSeekClient.cpp
     src/core/ai/AiCredentialStore.h src/core/ai/AiCredentialStore.cpp
     src/core/ai/AiCredentialWorker.h src/core/ai/AiCredentialWorker.cpp
@@ -251,6 +261,7 @@ endif()
 if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     enable_testing()
     target_compile_definitions(loganalyqt_mqtt PUBLIC LOGANALYQT_UI_TESTING)
+    target_compile_definitions(loganalyqt_credentials PRIVATE LOGANALYQT_UI_TESTING)
     add_executable(mqtt_tests tests/mqtt_tests.cpp)
     target_link_libraries(mqtt_tests PRIVATE loganalyqt_mqtt OpenSSL::Crypto)
     set_target_properties(mqtt_tests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
@@ -373,6 +384,7 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
         add_executable(secure_credential_native_check EXCLUDE_FROM_ALL
             tests/secure_credential_native_check.cpp src/core/SecureCredentialStore.cpp)
         target_include_directories(secure_credential_native_check PRIVATE src)
+        target_compile_definitions(secure_credential_native_check PRIVATE LOGANALYQT_UI_TESTING)
         target_link_libraries(secure_credential_native_check PRIVATE Qt6::Core
             ${AI_SECURITY_FRAMEWORK} ${AI_CORE_FOUNDATION_FRAMEWORK})
     endif()
@@ -900,3 +912,16 @@ foreach(prompt_target IN ITEMS appLogAnalyQt ai_controller_tests protocol_sync_t
         qt_add_resources(${prompt_target} "ai_prompts" PREFIX "/" FILES prompts/ai_698_framing.md)
     endif()
 endforeach()
+
+foreach(config_consumer IN ITEMS appLogAnalyQt ai_client_tests ai_settings_tests ai_controller_tests ai_credential_native_check protocol_sync_tests)
+    if(TARGET ${config_consumer})
+        target_link_libraries(${config_consumer} PRIVATE loganalyqt_credentials)
+    endif()
+endforeach()
+if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
+    add_executable(config_tests tests/config_tests.cpp src/core/config/ConfigMigration.cpp src/core/config/ConfigManager.cpp)
+    target_include_directories(config_tests PRIVATE src)
+    target_link_libraries(config_tests PRIVATE loganalyqt_mqtt Qt6::Xml)
+    set_target_properties(config_tests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME config_tests COMMAND config_tests)
+endif()

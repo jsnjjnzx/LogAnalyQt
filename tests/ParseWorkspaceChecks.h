@@ -85,15 +85,8 @@ inline QString checkParseWorkspace(QQuickWindow *window, const QString &phase) {
       require(QMetaObject::invokeMethod(item("sessionProtocol"), "activated", Q_ARG(int, 3)), "new tab selector unavailable");
       require(item("session-pane-4")->property("protocolIndex").toInt() == 3, "toolbar did not reconnect after adding to empty workspace");
       closeTab(0);
-    } else if (phase == "corrupt-write") {
-      require(backend->setUiSetting(key, "{broken-json"), "corrupt fixture write failed");
-      return {};
-    } else if (phase == "corrupt-read") {
-      require(tabs->property("count").toInt() == 5, "corrupt state did not recover to five tabs");
-      require(backend->getUiSetting("next/multiParse/recovery").toString() == "{broken-json", "corrupt data was not backed up");
-      require(!window->property("parseWorkspaceError").toString().isEmpty(), "corrupt state recovery was silent");
     } else if (phase == "write-failure") {
-      const QString path = QDir(AppPaths::writableDataRoot()).filePath("LogAnalyQt.ini");
+      const QString path = QDir(AppPaths::writableDataRoot()).filePath("settings.json");
       QFile::remove(path);
       require(QDir().mkdir(path), "cannot create unwritable settings fixture");
       window->setProperty("installingUpdate", true);

@@ -138,3 +138,17 @@ __pycache__/
 /validation/**/*.jpg
 /validation/**/*.jpeg
 /validation/**/*.txt
+
+# Unified personal configuration and local migration/restore state
+/settings.json
+/settings.json.*
+/device-state.ini
+/security_state.ini
+/ssh-known-hosts.json
+/migration-state.json
+/restore-state.json
+/restore-pending.json
+/import-pending.json
+/migration-backups/
+/restore-backups/
+/validation/personal-config/protected-config-inventory.json

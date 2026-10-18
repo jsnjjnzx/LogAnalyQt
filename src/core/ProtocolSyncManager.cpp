@@ -1,4 +1,6 @@
 #include "ProtocolSyncManager.h"
+#include "config/PresetCodec.h"
+#include "config/CredentialAccess.h"
 #include "ai/AiPromptFile.h"
 #include "../common/AppPaths.h"
 #include "csg_upstream/CsgUpstreamConfigManager.h"
@@ -101,7 +103,7 @@ ProtocolSyncManager::ProtocolSyncManager(const Dependencies &dependencies, QObje
   if (!m_dependencies.mounts) m_dependencies.mounts = SmbShare::mountedShares;
   if (!m_dependencies.openShare) m_dependencies.openShare = [](const QUrl &url) { return QDesktopServices::openUrl(url); };
   if (m_dependencies.promptFiles) {
-    QSettings settings(m_dependencies.settingsFile, QSettings::IniFormat);
+    JsonSettings settings(m_dependencies.settingsFile);
     QString protocolPath = settings.value("protocolSync/sharePath", m_sharePath).toString();
     while (protocolPath.endsWith('/') || protocolPath.endsWith('\\')) protocolPath.chop(1);
     const int separator = qMax(protocolPath.lastIndexOf('/'), protocolPath.lastIndexOf('\\'));
@@ -393,6 +395,14 @@ bool ProtocolSyncManager::fetchSyncStatusNow() {
       readVersionInfo(remotePath, &item.remoteVersion, &item.remoteDate);
     }
 
+    if (!m_dependencies.promptFiles && fileName == "preset_messages.xml") {
+      for (const auto &pair : {qMakePair(localPath, &item.localDigest), qMakePair(remotePath, &item.remoteDigest)}) {
+        QFile file(pair.first);
+        if (!file.exists()) continue;
+        if (!file.open(QIODevice::ReadOnly) || file.size() > ConfigJson::MaxBytes) { setLastError(QStringLiteral("预置报文交换文件读取失败")); return false; }
+        *pair.second = QCryptographicHash::hash(file.readAll(), QCryptographicHash::Sha256);
+      }
+    }
     if (m_dependencies.promptFiles) {
       item.localVersion = item.localTime.toString("HH:mm:ss");
       item.localDate = item.localTime.toString("yyyy-MM-dd");
@@ -566,59 +576,45 @@ QString ProtocolSyncManager::legacyCredentialProfile(const QString &settingsFile
 }
 
 void ProtocolSyncManager::saveCredentials() {
-  QSettings settings(m_dependencies.settingsFile, QSettings::IniFormat);
+  JsonSettings settings(m_dependencies.settingsFile);
   const QString prefix = m_dependencies.promptFiles ? "promptSync/" : "protocolSync/";
   settings.setValue(prefix + "sharePath", m_sharePath);
-#ifndef Q_OS_MACOS
   settings.setValue(prefix + "username", m_username);
-  settings.setValue(prefix + "password", m_password);
+#ifndef Q_OS_MACOS
+  if (!m_password.isEmpty()) {
+    const auto profile = CredentialAccess::profile((m_sharePath + "\n" + m_username).toUtf8());
+    const auto payload = QJsonDocument(QJsonObject{{"username", m_username}, {"password", m_password}}).toJson(QJsonDocument::Compact);
+    QString error;
+    const auto credentials = m_dependencies.credentials;
+    if (!CredentialAccess::run([credentials, profile, payload](QString *e) { return credentials->writeVerified(profile, payload, e); }, &error)) { setLastError(error); return; }
+    settings.setValue(prefix + "credentialProfile", profile);
+  }
 #endif
   settings.sync();
   if (settings.status() != QSettings::NoError) setLastError(QStringLiteral("便携配置目录无法写入，SMB 地址未保存"));
 }
 
 void ProtocolSyncManager::loadCredentials() {
-  if (m_credentialBusy) return;
-  QSettings settings(m_dependencies.settingsFile, QSettings::IniFormat);
+  JsonSettings settings(m_dependencies.settingsFile);
   const QString prefix = m_dependencies.promptFiles ? "promptSync/" : "protocolSync/";
-  const QString pathKey = prefix + "sharePath";
-  if (settings.contains(pathKey)) m_sharePath = settings.value(pathKey).toString();
-#ifdef Q_OS_MACOS
-  const QString username = settings.value(prefix + "username").toString();
-  const QString password = settings.value(prefix + "password").toString();
-  if (password.isEmpty()) return;
-  const QByteArray payload = QJsonDocument(QJsonObject{{"username", username}, {"password", password}}).toJson(QJsonDocument::Compact);
-  const QString source = m_dependencies.settingsFile;
-  const QString profile = legacyCredentialProfile(source, m_dependencies.promptFiles);
-  const auto store = m_dependencies.credentials;
-  const auto error = std::make_shared<QString>();
-  const auto success = std::make_shared<bool>(false);
-  m_credentialBusy = true; m_credentialError.clear(); emit credentialStateChanged();
-  auto *thread = QThread::create([store, profile, payload, error, success] {
-    QByteArray existing;
-    if (!store->read(profile, &existing, error.get())) return;
-    if (!existing.isEmpty() && existing != payload) { *error = QStringLiteral("旧 SMB 凭据保全冲突，明文尚未迁移"); return; }
-    *success = store->writeVerified(profile, payload, error.get());
-  });
-  connect(thread, &QThread::finished, this, [this, source, prefix, username, password, error, success] {
-    m_credentialBusy = false;
-    m_credentialError = *error;
-    if (*success) {
-      QSettings current(source, QSettings::IniFormat);
-      if (current.value(prefix + "username").toString() == username &&
-          current.value(prefix + "password").toString() == password) {
-        current.remove(prefix + "password"); current.sync();
-        if (current.status() != QSettings::NoError) m_credentialError = QStringLiteral("旧 SMB 凭据已安全保全，但无法清除 INI 明文");
-      } else m_credentialError = QStringLiteral("迁移期间 INI 凭据发生变化，已保留原配置");
+  if (settings.contains(prefix + "sharePath")) m_sharePath = settings.value(prefix + "sharePath").toString();
+  m_username = settings.value(prefix + "username").toString();
+  const QString profile = settings.value(prefix + "credentialProfile").toString();
+  if (profile.isEmpty()) return;
+  m_credentialBusy = true; emit credentialStateChanged();
+  auto bytes = std::make_shared<QByteArray>();
+  auto error = std::make_shared<QString>();
+  auto store = m_dependencies.credentials;
+  auto *thread = QThread::create([store, profile, bytes, error] { store->read(profile, bytes.get(), error.get()); });
+  connect(thread, &QThread::finished, this, [this, bytes, error] {
+    m_credentialBusy = false; m_credentialError = *error;
+    if (error->isEmpty() && !bytes->isEmpty()) {
+      const auto record = QJsonDocument::fromJson(*bytes).object();
+      m_username = record.value("username").toString(); m_password = record.value("password").toString();
     }
-    emit credentialStateChanged();
+    bytes->fill(0); bytes->clear(); emit credentialStateChanged();
   });
-  connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-  thread->start();
-#else
-  setUsername(settings.value(prefix + "username").toString());
-  setPassword(settings.value(prefix + "password").toString());
-#endif
+  connect(thread, &QThread::finished, thread, &QObject::deleteLater); thread->start();
 }
 
 void ProtocolSyncManager::cancelConnection() {
@@ -685,8 +681,9 @@ void ProtocolSyncManager::startOperation(const QString &kind, const QString &fil
   const auto mounts = m_dependencies.mounts;
   const auto items = m_statusModel->items();
   const bool promptFiles = m_dependencies.promptFiles;
+  const QString configFile = m_dependencies.settingsFile;
   m_busy = true; setLastError({}); emit busyChanged();
-  auto *thread = QThread::create([result, cancelled, remote, shareUrl, mounts, items, kind, fileName, promptFiles] {
+  auto *thread = QThread::create([result, cancelled, remote, shareUrl, mounts, items, kind, fileName, promptFiles, configFile] {
     QString currentRemote = remote;
 #ifdef Q_OS_MACOS
     SmbShare::Target target;
@@ -697,6 +694,7 @@ void ProtocolSyncManager::startOperation(const QString &kind, const QString &fil
 #endif
     ProtocolSyncManager worker(WorkerTag{});
     worker.m_dependencies.promptFiles = promptFiles;
+    worker.m_dependencies.settingsFile = configFile;
     worker.m_sharePath = currentRemote; worker.m_resolvedSharePath = currentRemote;
     worker.m_operationCancelled = cancelled;
     worker.m_statusModel->setItems(items);
@@ -712,6 +710,7 @@ void ProtocolSyncManager::startOperation(const QString &kind, const QString &fil
       if (QFileInfo(worker.filePath(currentRemote, fileName)).isSymbolicLink()) {
         result->error = QStringLiteral("拒绝比较网盘协议符号链接"); return;
       }
+      if (!worker.ensureLocalDir()) { result->error = worker.lastError(); return; }
       result->diff = worker.getXmlDiffNow(fileName, &result->error);
       result->success = result->error.isEmpty();
       if (!result->success) return;
@@ -752,6 +751,11 @@ QString ProtocolSyncManager::normalizePath(const QString &path) const {
 
 QString ProtocolSyncManager::filePath(const QString &base,
                                       const QString &fileName) const {
+  if (base == localDir() && !m_dependencies.promptFiles && fileName == "preset_messages.xml") {
+    const auto directory = QFileInfo(m_dependencies.settingsFile).dir().filePath("cache/preset-exchange");
+    QDir().mkpath(directory);
+    return QDir(directory).filePath(fileName);
+  }
   QDir dir(base);
   return dir.filePath(fileName);
 }
@@ -783,6 +787,19 @@ QStringList ProtocolSyncManager::protocolFiles() const {
 }
 
 bool ProtocolSyncManager::ensureLocalDir() {
+  if (!m_dependencies.promptFiles) {
+    QJsonObject root; QString error;
+    if (!ConfigJson::read(m_dependencies.settingsFile, &root, &error)) { setLastError(error); return false; }
+    const auto path = filePath(localDir(), "preset_messages.xml");
+    const auto data = PresetCodec::encode(root.value("messages").toObject());
+    QFile previous(path);
+    const bool unchanged = previous.open(QIODevice::ReadOnly) && previous.readAll() == data;
+    previous.close();
+    if (!unchanged) {
+      QSaveFile output(path);
+      if (!output.open(QIODevice::WriteOnly) || output.write(data) != data.size() || !output.commit()) { setLastError(QStringLiteral("无法生成预置报文交换视图")); return false; }
+    }
+  }
   QDir dir(localDir());
   if (dir.exists())
     return true;
@@ -943,6 +960,7 @@ bool ProtocolSyncManager::promptSnapshotUnchanged(const SyncStatusItem &item, QS
 
 bool ProtocolSyncManager::uploadFile(const SyncStatusItem &item,
                                      QString *errorMessage) {
+  if (!ensureLocalDir()) { if (errorMessage) *errorMessage = m_lastError; return false; }
   const QString localPath = filePath(localDir(), item.fileName);
   const QString remoteBase = remoteDir();
   const QString remotePath = filePath(remoteBase, item.fileName);
@@ -998,6 +1016,13 @@ bool ProtocolSyncManager::uploadFile(const SyncStatusItem &item,
     if (QCryptographicHash::hash(data, QCryptographicHash::Sha256) != item.localDigest) {
       if (errorMessage) *errorMessage = QStringLiteral("本地提示词读取期间发生变化，请刷新后重试");
       return false;
+    }
+  }
+  if (!m_dependencies.promptFiles && item.fileName == "preset_messages.xml") {
+    QFile remote(remotePath);
+    if (QCryptographicHash::hash(data, QCryptographicHash::Sha256) != item.localDigest || remote.exists() != item.remoteExists ||
+        (item.remoteExists && (!remote.open(QIODevice::ReadOnly) || QCryptographicHash::hash(remote.readAll(), QCryptographicHash::Sha256) != item.remoteDigest))) {
+      if (errorMessage) *errorMessage = QStringLiteral("预置报文在状态检查后已变化，请刷新后重试"); return false;
     }
   }
   QSaveFile destination(remotePath);
@@ -1092,6 +1117,18 @@ bool ProtocolSyncManager::downloadFile(const SyncStatusItem &item,
   if (validatedFile.error() != QFile::NoError) {
     if (errorMessage) *errorMessage = QStringLiteral("读取已校验的临时文件失败，原配置已保留");
     return false;
+  }
+  if (!m_dependencies.promptFiles && item.fileName == "preset_messages.xml") {
+    QJsonObject messages;
+    if (!PresetCodec::decode(validatedData, &messages, errorMessage)) return false;
+    if (m_operationCancelled && m_operationCancelled->load()) return false;
+    if (QCryptographicHash::hash(validatedData, QCryptographicHash::Sha256) != item.remoteDigest) { if (errorMessage) *errorMessage = QStringLiteral("共享预置报文已变化，请刷新"); return false; }
+    if (!ConfigJson::update(m_dependencies.settingsFile, [&](QJsonObject &root, QString *error) {
+      const auto current = PresetCodec::encode(root.value("messages").toObject());
+      if (QCryptographicHash::hash(current, QCryptographicHash::Sha256) != item.localDigest) return ConfigJson::fail(error, QStringLiteral("本地预置报文已变化，未覆盖新编辑"));
+      root.insert("messages", messages); return true;
+    }, errorMessage)) return false;
+    emit protocolFileDownloaded(item.fileName); return true;
   }
   QSaveFile destination(localPath);
   destination.setDirectWriteFallback(false);

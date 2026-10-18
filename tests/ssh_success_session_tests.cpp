@@ -131,7 +131,7 @@ int main(int argc,char **argv) {
       check(cancelTime.elapsed()<100, "cancel returns to main loop without waiting for remote SSH banner");settle(400);
       check(!stalled.isConnected() && !stalled.hostKeyPending(), "cancelled stalled handshake cannot later connect");
     }
-    QFile config(directory.filePath("LogAnalyQt.ini"));
+    QFile config(directory.filePath("settings.json"));
     if(config.open(QIODevice::ReadOnly))check(!config.readAll().contains("synthetic-loopback-password"), "synthetic password not written to portable INI");
     QTextStream(stdout)<<"SSH loopback success checks: "<<checks<<", failures: 0; authenticated sessions: "<<connectedCount<<"\n";
     return 0;

@@ -9,7 +9,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QVariantList>
-#include <QSettings>
+#include "../common/JsonSettings.h"
 #include <memory>
 #include <atomic>
 #include "SecureCredentialStore.h"
@@ -110,7 +110,7 @@ public:
 
   QString password() const;
   bool usesSecureCredentials() const {
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     return true;
 #else
     return false;
@@ -209,7 +209,7 @@ private slots:
   void triggerReconnect();
 
 private:
-  QSettings settings() const;
+  JsonSettings settings() const;
   void refreshCredentials();
   void dispatchCredentialRefresh();
   void identityChanged();

@@ -113,7 +113,7 @@ Next.GlassDialog {
         }
         Label { textFormat: Text.PlainText;
             Layout.fillWidth: true
-            text: controller.remote.active ? "请先断开终端 Broker，再保存参数。" : "用户名和密码随连接配置保存在本机文件中。"
+            text: controller.remote.active ? "请先断开终端 Broker，再保存参数。" : "连接参数保存在 JSON，密码保存在系统凭据存储；同一连接留空保留已保存密码。"
             color: dialog.theme.subText
             font.pixelSize: 11
             wrapMode: Text.Wrap

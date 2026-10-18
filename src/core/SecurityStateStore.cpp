@@ -350,7 +350,7 @@ SecurityStateReadResult SecurityStateStore::readState(
   result.detail = QStringLiteral("当前平台不支持 Windows 密封状态校验。");
   return result;
 #else
-  auto primarySettings = appSettings();
+  auto primarySettings = deviceStateSettings();
   const SecurityStoreRecord primaryRecord = readRecord(primarySettings);
 
   const QString secondaryPath = secondaryStorePath();
@@ -488,7 +488,7 @@ bool SecurityStateStore::persistVerifiedState(const QDateTime &verifiedUtc,
   if (sealedBytes.isEmpty())
     return false;
 
-  auto primarySettings = appSettings();
+  auto primarySettings = deviceStateSettings();
   if (!writeRecord(primarySettings, sealedBytes, error)) {
     if (error)
       *error = QStringLiteral("主记录写入失败：%1").arg(*error);

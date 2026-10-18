@@ -86,10 +86,13 @@ inline bool initialize(QString *error) {
 #ifdef Q_OS_MACOS
   try {
     const auto path = [](const QString &value) { return std::filesystem::path(value.toStdString()); };
-    MacDataMigration::initialize(
-        {path(portableDataRootForApplicationDir(QCoreApplication::applicationDirPath())),
-         path(QCoreApplication::applicationDirPath())},
-        path(writableDataRoot()), path(logDirectory()));
+    std::vector<std::filesystem::path> legacy;
+    const auto installation = portableDataRootForApplicationDir(QCoreApplication::applicationDirPath());
+    // Development builds never import configuration or resources from their build tree.
+    if (installation == QStringLiteral("/Applications")) {
+      legacy = {path(installation), path(QCoreApplication::applicationDirPath())};
+    }
+    MacDataMigration::initialize(legacy, path(writableDataRoot()), path(logDirectory()), true);
   } catch (const std::exception &failure) {
     if (error) *error = QString::fromUtf8(failure.what());
     return false;

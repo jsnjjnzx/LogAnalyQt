@@ -1,4 +1,5 @@
 #include "core/mqtt/MqttController.h"
+#include "common/JsonSettings.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -20,6 +21,15 @@
 #include <openssl/x509v3.h>
 
 namespace {
+class TestCredentials : public SecureCredentialStore {
+public:
+  TestCredentials() : SecureCredentialStore(Domain::Mqtt) {}
+  mutable QMap<QString, QByteArray> values;
+  bool read(const QString &id, QByteArray *out, QString *) const override { *out = values.value(id); return true; }
+  bool write(const QString &id, const QByteArray &bytes, QString *) override { values[id] = bytes; return true; }
+  bool remove(const QString &id, QString *) override { values.remove(id); return true; }
+};
+std::shared_ptr<SecureCredentialStore> testCredentials() { return std::make_shared<TestCredentials>(); }
 void require(bool ok, const char *message) {
     if (!ok) throw std::runtime_error(message);
 }
@@ -95,8 +105,9 @@ void formatsAndModel() {
 void settings(const QString &helper) {
     QTemporaryDir directory;
     QString id;
+    auto credentials = std::make_shared<TestCredentials>();
     {
-        MqttController controller(directory.path(), nullptr, helper);
+        MqttController controller(directory.path(), nullptr, helper, credentials);
         auto config = controller.remote()->configuration();
         id = config.value("id").toString();
         config["username"] = "internal_test_user";
@@ -113,13 +124,13 @@ void settings(const QString &helper) {
         controller.setSplitRatio(0.62);
         require(controller.saveNow().value("ok").toBool(), "save workspace");
         QFile file(controller.configPath());
-        require(file.open(QIODevice::ReadOnly) && file.readAll().contains("plain_test_password"), "user-authorized plaintext password storage");
+        require(file.open(QIODevice::ReadOnly) && !file.readAll().contains("plain_test_password"), "password is excluded from unified JSON");
     }
     {
-        MqttController controller(directory.path(), nullptr, helper);
+        MqttController controller(directory.path(), nullptr, helper, credentials);
         require(controller.storageError().isEmpty(), "restore settings without errors");
         require(controller.currentProfileId() == id, "profile identity persisted");
-        require(controller.remote()->configuration().value("password").toString() == "plain_test_password", "restore plaintext password");
+        require(controller.remote()->configuration().value("password").toString().isEmpty() && !credentials->values.isEmpty(), "restored profile references a separately saved password");
         require(controller.remote()->draft().value("payload").toString() == "unfinished {", "unfinished draft survives restart");
         require(controller.remote()->subscriptions().size() == 1 && qAbs(controller.splitRatio() - 0.62) < 0.001, "subscription and layout persist");
         require(controller.remote()->subscriptions().first().toMap().value("color").toString() == "#aabbcc"
@@ -128,10 +139,10 @@ void settings(const QString &helper) {
         require(controller.copyConnection(id).value("ok").toBool() && controller.profiles().size() == 2 && controller.currentProfileId() != id, "duplicate uses a distinct profile/client ID");
         require(controller.selectConnection(id).value("ok").toBool(), "select saved profile");
     }
-    const auto path = directory.filePath("mqtt/connections.json");
+    const auto path = directory.filePath("settings.json");
     { QFile file(path); require(file.open(QIODevice::WriteOnly), "open corrupt fixture"); file.write("broken-config"); }
     {
-        MqttController controller(directory.path(), nullptr, helper);
+        MqttController controller(directory.path(), nullptr, helper, credentials);
         require(!controller.storageError().isEmpty(), "corrupt config is reported");
         require(!controller.saveNow().value("ok").toBool(), "corrupt config is not silently overwritten");
     }
@@ -158,7 +169,7 @@ void subscriptionDisplay(const QString &helper) {
     require(!filter.acceptsMessage(sample) && filter.topicColor(sample.topic).isEmpty(), "MQTT system topics respect wildcard rules");
 
     QTemporaryDir directory;
-    MqttController controller(directory.path(), nullptr, helper);
+    MqttController controller(directory.path(), nullptr, helper, testCredentials());
     auto broker = Mqtt::brokerDefaults(); broker["host"] = "127.0.0.1"; broker["port"] = freePort();
     require(controller.saveBroker(broker).value("ok").toBool() && controller.broker()->start().value("ok").toBool(), "start topic display fixture");
     require(waitFor([&] { return controller.localClient()->connected(); }), "topic display publisher ready");
@@ -209,7 +220,7 @@ void commonSubscriptions(const QString &helper) {
     auto write = [](const QString &fileName, const QByteArray &bytes) { QFile file(fileName); require(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(), "write common fixture"); };
     const QString topic = QStringLiteral("设备/+/状态");
     {
-        MqttController controller(directory.path(), nullptr, helper);
+        MqttController controller(directory.path(), nullptr, helper, testCredentials());
         path = controller.commonSubscriptionsPath();
         require(controller.commonSubscriptions().isEmpty(), "new installation starts with no common subscriptions");
         require(controller.remote()->saveSubscription(topic, 1, true, {}, "#60a5fa").value("ok").toBool(), "new subscription is saved");
@@ -235,13 +246,15 @@ void commonSubscriptions(const QString &helper) {
         // No explicit saveNow: normal shutdown must also persist connection subscriptions.
     }
     {
-        MqttController controller(directory.path(), nullptr, helper);
+        MqttController controller(directory.path(), nullptr, helper, testCredentials());
         require(controller.commonSubscriptions().size() == 1 && controller.commonSubscriptionsError().isEmpty(), "common list survives restart");
         require(controller.remote()->subscriptions().size() == 1 && controller.remote()->subscriptions().first().toMap().value("qos").toInt() == 2, "connection subscriptions survive shutdown without manual saving");
         const QJsonObject manual{{"topic", "manual/#"}, {"qos", 2}, {"color", "#22d3ee"}};
         QJsonArray entries = QJsonArray::fromVariantList(controller.commonSubscriptions());
         entries.append(manual); entries.append(manual);
-        auto valid = QJsonDocument(QJsonObject{{"schema", 1}, {"subscriptions", entries}}).toJson();
+        auto root = QJsonDocument::fromJson(read(path)).object();
+        auto mqtt = root.value("mqtt").toObject(); mqtt.insert("commonSubscriptions", entries); root.insert("mqtt", mqtt);
+        auto valid = QJsonDocument(root).toJson();
         write(path, valid);
         require(controller.reloadCommonSubscriptions().value("ok").toBool() && controller.commonSubscriptions().size() == 2, "manual file edits reload and duplicate topics are collapsed");
         write(path, "not valid JSON");
@@ -253,7 +266,7 @@ void commonSubscriptions(const QString &helper) {
         QLockFile lock(path + ".lock"); require(lock.tryLock(), "lock common fixture");
         require(!controller.saveCommonSubscription({{"topic", "locked/#"}}).value("ok").toBool() && read(path) == valid, "concurrent lock preserves file");
         lock.unlock();
-        MqttController other(directory.path(), nullptr, helper);
+        MqttController other(directory.path(), nullptr, helper, testCredentials());
         require(controller.saveCommonSubscription({{"topic", "first/#"}}).value("ok").toBool(), "first instance adds common topic");
         require(other.saveCommonSubscription({{"topic", "second/#"}}).value("ok").toBool(), "stale instance adds another topic");
         controller.reloadCommonSubscriptions();
@@ -262,23 +275,17 @@ void commonSubscriptions(const QString &helper) {
         require(!controller.saveCommonSubscription({{"topic", "bad/#/topic"}}).value("ok").toBool() && read(path) == before, "invalid common topic never changes saved data");
         require(!controller.saveCommonSubscription({{"topic", "second/#"}}, "first/#").value("ok").toBool() && read(path) == before, "rename cannot overwrite another common subscription");
     }
-    require(QFile::remove(path), "remove own library fixture to emulate upgrade from older configuration");
+    require(ConfigJson::update(path, [](QJsonObject &root, QString *) { auto mqtt = root.value("mqtt").toObject(); mqtt.remove("commonSubscriptions"); root.insert("mqtt", mqtt); return true; }), "remove common group fixture");
     {
-        MqttController controller(directory.path(), nullptr, helper);
-        bool found = false;
-        for (const auto &entry : controller.commonSubscriptions()) found |= entry.toMap().value("topic").toString() == topic;
-        require(found, "first run imports existing saved connection subscriptions");
-        controller.removeCommonSubscription(topic);
-    }
-    {
-        MqttController controller(directory.path(), nullptr, helper);
-        for (const auto &entry : controller.commonSubscriptions()) require(entry.toMap().value("topic").toString() != topic, "deleted common item must not be imported again on restart");
+        MqttController controller(directory.path(), nullptr, helper, testCredentials());
+        require(controller.commonSubscriptions().isEmpty(), "missing library is not guessed from connection subscriptions");
+        require(!controller.remote()->subscriptions().isEmpty(), "connection subscriptions remain independent");
     }
 }
 
 void integration(const QString &helper) {
     QTemporaryDir directory;
-    MqttController controller(directory.path(), nullptr, helper);
+    MqttController controller(directory.path(), nullptr, helper, testCredentials());
     const int port = freePort();
     auto broker = Mqtt::brokerDefaults();
     broker["host"] = "127.0.0.1"; broker["port"] = port;
@@ -430,7 +437,7 @@ void integration(const QString &helper) {
 
 void authentication(const QString &helper) {
     QTemporaryDir directory;
-    MqttController controller(directory.path(), nullptr, helper);
+    MqttController controller(directory.path(), nullptr, helper, testCredentials());
     auto broker = Mqtt::brokerDefaults();
     broker["host"] = "127.0.0.1"; broker["port"] = freePort();
     broker["anonymous"] = false; broker["username"] = "debug"; broker["password"] = "test-password";
@@ -495,7 +502,7 @@ void tlsConnections(const QString &helper) {
     const auto certificate = makeCertificate(path, "server");
     const auto wrongCertificate = makeCertificate(path, "unrelated");
     const auto encryptedCertificate = makeCertificate(path, "encrypted", true);
-    MqttController controller(path, nullptr, helper);
+    MqttController controller(path, nullptr, helper, testCredentials());
     auto broker = Mqtt::brokerDefaults();
     broker["host"] = "127.0.0.1"; broker["port"] = freePort(); broker["tls"] = true;
     broker["certFile"] = certificate.first; broker["keyFile"] = certificate.second; broker["caFile"] = certificate.first;
@@ -620,7 +627,7 @@ int main(int argc, char **argv) {
         formatsAndModel();
         QTextStream(stdout) << "PASS formats, validation and bounded cache\n";
         settings(QString::fromLocal8Bit(argv[1]));
-        QTextStream(stdout) << "PASS plaintext settings, restart and corrupt-file preservation\n";
+        QTextStream(stdout) << "PASS credential references, restart and corrupt-file preservation\n";
         subscriptionDisplay(QString::fromLocal8Bit(argv[1]));
         QTextStream(stdout) << "PASS subscription colors, overlap, display-only selection, hidden reception and history restoration\n";
         commonSubscriptions(QString::fromLocal8Bit(argv[1]));

@@ -7,6 +7,7 @@ Item {
     id: root
     required property var theme
     property var backend: null
+    property var flushPersonalConfig: null
     property var controller: backend && backend.aiFraming ? backend.aiFraming : null
     property int section: 0
     property string notice: ""
@@ -134,6 +135,7 @@ Item {
                 anchors.fill: parent; anchors.margins: 10; spacing: 10
                 SectionButton { objectName: "settings-appearance-tab"; text: "外观与快捷键"; selected: root.section === 0; onClicked: root.section = 0 }
                 SectionButton { objectName: "settings-model-tab"; text: "大模型接入"; selected: root.section === 1; onClicked: root.section = 1 }
+                SectionButton { objectName: "settings-personal-tab"; text: "个人配置"; selected: root.section === 2; onClicked: root.section = 2 }
                 Item { Layout.fillHeight: true }
             }
         }
@@ -174,6 +176,7 @@ Item {
                             }
                         }
                     }
+                    Next.PersonalConfigPage { visible: root.section === 2; theme: root.theme; flushAction: root.flushPersonalConfig }
                     ColumnLayout {
                         visible: root.section === 1
                         Layout.fillWidth: true; spacing: 14

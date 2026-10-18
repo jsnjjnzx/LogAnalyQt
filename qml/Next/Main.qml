@@ -229,6 +229,13 @@ ApplicationWindow {
         onTriggered: saveWindowGeometry()
     }
 
+    function flushPersonalConfig() {
+        saveWindowGeometry()
+        if (!saveParseWorkspace()) return false
+        if (!mqttPage.saveDraft()) return false
+        var reply = mqttPage.controller.saveNow()
+        return reply && reply.ok
+    }
     function saveWindowGeometry() {
         saveMainUiSetting("next/window/x", mainWindow.x);
         saveMainUiSetting("next/window/y", mainWindow.y);
@@ -1437,6 +1444,7 @@ ApplicationWindow {
     }
     Next.MqttPage {
         id: mqttPage
+        onRequestConfigManagement: { mainWindow.navigate(9); systemSettingsPage.section = 2 }
         objectName: "page-15"
         parent: pageDeck; anchors.fill: parent
         visible: mainWindow.currentPage === 15
@@ -3494,6 +3502,7 @@ ApplicationWindow {
 
     Next.SystemSettingsPage {
         id: systemSettingsPage
+        flushPersonalConfig: function() { return mainWindow.flushPersonalConfig() }
         objectName: "page-9"
         parent: pageDeck; anchors.fill: parent
         theme: mainWindow.uiTheme

@@ -1,5 +1,7 @@
 #include "MqttController.h"
 #include "common/AppPaths.h"
+#include "common/JsonSettings.h"
+#include "../config/CredentialAccess.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QDesktopServices>
@@ -11,38 +13,21 @@
 #include <QSaveFile>
 #include <QUuid>
 #include <cmath>
+#include <QScopedValueRollback>
 
 MqttController::MqttController(QObject *parent)
     : MqttController(AppPaths::writableDataRoot(), parent) {}
 
-MqttController::MqttController(const QString &dataRoot, QObject *parent, const QString &helperOverride)
+MqttController::MqttController(const QString &dataRoot, QObject *parent, const QString &helperOverride, std::shared_ptr<SecureCredentialStore> credentials)
     : QObject(parent), m_remote(this), m_local(this), m_broker(dataRoot, this, helperOverride),
-      m_configPath(QDir(dataRoot).filePath("mqtt/connections.json")),
-      m_commonPath(QDir(dataRoot).filePath("mqtt/common-subscriptions.json")) {
+      m_configPath(QDir(dataRoot).filePath("settings.json")),
+      m_commonPath(QDir(dataRoot).filePath("settings.json")) {
+    m_credentials = credentials ? std::move(credentials) : std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Mqtt);
     m_saveTimer.setInterval(500);
     m_saveTimer.setSingleShot(true);
     connect(&m_saveTimer, &QTimer::timeout, this, [this] { saveNow(); });
     load();
     reloadCommonSubscriptions();
-    if (!QFile::exists(m_commonPath) && QFile::exists(m_configPath) && !m_badFile) {
-        changeCommonSubscriptions([this](QVariantList &subscriptions) {
-            QSet<QString> topics;
-            for (const auto &entry : subscriptions) topics.insert(entry.toMap().value("topic").toString());
-            auto profiles = m_profiles;
-            profiles.append(m_local.configuration());
-            for (const auto &profile : profiles) {
-                for (const auto &entry : profile.toMap().value("subscriptions").toList()) {
-                    const auto saved = entry.toMap();
-                    const auto topic = saved.value("topic").toString();
-                    if (topics.contains(topic)) continue;
-                    QVariantMap item{{"topic", topic}, {"qos", saved.value("qos", 0)},
-                        {"color", saved.value("color", Mqtt::defaultSubscriptionColor(subscriptions.size()))}};
-                    subscriptions.append(item); topics.insert(topic);
-                }
-            }
-            return QString();
-        });
-    }
     m_loading = false;
     connect(&m_remote, &MqttSession::subscriptionSaved, this, &MqttController::rememberCommonSubscription);
     connect(&m_local, &MqttSession::subscriptionSaved, this, &MqttController::rememberCommonSubscription);
@@ -122,20 +107,15 @@ void MqttController::load() {
     local.insert("subscriptions", QVariantList{QVariantMap{{"topic", "#"}, {"qos", 0}, {"enabled", true}}});
     m_remote.configure(initial);
     m_local.configure(local);
-    QFile file(m_configPath);
-    if (!file.exists()) return;
     auto invalid = [this](const QString &error) {
-        m_badFile = true;
-        m_storageError = QStringLiteral("原 MQTT 配置已保留，未自动覆盖：") + error;
+        m_badFile = true; m_storageError = QStringLiteral("原配置已保留：") + error;
     };
-    if (!file.open(QIODevice::ReadOnly)) { invalid(file.errorString()); return; }
-    if (file.size() > Mqtt::MaxConfigBytes) { invalid(QStringLiteral("配置文件超过 8 MiB")); return; }
-    QJsonParseError parseError;
-    const auto doc = QJsonDocument::fromJson(file.readAll(), &parseError);
-    if (parseError.error != QJsonParseError::NoError || !doc.isObject() || doc.object().value("schema").toInt() != 1) {
-        invalid(QStringLiteral("文件格式或版本无效")); return;
-    }
-    const auto json = doc.object();
+    QJsonObject root; QString error;
+    if (!ConfigJson::read(m_configPath, &root, &error)) { invalid(error); return; }
+    m_workspaceSnapshot = root.value("mqtt").toObject(); m_workspaceSnapshot.remove("commonSubscriptions");
+    if (!root.contains("mqtt") || !root.value("mqtt").toObject().contains("connections")) return;
+    const auto json = root.value("mqtt").toObject();
+    m_workspaceSnapshot = json; m_workspaceSnapshot.remove("commonSubscriptions");
     const auto profiles = json.value("connections").toArray();
     if (profiles.isEmpty() || profiles.size() > 64) { invalid(QStringLiteral("连接列表无效")); return; }
     QVariantList restored;
@@ -166,7 +146,7 @@ void MqttController::load() {
     m_remote.configure(config);
     m_local.configure(local);
     m_broker.configure(broker);
-    const auto ratio = json.value("splitRatio").toDouble(0.56);
+    const auto ratio = json.value("layout").toObject().value("splitRatio").toDouble(0.56);
     m_splitRatio = std::isfinite(ratio) ? qBound(0.3, ratio, 0.7) : 0.56;
 }
 
@@ -204,15 +184,29 @@ QVariantMap MqttController::storageResult(const QString &error) {
 QVariantMap MqttController::saveNow() {
     m_saveTimer.stop();
     if (m_badFile) return storageResult(QStringLiteral("现有 MQTT 配置无法读取。请先移走或修复配置文件，再重启软件；当前未覆盖原文件。"));
-    const QJsonObject json{{"schema", 1}, {"connections", QJsonArray::fromVariantList(m_profiles)},
-        {"selectedConnectionId", currentProfileId()}, {"broker", QJsonObject::fromVariantMap(m_broker.configuration())},
-        {"localClient", QJsonObject::fromVariantMap(m_local.configuration())}, {"splitRatio", m_splitRatio}};
-    const auto bytes = QJsonDocument(json).toJson(QJsonDocument::Indented);
-    if (bytes.size() > Mqtt::MaxConfigBytes) return storageResult(QStringLiteral("配置超过 8 MiB，未保存；请减少大型草稿或连接数量。"));
-    if (!QDir().mkpath(QFileInfo(m_configPath).absolutePath())) return storageResult(QStringLiteral("无法创建 MQTT 配置目录。"));
-    QSaveFile file(m_configPath);
-    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
-        return storageResult(QStringLiteral("MQTT 配置未保存：") + file.errorString());
+    if (m_saving) return storageResult(QStringLiteral("配置保存处理中，请稍后重试。"));
+    QScopedValueRollback<bool> saving(m_saving, true);
+    QJsonArray connections;
+    QString error;
+    for (const auto &entry : m_profiles) {
+        auto config = QJsonObject::fromVariantMap(entry.toMap());
+        if (!CredentialAccess::sealMqtt(&config, &error, m_credentials)) return storageResult(error);
+        connections.append(config);
+    }
+    auto broker = QJsonObject::fromVariantMap(m_broker.configuration());
+    auto local = QJsonObject::fromVariantMap(m_local.configuration());
+    if (!CredentialAccess::sealMqtt(&broker, &error, m_credentials) || !CredentialAccess::sealMqtt(&local, &error, m_credentials)) return storageResult(error);
+    QJsonObject nextSnapshot;
+    if (!ConfigJson::update(m_configPath, [&](QJsonObject &root, QString *e) {
+        auto mqtt = root.value("mqtt").toObject();
+        auto currentWorkspace = mqtt; currentWorkspace.remove("commonSubscriptions");
+        if (currentWorkspace != m_workspaceSnapshot) return ConfigJson::fail(e, QStringLiteral("其他实例已修改 MQTT 配置，请重启后重试；未覆盖对方设置。"));
+        mqtt.insert("connections", connections); mqtt.insert("selectedConnectionId", currentProfileId());
+        mqtt.insert("broker", broker); mqtt.insert("localClient", local); mqtt.insert("layout", QJsonObject{{"splitRatio", m_splitRatio}});
+        nextSnapshot = mqtt; nextSnapshot.remove("commonSubscriptions");
+        root.insert("mqtt", mqtt); return true;
+    }, &error)) return storageResult(error);
+    m_workspaceSnapshot = nextSnapshot;
     m_dirty = false;
     return storageResult({});
 }
@@ -233,16 +227,13 @@ QString MqttController::normalizeCommonSubscription(QVariantMap *subscription, i
 }
 
 QString MqttController::readCommonSubscriptions(QVariantList *subscriptions, QByteArray *bytes) const {
-    QFile file(m_commonPath);
-    if (!file.exists()) return {};
-    if (!file.open(QIODevice::ReadOnly)) return file.errorString();
-    if (file.size() > Mqtt::MaxConfigBytes) return QStringLiteral("文件超过 8 MiB。");
-    *bytes = file.readAll();
-    QJsonParseError error;
-    const auto json = QJsonDocument::fromJson(*bytes, &error);
-    if (error.error != QJsonParseError::NoError || !json.isObject() || json.object().value("schema").toInt() != 1
-        || !json.object().value("subscriptions").isArray()) return QStringLiteral("JSON 格式或版本无效，原文件已保留；修复后点击重新加载。");
-    const auto entries = json.object().value("subscriptions").toArray();
+    QJsonObject root; QString problem;
+    if (!ConfigJson::read(m_commonPath, &root, &problem)) return problem;
+    const auto mqtt = root.value("mqtt").toObject();
+    if (!mqtt.contains("commonSubscriptions")) return {};
+    if (!mqtt.value("commonSubscriptions").isArray()) return QStringLiteral("常用订阅必须是数组。");
+    const auto entries = mqtt.value("commonSubscriptions").toArray();
+    *bytes = QJsonDocument(entries).toJson(QJsonDocument::Compact);
     if (entries.size() > 1000) return QStringLiteral("最多保存 1000 个常用订阅。");
     QSet<QString> topics;
     for (const auto &entry : entries) {
@@ -274,28 +265,16 @@ QVariantMap MqttController::reloadCommonSubscriptions() {
 }
 
 QVariantMap MqttController::changeCommonSubscriptions(const std::function<QString(QVariantList &)> &change) {
-    if (!QDir().mkpath(QFileInfo(m_commonPath).absolutePath())) return commonResult(QStringLiteral("无法创建本地目录。"));
-    QLockFile lock(m_commonPath + ".lock");
-    if (!lock.tryLock(0)) return commonResult(lock.error() == QLockFile::LockFailedError
-        ? QStringLiteral("文件正在被其他实例修改，请稍后重试。") : QStringLiteral("无法创建文件锁，请检查本地目录的写入权限。"));
-    const bool existed = QFile::exists(m_commonPath);
-    QVariantList saved;
-    QByteArray before;
-    if (auto error = readCommonSubscriptions(&saved, &before); !error.isEmpty()) return commonResult(error);
-    auto updated = saved;
-    if (auto error = change(updated); !error.isEmpty()) return commonResult(error);
-    if (updated.size() > 1000) return commonResult(QStringLiteral("最多保存 1000 个常用订阅。"));
-    if (!existed || updated != saved) {
-        const auto bytes = QJsonDocument(QJsonObject{{"schema", 1}, {"subscriptions", QJsonArray::fromVariantList(updated)}}).toJson(QJsonDocument::Indented);
-        if (bytes.size() > Mqtt::MaxConfigBytes) return commonResult(QStringLiteral("文件超过 8 MiB，未保存。"));
-        // Preserve manual edits made since this operation read the file.
-        QFile current(m_commonPath);
-        if (current.exists() != existed || (existed && (!current.open(QIODevice::ReadOnly) || current.readAll() != before)))
-            return commonResult(QStringLiteral("文件已被外部修改，请重新加载后重试。"));
-        current.close();
-        QSaveFile file(m_commonPath);
-        if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) return commonResult(file.errorString());
-    }
+    QVariantList updated; QString problem;
+    if (!ConfigJson::update(m_commonPath, [&](QJsonObject &root, QString *error) {
+        auto mqtt = root.value("mqtt").toObject();
+        const auto entries = mqtt.value("commonSubscriptions");
+        if (!entries.isUndefined() && !entries.isArray()) return ConfigJson::fail(error, QStringLiteral("常用订阅格式无效"));
+        updated = entries.toArray().toVariantList();
+        if (auto message = change(updated); !message.isEmpty()) return ConfigJson::fail(error, message);
+        if (updated.size() > 1000) return ConfigJson::fail(error, QStringLiteral("最多保存 1000 个常用订阅"));
+        mqtt.insert("commonSubscriptions", QJsonArray::fromVariantList(updated)); root.insert("mqtt", mqtt); return true;
+    }, &problem)) return commonResult(problem);
     const bool changed = m_commonSubscriptions != updated;
     m_commonSubscriptions = updated;
     return commonResult({}, changed);
@@ -402,6 +381,8 @@ QVariantMap MqttController::copyConnection(const QString &id) {
     for (const auto &entry : m_profiles) {
         auto config = entry.toMap();
         if (config.value("id").toString() != id) continue;
+        QString credentialError;
+        if (!CredentialAccess::loadMqtt(&config, &credentialError, m_credentials)) return storageResult(credentialError);
         const auto defaults = Mqtt::connectionDefaults();
         config.insert("id", defaults.value("id"));
         config.insert("clientId", defaults.value("clientId"));

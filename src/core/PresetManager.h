@@ -52,10 +52,10 @@ private:
   bool saveToFile();
 
   // 获取 XML 文件路径
-  QString getFilePath() const;
+
 
   // 确保 preset 目录存在
-  void ensureDirectoryExists();
+
 
   // 递增版本号并更新日期
   void bumpVersion();

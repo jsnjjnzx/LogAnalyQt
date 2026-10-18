@@ -71,7 +71,7 @@ public:
   void initializeCredentials(quint64 revision, const QString &host, int port,
                              const QString &user, int operation = 0,
                              const QString &password = {}) {
-#ifndef Q_OS_MACOS
+#if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
     Q_UNUSED(host); Q_UNUSED(port); Q_UNUSED(user); Q_UNUSED(operation); Q_UNUSED(password);
     emit credentialResult(revision, false, QString());
     return;
@@ -83,55 +83,6 @@ public:
     const QString profile = sshCredentialProfile(host, port, user);
     QString error;
     bool exists = false;
-    QSettings settings(QDir(m_dataRoot).filePath(QStringLiteral("LogAnalyQt.ini")),
-                       QSettings::IniFormat);
-    const QString legacy = settings.value(QStringLiteral("ssh/password")).toString();
-    const QVariant oldHost = settings.value(QStringLiteral("ssh/host"));
-    const QVariant oldPort = settings.value(QStringLiteral("ssh/port"));
-    const QVariant oldUser = settings.value(QStringLiteral("ssh/username"));
-    if (!legacy.isEmpty()) {
-      bool portValid = false;
-      const int oldPortNumber = oldPort.toInt(&portValid);
-      if (!settings.contains(QStringLiteral("ssh/host")) ||
-          !settings.contains(QStringLiteral("ssh/port")) ||
-          !settings.contains(QStringLiteral("ssh/username")) || !portValid ||
-          !validSshIdentity(oldHost.toString(), oldPortNumber, oldUser.toString())) {
-        emit credentialResult(revision, false, QStringLiteral("SSH 旧密码缺少有效的主机、端口或用户名；未猜测目标，原字段保留"));
-        return;
-      }
-      const QString oldProfile = sshCredentialProfile(oldHost.toString(), oldPortNumber, oldUser.toString());
-      QByteArray existing;
-      if (!m_credentials->read(oldProfile, &existing, &error) ||
-          (!existing.isEmpty() && existing != legacy.toUtf8())) {
-        if (error.isEmpty()) error = QStringLiteral("SSH 旧配置密码与钥匙串冲突，需人工处理；未覆盖或删除任何密码");
-        emit credentialResult(revision, false, error);
-        return;
-      }
-      if (!m_credentials->writeVerified(oldProfile, legacy.toUtf8(), &error)) {
-        if (error.isEmpty()) error = QStringLiteral("SSH 旧密码安全迁移失败，原配置保留");
-        emit credentialResult(revision, false, error);
-        return;
-      }
-      // Native keychain UI can outlive an external configuration edit.
-      settings.sync();
-      if (settings.status() != QSettings::NoError ||
-          settings.value(QStringLiteral("ssh/host")) != oldHost ||
-          settings.value(QStringLiteral("ssh/port")) != oldPort ||
-          settings.value(QStringLiteral("ssh/username")) != oldUser ||
-          settings.value(QStringLiteral("ssh/password")).toString() != legacy) {
-        emit credentialResult(revision, false, QStringLiteral("SSH 旧配置在迁移期间发生变化（source_changed）；保留当前配置，请人工核对"));
-        return;
-      }
-      settings.remove(QStringLiteral("ssh/password"));
-      settings.sync();
-      if (settings.status() != QSettings::NoError) {
-        emit credentialResult(revision, false, QStringLiteral("SSH 密码已迁入钥匙串，但旧配置清理失败"));
-        return;
-      }
-    } else if (settings.contains(QStringLiteral("ssh/password"))) {
-      settings.remove(QStringLiteral("ssh/password"));
-      settings.sync();
-    }
     if (operation == 1) {
       if (password.isEmpty()) error = QStringLiteral("密码不能为空");
       else if (!m_credentials->writeVerified(profile, password.toUtf8(), &error) && error.isEmpty())
@@ -363,7 +314,7 @@ private:
     case Authenticating: {
       if (!m_credentialsLoaded) {
         m_credentialsLoaded = true;
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
         if (m_password.isEmpty()) {
           QString error;
           emit credentialReadState(m_generation, true);
@@ -552,9 +503,7 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
   m_host = settings.value("ssh/host", "").toString();
   m_port = settings.value("ssh/port", 22).toInt();
   m_username = settings.value("ssh/username", "root").toString();
-#ifndef Q_OS_MACOS
-  m_password = settings.value("ssh/password", "").toString();
-#endif
+
   m_encoding = settings.value("ssh/encoding", "UTF-8").toString();
   m_maxBufferLines = settings.value("ssh/maxLines", 10000).toInt();
   m_autoReconnectEnabled =
@@ -653,8 +602,8 @@ SshTerminal::~SshTerminal() {
   });
 }
 
-QSettings SshTerminal::settings() const {
-  return QSettings(QDir(m_dataRoot).filePath(QStringLiteral("LogAnalyQt.ini")), QSettings::IniFormat);
+JsonSettings SshTerminal::settings() const {
+  return JsonSettings(QDir(m_dataRoot).filePath(QStringLiteral("settings.json")));
 }
 
 void SshTerminal::refreshCredentials() {
@@ -766,7 +715,7 @@ void SshTerminal::setUsername(const QString &username) {
 }
 
 QString SshTerminal::password() const {
-#ifdef Q_OS_MACOS
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
   return {};
 #else
   return m_password;
@@ -787,6 +736,7 @@ void SshTerminal::setEncoding(const QString &encoding) {
     m_encoding = encoding;
     auto settings = this->settings();
     settings.setValue("ssh/encoding", m_encoding);
+  settings.sync();
     emit encodingChanged();
   }
 }
@@ -809,6 +759,7 @@ void SshTerminal::setAutoReconnectEnabled(bool enabled) {
   m_autoReconnectEnabled = enabled;
   auto settings = this->settings();
   settings.setValue("ssh/autoReconnectEnabled", m_autoReconnectEnabled);
+  settings.sync();
   emit autoReconnectEnabledChanged();
 }
 
@@ -822,6 +773,7 @@ void SshTerminal::setReconnectMaxAttempts(int attempts) {
   m_reconnectMaxAttempts = attempts;
   auto settings = this->settings();
   settings.setValue("ssh/reconnectMaxAttempts", m_reconnectMaxAttempts);
+  settings.sync();
   emit reconnectMaxAttemptsChanged();
 }
 
@@ -835,6 +787,7 @@ void SshTerminal::setReconnectIntervalMs(int intervalMs) {
   m_reconnectIntervalMs = intervalMs;
   auto settings = this->settings();
   settings.setValue("ssh/reconnectIntervalMs", m_reconnectIntervalMs);
+  settings.sync();
   emit reconnectIntervalMsChanged();
 }
 
@@ -1075,9 +1028,7 @@ void SshTerminal::onWorkerConnected() {
   settings.setValue("ssh/host", m_host);
   settings.setValue("ssh/port", m_port);
   settings.setValue("ssh/username", m_username);
-#ifndef Q_OS_MACOS
-  settings.setValue("ssh/password", m_password);
-#endif
+
   settings.setValue("ssh/maxLines", m_maxBufferLines);
   settings.sync();
   const bool configurationSaved = settings.status() == QSettings::NoError;

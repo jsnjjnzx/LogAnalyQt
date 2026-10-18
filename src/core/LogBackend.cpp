@@ -2160,7 +2160,7 @@ bool LogBackend::isSecurityVerificationExpired(
 }
 
 QDateTime LogBackend::loadLegacySecurityVerificationTime() const {
-  auto settings = appSettings();
+  auto settings = deviceStateSettings();
   const QVariant storedValue = settings.value(kLegacySecurityLastVerifiedKey);
   if (!storedValue.isValid())
     return QDateTime();
@@ -2176,7 +2176,7 @@ QDateTime LogBackend::loadLegacySecurityVerificationTime() const {
 }
 
 void LogBackend::clearLegacySecurityVerificationTime() {
-  auto settings = appSettings();
+  auto settings = deviceStateSettings();
   settings.remove(kLegacySecurityLastVerifiedKey);
   settings.sync();
 }
@@ -2331,6 +2331,7 @@ void LogBackend::loadSettings() {
 void LogBackend::saveSettings() {
   auto settings = appSettings();
   settings.setValue("protocolType", m_protocolType);
+  settings.sync();
 }
 
 // 扫描全局预览 - 扫描整个日志文档并提取所有报文的概要信息
@@ -2818,44 +2819,22 @@ QVariantList LogBackend::verifySmartFrame(const QString &protocolCode,
   return result;
 }
 
-static QString smartFramingTemplateDir() {
-  QString dir = AppPaths::presetDirectory() + "/smart_framing";
-  QDir().mkpath(dir);
-  return dir;
-}
-
 QStringList LogBackend::listFramingTemplates() {
-  QDir dir(smartFramingTemplateDir());
-  QStringList names;
-  for (const QString &fileName :
-       dir.entryList({"*.json"}, QDir::Files, QDir::Name)) {
-    names.append(fileName.left(fileName.size() - 5));
-  }
-  return names;
+  return appSettings().value("framingTemplates").toMap().keys();
 }
-
 QString LogBackend::loadFramingTemplate(const QString &name) {
-  if (name.contains('/') || name.contains('\\') || name.contains(".."))
-    return QString();
-  QFile file(smartFramingTemplateDir() + "/" + name + ".json");
-  if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-    return QString();
-  return QString::fromUtf8(file.readAll());
+  const auto value = appSettings().value("framingTemplates").toMap().value(name);
+  return value.isValid() ? QString::fromUtf8(QJsonDocument::fromVariant(value).toJson()) : QString();
 }
-
 bool LogBackend::saveFramingTemplate(const QString &name, const QString &json) {
-  if (name.trimmed().isEmpty() || name.contains('/') || name.contains('\\') ||
-      name.contains(".."))
-    return false;
-  QFile file(smartFramingTemplateDir() + "/" + name + ".json");
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
-    return false;
-  file.write(json.toUtf8());
-  return true;
+  if (name.trimmed().isEmpty() || name.contains('/') || name.contains('\\') || name.contains("..")) return false;
+  QJsonParseError parse; const auto doc = QJsonDocument::fromJson(json.toUtf8(), &parse);
+  if (parse.error != QJsonParseError::NoError || !doc.isObject()) return false;
+  auto settings = appSettings(); settings.setValue("framingTemplates/" + name, doc.object().toVariantMap()); settings.sync();
+  return settings.status() == QSettings::NoError;
 }
-
 bool LogBackend::deleteFramingTemplate(const QString &name) {
-  if (name.contains('/') || name.contains('\\') || name.contains(".."))
-    return false;
-  return QFile::remove(smartFramingTemplateDir() + "/" + name + ".json");
+  if (name.isEmpty() || name.contains('/') || name.contains('\\') || name.contains("..")) return false;
+  auto settings = appSettings(); settings.remove("framingTemplates/" + name); settings.sync();
+  return settings.status() == QSettings::NoError;
 }

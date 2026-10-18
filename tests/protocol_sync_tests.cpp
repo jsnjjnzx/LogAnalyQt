@@ -11,7 +11,8 @@
 #include <QTextStream>
 #include <QElapsedTimer>
 #include <QThread>
-#include <QSettings>
+#include "common/JsonSettings.h"
+#include "core/config/PresetCodec.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <functional>
@@ -145,46 +146,27 @@ public:
 };
 
 void TestCredentials() {
-  for (const bool prompts : {false, true}) {
-  const QString prefix = prompts ? "promptSync/" : "protocolSync/";
-  for (int mode = 0; mode < 6; ++mode) {
+  for (bool prompts : {false, true}) {
     QTemporaryDir dir;
-    const QString ini = dir.filePath("isolated.ini");
+    const auto path = dir.filePath("settings.json");
+    const QString prefix = prompts ? "promptSync/" : "protocolSync/";
+    const QString profile(64, prompts ? 'a' : 'b');
     auto store = std::make_shared<FakeCredentials>();
-    if (mode == 1) store->denyWrite = true;
-    if (mode == 2) store->denyRead = true;
-    if (mode == 4) store->corruptWrite = true;
-    if (mode == 5) store->writeDelay = 50;
-    { QSettings settings(ini, QSettings::IniFormat);
-      settings.setValue(prefix + "username", "synthetic-user");
-      settings.setValue(prefix + "password", "synthetic-legacy-secret"); }
-    const QString profile = ProtocolSyncManager::legacyCredentialProfile(ini, prompts);
-    if (mode == 3) store->values[profile] = "another-existing-secret";
+    store->values[profile] = QJsonDocument(QJsonObject{{"username", "synthetic-user"}, {"password", "synthetic-legacy-secret"}}).toJson(QJsonDocument::Compact);
+    JsonSettings settings(path);
+    settings.setValue(prefix + "credentialProfile", profile); settings.setValue(prefix + "username", "synthetic-user"); settings.sync();
     ProtocolSyncManager::Dependencies dependencies;
-    dependencies.promptFiles = prompts;
-    dependencies.credentials = store; dependencies.settingsFile = ini;
+    dependencies.promptFiles = prompts; dependencies.credentials = store; dependencies.settingsFile = path;
     ProtocolSyncManager manager(dependencies);
-    Expect(profile != ProtocolSyncManager::legacyCredentialProfile(ini, !prompts), "XML与提示词旧凭据保全标识隔离");
+    Expect(Wait([&] { return !manager.credentialBusy(); }), "系统凭据读取完成");
     Expect(manager.password().isEmpty(), "SMB密码getter不回显明文");
-    if (mode == 5) { QSettings settings(ini, QSettings::IniFormat);
-      settings.setValue(prefix + "password", "changed-during-migration"); settings.sync(); }
-    Expect(Wait([&] { return !manager.credentialBusy(); }), "保全必须真正完成");
-    QSettings settings(ini, QSettings::IniFormat);
-    if (mode == 0) {
-      Expect(!settings.contains(prefix + "password") && settings.value(prefix + "username") == "synthetic-user", "验证保全后只清INI密码，保留普通账号配置");
-      const auto json = QJsonDocument::fromJson(store->values.value(profile)).object();
-      Expect(json.value("password").toString() == "synthetic-legacy-secret" &&
-             json.value("username").toString() == "synthetic-user", "无目标旧账号完整安全保全");
-      manager.setPassword("ignored-new-password"); manager.saveCredentials();
-      settings.sync(); Expect(!settings.contains(prefix + "password"), "新SMB输入不能写INI密码");
-    } else {
-      Expect(settings.contains(prefix + "password"), "保全拒绝/冲突/变化保留INI");
-      Expect(!manager.credentialError().isEmpty(), "保全失败应可见");
-      if (mode == 3) Expect(store->values.value(profile) == "another-existing-secret", "冲突不可覆盖已有安全值");
-      if (mode == 5) Expect(settings.value(prefix + "password") == "changed-during-migration", "迁移不得清除并发新值");
-    }
-    Expect(profile != ProtocolSyncManager::legacyCredentialProfile(dir.filePath("other.ini")), "无目标保全按来源隔离");
-  }
+    Expect(manager.credentialError().isEmpty(), "统一配置能找到迁移后的凭据引用");
+    manager.setPassword("ignored-new-password"); manager.saveCredentials();
+    QFile saved(path); Expect(saved.open(QIODevice::ReadOnly) && !saved.readAll().contains("synthetic-legacy-secret"), "JSON 不写入密码");
+    const auto old = dir.filePath("LogAnalyQt.ini");
+    QFile original(old); Expect(original.open(QIODevice::WriteOnly), "旧文件隔离样例"); original.write("[protocolSync]\npassword=unconfirmed-secret\n"); original.close();
+    manager.loadCredentials(); Expect(Wait([&] { return !manager.credentialBusy(); }), "重复读取完成");
+    Expect(QFile::exists(old), "业务构造器不迁移或清理未经确认的旧文件");
   }
 }
 
@@ -541,7 +523,7 @@ void TestPromptSync() {
   manager.setSharePath(remote.path());
 #endif
   manager.saveCredentials();
-  QSettings settings(deps.settingsFile, QSettings::IniFormat);
+  JsonSettings settings(deps.settingsFile);
   Expect(settings.value("promptSync/sharePath") == manager.sharePath() && !settings.contains("protocolSync/sharePath"), "提示词共享配置独立保存");
   QString defaultError;
   const auto beforeCreation = QDateTime::currentDateTimeUtc().addSecs(-2);
@@ -601,6 +583,40 @@ void TestPromptSync() {
   Expect(QDir(directory).removeRecursively(), "清理隔离提示词目录");
 }
 
+#ifdef Q_OS_MACOS
+void TestPresetExchange() {
+  QTemporaryDir remote;
+  const auto config = remote.filePath("settings.json");
+  QJsonObject messages{{"version", "v1.0.1"}, {"date", "2026-10-18"}, {"presets", QJsonArray{QJsonObject{{"protocol", "698"}, {"summary", "local"}, {"content", "6816"}}}}};
+  QString error;
+  Expect(ConfigJson::write(config, {{"schemaVersion", 1}, {"messages", messages}}, &error), "预置报文 JSON 样例");
+  ProtocolSyncManager::Dependencies dependencies;
+  dependencies.settingsFile = config; dependencies.openShare = [](const QUrl &) { return true; };
+  dependencies.mounts = [path = remote.path()] { return QList<SmbShare::Mount>{{"//fake.invalid/share", path}}; };
+  ProtocolSyncManager manager(dependencies); manager.setSharePath("smb://fake.invalid/share"); bool connected = false;
+  QObject::connect(&manager, &ProtocolSyncManager::connectionFinished, &manager, [&](bool ok, const QString &) { connected = ok; });
+  manager.connectToShare(); Expect(Wait([&] { return connected; }), "预置报文假共享连接");
+  Expect(Refresh(manager), "生成 XML 交换视图");
+  auto result = Sync(manager, "preset_messages.xml");
+  Expect(result.value("uploaded").toStringList().contains("preset_messages.xml"), "JSON 预置报文可上传 XML");
+  QJsonObject decoded;
+  Expect(PresetCodec::decode(ReadFile(remote.filePath("preset_messages.xml")), &decoded, &error) && decoded == messages, "交换 XML 保留报文版本和内容");
+  auto incoming = messages; incoming.insert("version", "v1.0.2");
+  auto rows = incoming.value("presets").toArray(); auto row = rows.first().toObject(); row.insert("summary", "remote"); rows[0] = row; incoming.insert("presets", rows);
+  WriteFile(remote.filePath("preset_messages.xml"), PresetCodec::encode(incoming));
+  Expect(Refresh(manager), "预置报文下载快照");
+  auto edited = messages; edited.insert("version", "v1.0.9");
+  ConfigJson::update(config, [&](QJsonObject &root, QString *) { root.insert("messages", edited); return true; });
+  result = Sync(manager, "preset_messages.xml");
+  Expect(result.value("failed").toStringList().contains("preset_messages.xml"), "JSON 新编辑不能被状态过期的下载覆盖");
+  ConfigJson::update(config, [&](QJsonObject &root, QString *) { root.insert("messages", messages); return true; });
+  Expect(Refresh(manager), "重新读取预置报文状态"); result = Sync(manager, "preset_messages.xml");
+  QJsonObject saved; ConfigJson::read(config, &saved);
+  Expect(result.value("downloaded").toStringList().contains("preset_messages.xml") && saved.value("messages").toObject() == incoming, "XML 下载提交到统一 JSON");
+  Expect(!QFile::exists(QDir(AppPaths::protocolDirectory()).filePath("preset_messages.xml")), "不会在旧配置位置重新创建 XML");
+}
+#endif
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -623,6 +639,9 @@ int main(int argc, char *argv[]) {
 #endif
   TestProtocolSync(sourceXml);
   TestPromptSync();
+#ifdef Q_OS_MACOS
+  TestPresetExchange();
+#endif
 
   if (g_failureCount == 0) {
     QTextStream(stdout) << "All protocol sync tests passed.\n";

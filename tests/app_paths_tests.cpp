@@ -37,7 +37,7 @@ void paths() {
   expect(AppPaths::protocolDirectory() == QDir(root).filePath("protocol_xml"), "protocol directory");
   expect(AppPaths::promptDirectory() == QDir(root).filePath("prompts"), "prompt directory");
   expect(AppPaths::presetDirectory() == QDir(root).filePath("preset"), "preset directory");
-  expect(appSettings().fileName() == QDir(root).filePath("LogAnalyQt.ini"), "settings follow the platform data root");
+  expect(appSettings().fileName() == QDir(root).filePath("settings.json"), "settings follow the platform data root");
 }
 
 #ifdef Q_OS_MACOS

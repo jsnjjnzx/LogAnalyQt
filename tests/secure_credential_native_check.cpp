@@ -11,7 +11,8 @@ int main(int argc, char **argv) {
   AiCredentialStore ai;
   SecureCredentialStore ssh(SecureCredentialStore::Domain::Ssh);
   SecureCredentialStore smb(SecureCredentialStore::Domain::ProtocolSync);
-  SecureCredentialStore *stores[] = {&ai, &ssh, &smb};
+  SecureCredentialStore mqtt(SecureCredentialStore::Domain::Mqtt);
+  SecureCredentialStore *stores[] = {&ai, &ssh, &smb, &mqtt};
   const QString profile = QString::fromLatin1(QCryptographicHash::hash(
       QUuid::createUuid().toByteArray(), QCryptographicHash::Sha256).toHex());
   const QByteArray prefix = "synthetic-only-" + QUuid::createUuid().toByteArray();
@@ -25,9 +26,9 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
-  for (int i = 0; i < 3; ++i)
+  for (int i = 0; i < 4; ++i)
     ok = stores[i]->writeVerified(profile, prefix + QByteArray::number(i), &error) && ok;
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4; ++i) {
     QByteArray read;
     bool exists = false;
     ok = stores[i]->contains(profile, &exists, &error) && exists &&
@@ -46,7 +47,7 @@ int main(int argc, char **argv) {
     ok = removed && store->contains(profile, &exists, &error) && !exists && ok;
   }
   QTextStream(ok ? stdout : stderr)
-      << (ok ? "PASS: AI/SSH/SMB native domain isolation, verified roundtrip, replace/delete; synthetic only"
+      << (ok ? "PASS: AI/SSH/SMB/MQTT native domain isolation, verified roundtrip, replace/delete; synthetic only"
              : "FAIL: isolated native credential lifecycle") << '\n';
   return ok ? 0 : 2;
 }

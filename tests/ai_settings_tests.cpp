@@ -3,7 +3,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QMap>
-#include <QSettings>
+#include "common/JsonSettings.h"
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -188,7 +188,7 @@ void testFirstSaveDoesNotOwnFallbackCredentials() {
   QTemporaryDir directory;
   const QString path = directory.filePath(QStringLiteral("first-save.ini"));
   {
-    QSettings ini(path, QSettings::IniFormat);
+    JsonSettings ini(path);
     ini.setValue(QStringLiteral("ui/next/appearance/reducedTransparency"), true);
     ini.sync();
   }

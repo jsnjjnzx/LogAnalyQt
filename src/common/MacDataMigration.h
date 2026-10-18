@@ -57,7 +57,7 @@ inline void ensureDirectory(const fs::path &path) {
 }
 
 inline void initialize(const std::vector<fs::path> &legacyRoots,
-                       const fs::path &dataRoot, const fs::path &logRoot) {
+                       const fs::path &dataRoot, const fs::path &logRoot, bool resourcesOnly = false) {
   if (!dataRoot.is_absolute() || !logRoot.is_absolute())
     throw std::runtime_error("Migration requires absolute data and log paths");
   ensureDirectory(dataRoot);
@@ -89,7 +89,10 @@ inline void initialize(const std::vector<fs::path> &legacyRoots,
       if (files.count(target)) fail("Legacy directory conflicts with another file", source);
       if (fs::exists(targetStatus) && !fs::is_directory(targetStatus)) fail("Migration destination conflicts", target);
       directories.insert(target);
-      for (const auto &entry : fs::directory_iterator(source)) self(self, entry.path(), target / entry.path().filename());
+      for (const auto &entry : fs::directory_iterator(source)) {
+        if (resourcesOnly && entry.path().filename() == "preset_messages.xml") continue;
+        self(self, entry.path(), target / entry.path().filename());
+      }
       return;
     }
     if (!fs::is_regular_file(sourceStatus)) fail("Unsupported legacy data file", source);
@@ -106,6 +109,7 @@ inline void initialize(const std::vector<fs::path> &legacyRoots,
     if (!fs::exists(checkedStatus(root))) continue;
     if (!fs::is_directory(checkedStatus(root))) fail("Legacy data root is not a directory", root);
     for (const std::string name : {"LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "ssh-known-hosts.json", "log"}) {
+      if (resourcesOnly && (name == "LogAnalyQt.ini" || name == "preset")) continue;
       const auto value = checkedStatus(root / name);
       const bool file = name == "LogAnalyQt.ini" || name == "ssh-known-hosts.json";
       if (fs::exists(value) && (file ? !fs::is_regular_file(value) : !fs::is_directory(value)))

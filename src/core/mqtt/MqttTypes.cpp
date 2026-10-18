@@ -45,7 +45,7 @@ QVariantMap Mqtt::connectionDefaults(const QString &id) {
     return {{"id", uuid}, {"name", QStringLiteral("新建 MQTT 连接")},
         {"host", "127.0.0.1"}, {"port", 1883},
         {"clientId", "loganalyqt_" + uuid.left(8)}, {"username", ""}, {"password", ""},
-        {"protocol", 4}, {"tls", false}, {"caFile", ""}, {"certFile", ""}, {"keyFile", ""},
+        {"credentialProfile", ""}, {"protocol", 4}, {"tls", false}, {"caFile", ""}, {"certFile", ""}, {"keyFile", ""},
         {"keepAlive", 60}, {"timeoutSeconds", 10}, {"autoReconnect", true}, {"reconnectSeconds", 3},
         {"cleanSession", true}, {"sessionExpiry", 0}, {"willEnabled", false},
         {"willTopic", ""}, {"willPayload", ""}, {"willFormat", "Text"},
@@ -56,7 +56,7 @@ QVariantMap Mqtt::connectionDefaults(const QString &id) {
 
 QVariantMap Mqtt::brokerDefaults() {
     return {{"host", "0.0.0.0"}, {"port", 1883}, {"anonymous", true},
-        {"username", ""}, {"password", ""}, {"tls", false}, {"caFile", ""},
+        {"username", ""}, {"password", ""}, {"credentialProfile", ""}, {"tls", false}, {"caFile", ""},
         {"certFile", ""}, {"keyFile", ""}, {"connectLocal", true}};
 }
 
@@ -93,7 +93,7 @@ QString Mqtt::validateBroker(const QVariantMap &c, bool checkFiles) {
     if (!boundedInteger(c, "port", 1, 65535)) return QStringLiteral("监听端口必须为 1–65535 的整数。");
     const auto user = c.value("username").toString();
     const auto pass = c.value("password").toString();
-    if (!c.value("anonymous").toBool() && (user.isEmpty() || pass.isEmpty()))
+    if (!c.value("anonymous").toBool() && (user.isEmpty() || (pass.isEmpty() && c.value("credentialProfile").toString().isEmpty())))
         return QStringLiteral("关闭匿名连接时，请填写用户名和密码。");
     if (!validString(user, 256) || user.contains(':') || user.contains('\n') || user.contains('\r') || !validString(pass))
         return QStringLiteral("用户名含无效字符或凭据过长。");

@@ -3,6 +3,9 @@
 #include "MqttBroker.h"
 #include "MqttSession.h"
 #include <functional>
+#include <QJsonObject>
+#include <memory>
+#include "../SecureCredentialStore.h"
 
 class MqttController : public QObject {
     Q_OBJECT
@@ -19,7 +22,7 @@ class MqttController : public QObject {
     Q_PROPERTY(double splitRatio READ splitRatio WRITE setSplitRatio NOTIFY layoutChanged)
 public:
     explicit MqttController(QObject *parent = nullptr);
-    MqttController(const QString &dataRoot, QObject *parent, const QString &helperOverride = {});
+    MqttController(const QString &dataRoot, QObject *parent, const QString &helperOverride = {}, std::shared_ptr<SecureCredentialStore> credentials = {});
     ~MqttController() override;
     MqttSession *remote() { return &m_remote; }
     MqttSession *localClient() { return &m_local; }
@@ -33,6 +36,7 @@ public:
     QString commonSubscriptionsError() const { return m_commonError; }
     double splitRatio() const { return m_splitRatio; }
     void setSplitRatio(double ratio);
+    static QString validateWorkspace(const QVariantMap &config);
     Q_INVOKABLE QVariantMap newConnection() const;
     Q_INVOKABLE QVariantMap saveConnection(const QVariantMap &config);
     Q_INVOKABLE QVariantMap selectConnection(const QString &id);
@@ -57,7 +61,6 @@ private:
     void load();
     void scheduleSave();
     static QVariantMap normalizedConnection(const QVariantMap &input);
-    static QString validateWorkspace(const QVariantMap &config);
     QVariantMap storageResult(const QString &error);
     QString readCommonSubscriptions(QVariantList *subscriptions, QByteArray *bytes) const;
     QVariantMap changeCommonSubscriptions(const std::function<QString(QVariantList &)> &change);
@@ -68,12 +71,15 @@ private:
     MqttSession m_local;
     MqttBroker m_broker;
     QVariantList m_profiles;
+    QJsonObject m_workspaceSnapshot;
     QString m_configPath;
     QString m_storageError;
     QString m_commonPath;
     QString m_commonError;
     QVariantList m_commonSubscriptions;
     QTimer m_saveTimer;
+    std::shared_ptr<SecureCredentialStore> m_credentials;
+    bool m_saving = false;
     bool m_loading = true;
     bool m_dirty = false;
     bool m_badFile = false;

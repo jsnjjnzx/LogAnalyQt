@@ -6,7 +6,7 @@
 // Call on a serial background worker: native storage may show blocking system UI.
 class SecureCredentialStore {
 public:
-  enum class Domain { AiFraming, Ssh, ProtocolSync };
+  enum class Domain { AiFraming, Ssh, ProtocolSync, Mqtt };
   explicit SecureCredentialStore(Domain domain) : m_domain(domain) {}
   virtual ~SecureCredentialStore() = default;
   virtual bool isAvailable() const;

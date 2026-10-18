@@ -409,6 +409,16 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     manualInput->setProperty("text", "0501024000020000");
     clickParse();
     require(backend->resultModel()->rowCount() > 2, "returning to manual page lost APDU parsing");
+    trace("personal configuration management");
+    navigate(9);
+    auto *settingsPage = uiItem("page-9");
+    require(settingsPage && settingsPage->setProperty("section", 2), "personal configuration section missing");
+    settle();
+    require(uiItem("personalConfigPage") && uiItem("personalConfigPage")->isVisible(), "personal configuration page not visible");
+    require(uiItem("personal-config-summary") && uiItem("personal-config-summary")->property("text").toString().contains("settings.json"), "personal configuration manager summary missing");
+    require(uiItem("personal-config-export-full") && uiItem("personal-config-export-full")->isEnabled(), "backup entry disabled");
+    QVariant saved;
+    require(QMetaObject::invokeMethod(window, "flushPersonalConfig", Q_RETURN_ARG(QVariant, saved)) && saved.toBool(), "pending edits must flush before backup");
     trace("finish");
     navigate(0);
     return {};

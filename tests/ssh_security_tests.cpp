@@ -1,5 +1,6 @@
 #include "SshTerminal.h"
 #include "SshHostKeyStore.h"
+#include "common/JsonSettings.h"
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QTemporaryDir>
@@ -76,89 +77,33 @@ static void trustChecks() {
   check(!unwritable.trust("host", 22, "one", &error), "write error blocks trust");
 }
 static void credentialChecks() {
-  for (int mode = 0; mode < 3; ++mode) {
-    QTemporaryDir dir;
-    const QString id = profile("legacy.invalid", 2222, "synthetic");
-    auto store = std::make_shared<FakeSshCredentials>();
-    store->writeFailure = mode == 1;
-    if (mode == 2) store->values[id] = "different-existing-secret";
-    {
-      QSettings settings(dir.filePath("LogAnalyQt.ini"), QSettings::IniFormat);
-      settings.setValue("ssh/host", "legacy.invalid"); settings.setValue("ssh/port", 2222);
-      settings.setValue("ssh/username", "synthetic"); settings.setValue("ssh/password", "legacy-secret");
-    }
-    {
-      SshTerminal terminal(store, dir.path());
-      check(terminal.password().isEmpty(), "no plaintext getter");
-      check(waitFor([&] { return !terminal.credentialBusy(); }), "migration completion");
-      QSettings settings(dir.filePath("LogAnalyQt.ini"), QSettings::IniFormat);
-      if (mode == 0) {
-        check(!settings.contains("ssh/password"), "legacy removed only on success");
-        check(store->values.value(id) == "legacy-secret", "migrated value");
-        check(terminal.hasSavedPassword(), "saved state");
-        terminal.setHost("other.invalid");
-        check(waitFor([&] { return !terminal.credentialBusy(); }), "profile change completion");
-        check(!terminal.hasSavedPassword(), "target binding");
-        QString completedOperation; bool operationSucceeded = false;
-        QObject::connect(&terminal, &SshTerminal::passwordOperationFinished,
-            [&](const QString &id, bool ok, const QString &) { completedOperation = id; operationSucceeded = ok; });
-        const QString saveOperation = terminal.savePassword("new-secret");
-        check(!saveOperation.isEmpty() && completedOperation.isEmpty(), "save enqueue is not completion");
-        check(waitFor([&] { return !terminal.credentialBusy(); }), "save completion");
-        check(completedOperation == saveOperation && operationSucceeded, "save actual operation success");
-        check(terminal.hasSavedPassword() && terminal.password().isEmpty(), "saved secret never echoed");
-        const QString clearOperation = terminal.clearSavedPassword();
-        check(waitFor([&] { return !terminal.credentialBusy(); }), "clear completion");
-        check(completedOperation == clearOperation && operationSucceeded, "clear actual operation success");
-        check(!terminal.hasSavedPassword(), "clear state");
-      } else {
-        check(settings.value("ssh/password") == "legacy-secret", "failed migration retains legacy");
-        check(!terminal.credentialError().isEmpty(), "failure visible");
-        if (mode == 2) check(store->values[id] == "different-existing-secret", "conflict does not overwrite");
-      }
-    }
-    QCoreApplication::processEvents();
-  }
+  QTemporaryDir dir;
+  const auto oldPath = dir.filePath("LogAnalyQt.ini");
+  { QSettings old(oldPath, QSettings::IniFormat); old.setValue("ssh/password", "legacy-secret"); old.sync(); }
+  JsonSettings settings(dir.filePath("settings.json"));
+  settings.setValue("ssh/host", "legacy.invalid"); settings.setValue("ssh/port", 2222);
+  settings.setValue("ssh/username", "synthetic"); settings.sync();
+  auto store = std::make_shared<FakeSshCredentials>();
+  store->values[profile("legacy.invalid", 2222, "synthetic")] = "migrated-secret";
+  SshTerminal terminal(store, dir.path());
+  check(waitFor([&] { return !terminal.credentialBusy(); }), "credential status completion");
+  check(terminal.hasSavedPassword() && terminal.password().isEmpty(), "JSON identity loads saved state without echoing secret");
+  QSettings old(oldPath, QSettings::IniFormat);
+  check(old.value("ssh/password") == "legacy-secret", "runtime constructor cannot migrate or delete unconfirmed INI");
+  terminal.setHost("other.invalid");
+  check(waitFor([&] { return !terminal.credentialBusy(); }), "profile change completion");
+  check(!terminal.hasSavedPassword(), "target binding");
+  QString completed; bool succeeded = false;
+  QObject::connect(&terminal, &SshTerminal::passwordOperationFinished, [&](const QString &id, bool ok, const QString &) { completed = id; succeeded = ok; });
+  const auto save = terminal.savePassword("new-secret");
+  check(!save.isEmpty() && completed.isEmpty(), "save enqueue is not completion");
+  check(waitFor([&] { return !terminal.credentialBusy(); }), "save completion");
+  check(completed == save && succeeded && terminal.hasSavedPassword(), "actual save success");
+  const auto clear = terminal.clearSavedPassword();
+  check(waitFor([&] { return !terminal.credentialBusy(); }), "clear completion");
+  check(completed == clear && succeeded && !terminal.hasSavedPassword(), "actual clear success");
 }
 static void migrationSourceChecks() {
-  const QStringList fields{"ssh/host", "ssh/port", "ssh/username", "ssh/password"};
-  for (const QString &field : fields) {
-    QTemporaryDir dir;
-    {
-      QSettings config(dir.filePath("LogAnalyQt.ini"), QSettings::IniFormat);
-      config.setValue("ssh/host", "old.invalid"); config.setValue("ssh/port", 2222);
-      config.setValue("ssh/username", "old-user"); config.setValue("ssh/password", "old-secret");
-    }
-    auto store = std::make_shared<FakeSshCredentials>(); store->blockRead = true;
-    SshTerminal terminal(store, dir.path());
-    check(waitFor([&] { return store->enteredRead.load(); }), "migration blocked in native-like storage");
-    const QVariant replacement = field == "ssh/port" ? QVariant(3333) : QVariant("new-value");
-    {
-      QSettings config(dir.filePath("LogAnalyQt.ini"), QSettings::IniFormat);
-      config.setValue(field, replacement); config.sync();
-    }
-    store->releaseRead = true;
-    check(waitFor([&] { return !terminal.credentialBusy(); }), "source-changed migration completion");
-    QSettings config(dir.filePath("LogAnalyQt.ini"), QSettings::IniFormat);
-    check(config.contains("ssh/password") && config.value(field) == replacement, "changed source retained");
-    check(terminal.credentialError().contains("source_changed"), "source change is explicit");
-    check(store->values.value(profile("old.invalid", 2222, "old-user")) == "old-secret", "migration remains bound to old identity");
-  }
-  for (const QString &missing : fields.mid(0, 3)) {
-    QTemporaryDir dir;
-    {
-      QSettings config(dir.filePath("LogAnalyQt.ini"), QSettings::IniFormat);
-      config.setValue("ssh/host", "old.invalid"); config.setValue("ssh/port", 2222);
-      config.setValue("ssh/username", "old-user"); config.setValue("ssh/password", "old-secret");
-      config.remove(missing);
-    }
-    auto store = std::make_shared<FakeSshCredentials>();
-    SshTerminal terminal(store, dir.path());
-    check(waitFor([&] { return !terminal.credentialBusy(); }), "missing source identity completes");
-    QSettings config(dir.filePath("LogAnalyQt.ini"), QSettings::IniFormat);
-    check(config.value("ssh/password") == "old-secret" && store->values.isEmpty(), "missing source is not guessed");
-    check(!terminal.credentialError().isEmpty(), "missing source error visible");
-  }
   QTemporaryDir dir;
   auto store = std::make_shared<FakeSshCredentials>();
   SshTerminal terminal(store, dir.path());
@@ -376,7 +321,7 @@ int main(int argc, char **argv) {
   try {
     trustChecks(); credentialChecks(); migrationSourceChecks(); cancellationChecks(); credentialDestructionChecks();
     if (app.arguments().contains("--local-sshd")) localSshdChecks();
-    QTextStream(stdout) << "PASS: SSH trust, migration, target binding, cancellation and destruction\n";
+    QTextStream(stdout) << "PASS: SSH trust, confirmed-config isolation, target binding, cancellation and destruction\n";
     return 0;
   } catch (const std::exception &e) {
     QTextStream(stderr) << "FAIL: " << e.what() << '\n'; return 1;

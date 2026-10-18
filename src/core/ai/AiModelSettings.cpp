@@ -3,7 +3,7 @@
 #include "../../common/AppPaths.h"
 #include <QCryptographicHash>
 #include <QRegularExpression>
-#include <QSettings>
+#include "../../common/JsonSettings.h"
 
 namespace {
 const QString kUrlKey = QStringLiteral("aiFraming/baseUrl");
@@ -18,19 +18,19 @@ AiModelSettings::AiModelSettings(AiCredentialStore *credentials,
                                  const QString &settingsFile)
     : m_settingsFile(settingsFile.isEmpty()
                          ? QDir(AppPaths::writableDataRoot())
-                               .filePath(QStringLiteral("LogAnalyQt.ini"))
+                               .filePath(QStringLiteral("settings.json"))
                          : settingsFile),
       m_ownedCredentials(credentials ? nullptr : new AiCredentialStore),
       m_credentials(credentials ? credentials : m_ownedCredentials.get()) {}
 
 QString AiModelSettings::baseUrl() const {
-  QSettings settings(m_settingsFile, QSettings::IniFormat);
+  JsonSettings settings(m_settingsFile);
   return settings.value(kUrlKey, QStringLiteral("https://api.deepseek.com"))
       .toString();
 }
 
 QString AiModelSettings::model() const {
-  QSettings settings(m_settingsFile, QSettings::IniFormat);
+  JsonSettings settings(m_settingsFile);
   return settings.value(kModelKey, QStringLiteral("deepseek-flash")).toString();
 }
 
@@ -151,7 +151,7 @@ AiOperationResult AiModelSettings::saveConfiguration(
     return checked;
   if (!credentialAvailable())
     return failure("credential_unavailable", QStringLiteral("当前平台没有可用的安全凭据存储"));
-  QSettings settings(m_settingsFile, QSettings::IniFormat);
+  JsonSettings settings(m_settingsFile);
   const QVariant oldUrl = settings.value(kUrlKey);
   const QVariant oldModel = settings.value(kModelKey);
   QUrl previous;
@@ -174,15 +174,16 @@ AiOperationResult AiModelSettings::saveConfiguration(
     return failure("credential_write_failed", QStringLiteral("API Key 保存失败，配置未更新"));
 
   auto restoreSettings = [&]() {
+    JsonSettings recovery(m_settingsFile);
     for (const auto &entry : {
              qMakePair(kUrlKey, oldUrl), qMakePair(kModelKey, oldModel)}) {
       if (entry.second.isValid())
-        settings.setValue(entry.first, entry.second);
+        recovery.setValue(entry.first, entry.second);
       else
-        settings.remove(entry.first);
+        recovery.remove(entry.first);
     }
-    settings.sync();
-    return settings.status() == QSettings::NoError;
+    recovery.sync();
+    return recovery.status() == QSettings::NoError;
   };
   auto restoreKey = [&]() {
     return !replacingKey ||

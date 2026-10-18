@@ -88,7 +88,7 @@ Next.GlassDialog {
             }
         }
         Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: dialog.errorText; visible: text.length > 0; color: dialog.theme.error; wrapMode: Text.Wrap }
-        Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: dialog.controller.broker.active ? "请先停止服务，再修改配置。" : "用户名和密码随配置保存在本机文件中。"; color: dialog.theme.subText; font.pixelSize: 11; wrapMode: Text.Wrap }
+        Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: dialog.controller.broker.active ? "请先停止服务，再修改配置。" : "服务参数保存在 JSON，密码保存在系统凭据存储；同一连接留空保留已保存密码。"; color: dialog.theme.subText; font.pixelSize: 11; wrapMode: Text.Wrap }
         RowLayout {
             Layout.alignment: Qt.AlignRight
             Next.GlassButton { text: "取消"; onClicked: dialog.close() }

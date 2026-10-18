@@ -3,6 +3,8 @@
 #include "SshTerminal.h"
 #include "UpdateChecker.h"
 #include "mqtt/MqttController.h"
+#include "config/ConfigManager.h"
+#include <QEventLoop>
 #include "../common/AppPaths.h"
 #include <QDateTime>
 #include <QDir>
@@ -120,16 +122,66 @@ int main(int argc, char *argv[]) {
 #endif
   QQuickStyle::setStyle(QStringLiteral("Basic"));
 
-  QString migrationError;
-  if (!AppPaths::initialize(&migrationError)) {
-    fprintf(stderr, "Data migration failed: %s\n", qPrintable(migrationError));
+  ConfigManager configManager(AppPaths::writableDataRoot());
+  QStringList legacyRoots{AppPaths::writableDataRoot()};
 #ifdef Q_OS_MACOS
-    if (!uiSmokeMode)
-      QProcess::execute(QStringLiteral("/usr/bin/osascript"), {QStringLiteral("-e"),
-          QStringLiteral("on run argv\ndisplay alert \"LogAnalyQt 数据迁移未完成\" message (item 1 of argv) as critical buttons {\"关闭\"}\nend run"),
-          QStringLiteral("旧数据已保留，请处理以下问题后重试：\n") + migrationError});
+  if (!uiSmokeMode && AppPaths::portableDataRootForApplicationDir(app.applicationDirPath()) == QStringLiteral("/Applications"))
+    legacyRoots << QStringLiteral("/Applications") << app.applicationDirPath();
 #endif
-    return 2;
+  configManager.inspectStartup(legacyRoots);
+  if (configManager.pending() || !configManager.error().isEmpty()) {
+    app.setQuitOnLastWindowClosed(false);
+    QQmlApplicationEngine migrationEngine;
+    migrationEngine.rootContext()->setContextProperty("configManager", &configManager);
+    migrationEngine.loadFromModule("LogAnalyQt.Next", "ConfigMigrationWindow");
+    if (migrationEngine.rootObjects().isEmpty()) return 2;
+    QEventLoop gate;
+    bool accepted = false;
+    auto *dialog = migrationEngine.rootObjects().first();
+    QObject::connect(dialog, SIGNAL(finished(bool)), &gate, SLOT(quit()));
+    QObject::connect(&configManager, &ConfigManager::migrationFinished, &gate, [&accepted](bool success) { if (success) accepted = true; });
+#ifdef LOGANALYQT_UI_TESTING
+    const int migrationAction = app.arguments().indexOf("--migration-action");
+    if (uiSmokeMode && migrationAction >= 0 && migrationAction + 1 < app.arguments().size()) {
+      const auto action = app.arguments()[migrationAction + 1];
+      if (action == "retry-conflict") {
+        QObject::connect(&configManager, &ConfigManager::migrationFinished, dialog, [&configManager, dialog](bool success) {
+          if (success) return;
+          QVariantMap choices;
+          for (const auto &key : configManager.conflicts()) choices.insert(key, "legacy");
+          dialog->setProperty("choices", choices);
+          QTimer::singleShot(0, dialog, [dialog] { if (auto *button = dialog->findChild<QObject *>("migration-confirm")) QMetaObject::invokeMethod(button, "clicked"); });
+        }, Qt::SingleShotConnection);
+      }
+      const int captureArg = app.arguments().indexOf("--migration-screenshot");
+      const auto capture = captureArg >= 0 && captureArg + 1 < app.arguments().size() ? app.arguments()[captureArg + 1] : QString();
+      QTimer::singleShot(300, dialog, [dialog, action, capture] {
+        if (!capture.isEmpty()) if (auto *window = qobject_cast<QQuickWindow *>(dialog)) window->grabWindow().save(capture);
+        auto *button = dialog->findChild<QObject *>(action == "confirm" || action == "retry-conflict" ? "migration-confirm" : "migration-cancel");
+        if (button && button->property("enabled").toBool()) QMetaObject::invokeMethod(button, "clicked");
+        else QCoreApplication::exit(5);
+      });
+    }
+#endif
+    gate.exec();
+    if (!accepted) return 0;
+  }
+  QString migrationError;
+  if (!configManager.applyPending(&migrationError) || !AppPaths::initialize(&migrationError) ||
+      !ConfigJson::update(QDir(AppPaths::writableDataRoot()).filePath("settings.json"), [](QJsonObject &root, QString *error) { return ConfigMigration::validate(root, error); }, &migrationError)) {
+    fprintf(stderr, "Configuration startup failed: %s\n", qPrintable(migrationError));
+    configManager.inspectStartup(legacyRoots);
+    QQmlApplicationEngine errorEngine;
+    errorEngine.rootContext()->setContextProperty("startupError", migrationError);
+    errorEngine.loadData(R"QML(import QtQuick
+import QtQuick.Controls
+ApplicationWindow { visible: true; width: 660; height: 350; title: "LogAnalyQt 配置未能加载"
+Column { anchors.fill: parent; anchors.margins: 24; spacing: 20
+Label { width: parent.width; text: startupError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+Label { width: parent.width; text: "原文件及回退快照已保留。请处理后重新启动；取消待恢复任务可移走 restore-pending.json 或 import-pending.json。"; wrapMode: Text.Wrap }
+Button { text: "关闭"; onClicked: Qt.quit() }
+} })QML");
+    return app.exec();
   }
   // 迁移失败时不创建后端或写入默认配置。
   qInstallMessageHandler(qtMessageToFile);
@@ -146,10 +198,12 @@ int main(int argc, char *argv[]) {
 
   QQmlApplicationEngine engine;
   engine.rootContext()->setContextProperty(QStringLiteral("uiSmokeMode"), uiSmokeMode);
+  engine.rootContext()->setContextProperty(QStringLiteral("personalConfigManager"), &configManager);
   QObject::connect(
       &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
       []() { QCoreApplication::exit(-1); }, Qt::QueuedConnection);
   engine.loadFromModule("LogAnalyQt.Next", "Main");
+  app.setQuitOnLastWindowClosed(true);
 
 #ifdef Q_OS_MACOS
   if (app.platformName() == QStringLiteral("cocoa") && !engine.rootObjects().isEmpty()) {
@@ -228,6 +282,10 @@ int main(int argc, char *argv[]) {
       }
       if (window && pageArg >= 0 && pageArg + 1 < args.size())
         QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, args[pageArg + 1].toInt()));
+      if (window && args.contains("--personal-config")) {
+        QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, 9));
+        if (auto *settings = window->findChild<QObject *>("page-9")) settings->setProperty("section", 2);
+      }
     });
     QTimer::singleShot(1500, &app, [&, window, args, pageArg, screenshotArg] {
       if (args.contains(QStringLiteral("--mqtt-checks"))) {

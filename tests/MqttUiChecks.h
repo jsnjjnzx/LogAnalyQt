@@ -28,7 +28,7 @@ inline QString checkMqttUi(QQuickWindow *window, const QString &screenshot, bool
     auto *controller = window->findChild<MqttController *>("mqttController");
     try {
         require(controller, "MQTT controller missing");
-        require(controller->configPath() == QDir(AppPaths::writableDataRoot()).filePath("mqtt/connections.json"), "MQTT settings must use the isolated app data root");
+        require(controller->configPath() == QDir(AppPaths::writableDataRoot()).filePath("settings.json"), "MQTT settings must use the isolated app data root");
         require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, 15)), "MQTT navigation failed");
         auto *page = window->findChild<QQuickItem *>("page-15");
         require(page && page->isVisible(), "MQTT page not visible");

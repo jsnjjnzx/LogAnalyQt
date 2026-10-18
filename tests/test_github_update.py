@@ -42,6 +42,10 @@ def main():
         for variable in ("QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QML_IMPORT_PATH", "QML2_IMPORT_PATH",
                          "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
             environment.pop(variable, None)
+        if standard_mac:
+            data_prompt = data_root / "prompts/ai_698_framing.md"
+            data_prompt.parent.mkdir(parents=True, exist_ok=True)
+            data_prompt.write_bytes(prompt.read_bytes())
         workspace_environment = dict(environment)
         workspace_environment.pop("LOGANALYQT_UPDATE_TEST_RESULT")
         if not probe:
@@ -80,7 +84,7 @@ def main():
             subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "read", "--page", "3"],
                            cwd=root, env=workspace_environment, check=True, timeout=90)
             if standard_mac:
-                assert not any((root / name).exists() for name in ("LogAnalyQt.ini", "protocol_xml", "preset", "log")), "Mac update generated data beside its bundle"
+                assert not any((root / name).exists() for name in ("settings.json", "device-state.ini", "mqtt", "LogAnalyQt.ini", "protocol_xml", "preset", "log")), "Mac update generated data beside its bundle"
                 assert (data_root / ".legacy-data-imported-v1").is_file()
             print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, saved, replaced, restarted {version} and preserved the workspace drafts and portable data")
         finally:

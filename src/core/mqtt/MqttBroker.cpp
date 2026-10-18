@@ -4,6 +4,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include "../config/CredentialAccess.h"
 #include <QHostAddress>
 #include <QNetworkInterface>
 #include <QProcessEnvironment>
@@ -179,6 +180,8 @@ QString MqttBroker::prepareRuntime() {
 
 QVariantMap MqttBroker::start() {
     if (active() || m_process.state() != QProcess::NotRunning) return Mqtt::result(QStringLiteral("Broker 已在运行或正在停止。"));
+    QString credentialError;
+    if (!CredentialAccess::loadMqtt(&m_config, &credentialError)) return Mqtt::result(credentialError);
     if (auto error = Mqtt::validateBroker(m_config, true); !error.isEmpty()) return Mqtt::result(error);
     QString error;
     const auto helper = helperPath(&error);
