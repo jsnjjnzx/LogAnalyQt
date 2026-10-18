@@ -37,7 +37,7 @@ class MqttMessageFilter : public QSortFilterProxyModel {
     Q_OBJECT
 public:
     explicit MqttMessageFilter(QObject *parent = nullptr);
-    QString setCriteria(const QString &direction, const QString &topic, const QString &content);
+    QString setCriteria(const QString &direction, const QString &content);
     void setSubscriptions(const QVariantList &subscriptions);
     QString topicColor(const QString &topic) const;
     bool acceptsMessage(const Mqtt::Message &message) const;
@@ -46,7 +46,6 @@ protected:
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
 private:
     QString m_direction = "all";
-    QByteArray m_topic;
     QString m_content;
     struct DisplayRule { QByteArray topic; QString color; bool visible; qint64 specificity; };
     QList<DisplayRule> m_subscriptions;

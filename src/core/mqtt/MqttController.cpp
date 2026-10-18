@@ -2,10 +2,12 @@
 #include "common/AppPaths.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QDesktopServices>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QSaveFile>
 #include <QUuid>
 #include <cmath>
@@ -15,12 +17,35 @@ MqttController::MqttController(QObject *parent)
 
 MqttController::MqttController(const QString &dataRoot, QObject *parent, const QString &helperOverride)
     : QObject(parent), m_remote(this), m_local(this), m_broker(dataRoot, this, helperOverride),
-      m_configPath(QDir(dataRoot).filePath("mqtt/connections.json")) {
+      m_configPath(QDir(dataRoot).filePath("mqtt/connections.json")),
+      m_commonPath(QDir(dataRoot).filePath("mqtt/common-subscriptions.json")) {
     m_saveTimer.setInterval(500);
     m_saveTimer.setSingleShot(true);
     connect(&m_saveTimer, &QTimer::timeout, this, [this] { saveNow(); });
     load();
+    reloadCommonSubscriptions();
+    if (!QFile::exists(m_commonPath) && QFile::exists(m_configPath) && !m_badFile) {
+        changeCommonSubscriptions([this](QVariantList &subscriptions) {
+            QSet<QString> topics;
+            for (const auto &entry : subscriptions) topics.insert(entry.toMap().value("topic").toString());
+            auto profiles = m_profiles;
+            profiles.append(m_local.configuration());
+            for (const auto &profile : profiles) {
+                for (const auto &entry : profile.toMap().value("subscriptions").toList()) {
+                    const auto saved = entry.toMap();
+                    const auto topic = saved.value("topic").toString();
+                    if (topics.contains(topic)) continue;
+                    QVariantMap item{{"topic", topic}, {"qos", saved.value("qos", 0)},
+                        {"color", saved.value("color", Mqtt::defaultSubscriptionColor(subscriptions.size()))}};
+                    subscriptions.append(item); topics.insert(topic);
+                }
+            }
+            return QString();
+        });
+    }
     m_loading = false;
+    connect(&m_remote, &MqttSession::subscriptionSaved, this, &MqttController::rememberCommonSubscription);
+    connect(&m_local, &MqttSession::subscriptionSaved, this, &MqttController::rememberCommonSubscription);
     connect(&m_remote, &MqttSession::configurationChanged, this, [this] {
         if (m_loading) return;
         for (auto &profile : m_profiles) {
@@ -193,6 +218,144 @@ QVariantMap MqttController::saveNow() {
 }
 
 QVariantMap MqttController::newConnection() const { return Mqtt::connectionDefaults(); }
+
+QString MqttController::normalizeCommonSubscription(QVariantMap *subscription, int index) {
+    if (subscription->value("topic").metaType().id() != QMetaType::QString) return QStringLiteral("主题必须是文本。");
+    bool valid = false;
+    const auto qos = subscription->value("qos", 0).toDouble(&valid);
+    if (!valid || qos != std::floor(qos) || qos < 0 || qos > 2) return QStringLiteral("QoS 必须为 0、1 或 2。");
+    if (auto error = Mqtt::validateSubscription(subscription->value("topic").toString(), static_cast<int>(qos)); !error.isEmpty()) return error;
+    subscription->insert("qos", static_cast<int>(qos));
+    if (!subscription->contains("color")) subscription->insert("color", Mqtt::defaultSubscriptionColor(index));
+    if (auto error = Mqtt::validateSubscriptionAppearance(*subscription); !error.isEmpty()) return error;
+    subscription->insert("color", subscription->value("color").toString().toLower());
+    return {};
+}
+
+QString MqttController::readCommonSubscriptions(QVariantList *subscriptions, QByteArray *bytes) const {
+    QFile file(m_commonPath);
+    if (!file.exists()) return {};
+    if (!file.open(QIODevice::ReadOnly)) return file.errorString();
+    if (file.size() > Mqtt::MaxConfigBytes) return QStringLiteral("文件超过 8 MiB。");
+    *bytes = file.readAll();
+    QJsonParseError error;
+    const auto json = QJsonDocument::fromJson(*bytes, &error);
+    if (error.error != QJsonParseError::NoError || !json.isObject() || json.object().value("schema").toInt() != 1
+        || !json.object().value("subscriptions").isArray()) return QStringLiteral("JSON 格式或版本无效，原文件已保留；修复后点击重新加载。");
+    const auto entries = json.object().value("subscriptions").toArray();
+    if (entries.size() > 1000) return QStringLiteral("最多保存 1000 个常用订阅。");
+    QSet<QString> topics;
+    for (const auto &entry : entries) {
+        if (!entry.isObject()) return QStringLiteral("每个常用订阅必须是一个对象。");
+        auto subscription = entry.toObject().toVariantMap();
+        if (auto problem = normalizeCommonSubscription(&subscription, subscriptions->size()); !problem.isEmpty()) return problem;
+        const auto topic = subscription.value("topic").toString();
+        if (topics.contains(topic)) continue;
+        topics.insert(topic); subscriptions->append(subscription);
+    }
+    return {};
+}
+
+QVariantMap MqttController::commonResult(const QString &error, bool listChanged) {
+    const auto message = error.isEmpty() ? QString() : QStringLiteral("常用订阅：") + error;
+    const bool changed = listChanged || m_commonError != message;
+    m_commonError = message;
+    if (changed) emit commonSubscriptionsChanged();
+    return Mqtt::result(m_commonError);
+}
+
+QVariantMap MqttController::reloadCommonSubscriptions() {
+    QVariantList subscriptions;
+    QByteArray bytes;
+    if (auto error = readCommonSubscriptions(&subscriptions, &bytes); !error.isEmpty()) return commonResult(error);
+    const bool changed = m_commonSubscriptions != subscriptions;
+    m_commonSubscriptions = subscriptions;
+    return commonResult({}, changed);
+}
+
+QVariantMap MqttController::changeCommonSubscriptions(const std::function<QString(QVariantList &)> &change) {
+    if (!QDir().mkpath(QFileInfo(m_commonPath).absolutePath())) return commonResult(QStringLiteral("无法创建本地目录。"));
+    QLockFile lock(m_commonPath + ".lock");
+    if (!lock.tryLock(0)) return commonResult(lock.error() == QLockFile::LockFailedError
+        ? QStringLiteral("文件正在被其他实例修改，请稍后重试。") : QStringLiteral("无法创建文件锁，请检查本地目录的写入权限。"));
+    const bool existed = QFile::exists(m_commonPath);
+    QVariantList saved;
+    QByteArray before;
+    if (auto error = readCommonSubscriptions(&saved, &before); !error.isEmpty()) return commonResult(error);
+    auto updated = saved;
+    if (auto error = change(updated); !error.isEmpty()) return commonResult(error);
+    if (updated.size() > 1000) return commonResult(QStringLiteral("最多保存 1000 个常用订阅。"));
+    if (!existed || updated != saved) {
+        const auto bytes = QJsonDocument(QJsonObject{{"schema", 1}, {"subscriptions", QJsonArray::fromVariantList(updated)}}).toJson(QJsonDocument::Indented);
+        if (bytes.size() > Mqtt::MaxConfigBytes) return commonResult(QStringLiteral("文件超过 8 MiB，未保存。"));
+        // Preserve manual edits made since this operation read the file.
+        QFile current(m_commonPath);
+        if (current.exists() != existed || (existed && (!current.open(QIODevice::ReadOnly) || current.readAll() != before)))
+            return commonResult(QStringLiteral("文件已被外部修改，请重新加载后重试。"));
+        current.close();
+        QSaveFile file(m_commonPath);
+        if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) return commonResult(file.errorString());
+    }
+    const bool changed = m_commonSubscriptions != updated;
+    m_commonSubscriptions = updated;
+    return commonResult({}, changed);
+}
+
+void MqttController::rememberCommonSubscription(const QVariantMap &subscription) {
+    for (const auto &entry : m_commonSubscriptions)
+        if (entry.toMap().value("topic") == subscription.value("topic")) return;
+    saveCommonSubscription({{"topic", subscription.value("topic")}, {"qos", subscription.value("qos")}, {"color", subscription.value("color")}});
+}
+
+QVariantMap MqttController::saveCommonSubscription(const QVariantMap &input, const QString &previousTopic) {
+    auto subscription = input;
+    if (auto error = normalizeCommonSubscription(&subscription, m_commonSubscriptions.size()); !error.isEmpty()) return commonResult(error);
+    return changeCommonSubscriptions([&](QVariantList &entries) {
+        const auto topic = subscription.value("topic").toString();
+        int previous = -1;
+        for (int i = 0; i < entries.size(); ++i) {
+            const auto existing = entries[i].toMap().value("topic").toString();
+            if (existing == topic && previousTopic.isEmpty()) return QString();
+            if (existing == topic && topic != previousTopic) return QStringLiteral("该常用主题已存在，未覆盖原记录。");
+            if (existing == previousTopic) previous = i;
+        }
+        if (previousTopic.isEmpty()) entries.append(subscription);
+        else {
+            if (previous < 0) return QStringLiteral("待编辑的常用订阅已不存在，请重新加载。");
+            auto updated = entries[previous].toMap();
+            for (auto it = subscription.cbegin(); it != subscription.cend(); ++it) updated.insert(it.key(), it.value());
+            entries[previous] = updated;
+        }
+        return QString();
+    });
+}
+
+QVariantMap MqttController::removeCommonSubscription(const QString &topic) {
+    return changeCommonSubscriptions([&](QVariantList &entries) {
+        for (int i = entries.size() - 1; i >= 0; --i) if (entries[i].toMap().value("topic").toString() == topic) entries.removeAt(i);
+        return QString();
+    });
+}
+
+QVariantMap MqttController::useCommonSubscription(const QString &topic, bool local) {
+    if (auto result = reloadCommonSubscriptions(); !result.value("ok").toBool()) return result;
+    auto *session = local ? &m_local : &m_remote;
+    for (const auto &entry : m_commonSubscriptions) {
+        const auto subscription = entry.toMap();
+        if (subscription.value("topic").toString() != topic) continue;
+        for (const auto &current : session->subscriptions())
+            if (current.toMap().value("topic").toString() == topic) return Mqtt::result();
+        return session->saveSubscription(topic, subscription.value("qos").toInt(), true, {}, subscription.value("color").toString());
+    }
+    return Mqtt::result(QStringLiteral("常用订阅不存在，请重新加载。"));
+}
+
+QVariantMap MqttController::openCommonSubscriptionsFile() {
+    if (!QFile::exists(m_commonPath)) {
+        if (auto result = changeCommonSubscriptions([](QVariantList &) { return QString(); }); !result.value("ok").toBool()) return result;
+    }
+    return Mqtt::result(QDesktopServices::openUrl(QUrl::fromLocalFile(m_commonPath)) ? QString() : QStringLiteral("无法打开文件，请按显示的路径手动打开。"));
+}
 
 QString MqttController::thirdPartyNotices() const {
     QFile file(QStringLiteral(":/mqtt/MQTT-THIRD-PARTY.txt"));

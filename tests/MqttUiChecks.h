@@ -4,6 +4,7 @@
 #include "common/AppPaths.h"
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFileInfo>
 #include <QImage>
 #include <QMouseEvent>
 #include <QQuickItem>
@@ -68,6 +69,7 @@ inline QString checkMqttUi(QQuickWindow *window, const QString &screenshot, bool
         auto remote = controller->remote()->configuration();
         remote["name"] = QStringLiteral("本机 MQTT 验收"); remote["host"] = "127.0.0.1"; remote["port"] = port;
         require(controller->saveConnection(remote).value("ok").toBool(), "UI remote profile save");
+        const int commonBefore = controller->commonSubscriptions().size();
         controller->remote()->saveSubscription("terminal/001/command", 1, true, {}, "#60a5fa");
         QMetaObject::invokeMethod(page, "changeMode", Q_ARG(QVariant, 0)); settle();
         for (const auto &subscription : QList<QPair<QString, QString>>{{"terminal/001/telemetry", "#34d399"}, {"terminal/001/status", "#fbbf24"}}) {
@@ -77,6 +79,30 @@ inline QString checkMqttUi(QQuickWindow *window, const QString &screenshot, bool
             click(item("mqtt-save-subscription"));
         }
         require(controller->remote()->subscriptions().size() == 3, "UI must create three colored subscriptions");
+        require(controller->commonSubscriptions().size() == commonBefore + 3, "new subscriptions automatically enter common list");
+        click(item("mqtt-open-common-subscriptions"));
+        click(item(qPrintable(QString("mqtt-edit-common-%1").arg(commonBefore))));
+        item("mqtt-subscription-color")->setProperty("text", "#fb923c");
+        click(item("mqtt-save-subscription"));
+        require(controller->commonSubscriptions().at(commonBefore).toMap().value("color").toString() == "#fb923c"
+            && controller->remote()->subscriptions().first().toMap().value("color").toString() == "#60a5fa", "common editor must not change current subscription");
+        click(item("mqtt-new-common-subscription"));
+        item("mqtt-subscription-topic")->setProperty("text", "common/quick");
+        item("mqtt-subscription-color")->setProperty("text", "#22d3ee");
+        click(item("mqtt-save-subscription"));
+        require(controller->commonSubscriptions().size() == commonBefore + 4 && controller->remote()->subscriptions().size() == 3, "saving a common item does not subscribe immediately");
+        QMetaObject::invokeMethod(item("mqtt-common-subscriptions-list"), "positionViewAtEnd"); settle();
+        const auto useName = QString("mqtt-use-common-%1").arg(commonBefore + 3).toLatin1();
+        click(item(useName.constData()));
+        require(controller->remote()->subscriptions().size() == 4 && !item(useName.constData())->isEnabled(), "common item is added once to current connection");
+        click(item(qPrintable(QString("mqtt-remove-common-%1").arg(commonBefore + 3))));
+        require(controller->commonSubscriptions().size() == commonBefore + 3 && controller->remote()->subscriptions().size() == 4, "deleting common item keeps current subscription");
+        if (!screenshot.isEmpty()) {
+            const QFileInfo imagePath(screenshot);
+            require(window->grabWindow().save(imagePath.dir().filePath(imagePath.completeBaseName() + "-common.png")), "common subscription screenshot save failed");
+        }
+        click(item("mqtt-close-side-panel"));
+        controller->remote()->removeSubscription("common/quick");
         click(item("mqtt-connection-action"));
         require(waitFor([&] {
             if (!controller->remote()->connected()) return false;
@@ -96,6 +122,12 @@ inline QString checkMqttUi(QQuickWindow *window, const QString &screenshot, bool
         controller->localClient()->publishMessage("terminal/001/telemetry", telemetry, "JSON", 1, false);
         require(waitFor([&] { return item("mqtt-received-payload")->property("text").toString().contains("\"measurements\""); }), "received JSON not rendered in UI");
         require(item("mqtt-received-topic")->property("color").value<QColor>() == QColor("#34d399"), "received topic uses subscription color");
+        item("mqtt-content-filter")->setProperty("text", "no-such-payload");
+        QMetaObject::invokeMethod(page, "applyFilter");
+        require(controller->remote()->messageCount() == 0, "content search remains available");
+        item("mqtt-content-filter")->setProperty("text", "");
+        QMetaObject::invokeMethod(page, "applyFilter");
+        require(controller->remote()->messageCount() > 0, "clearing content search restores messages");
         controller->localClient()->publishMessage("terminal/001/status", "status-initial", "Text", 1, false);
         require(waitFor([&] { return item("mqtt-received-payload")->property("text").toString().contains("status-initial"); }), "third topic visible by default");
         QMetaObject::invokeMethod(item("mqtt-subscriptions-list"), "positionViewAtEnd"); settle();

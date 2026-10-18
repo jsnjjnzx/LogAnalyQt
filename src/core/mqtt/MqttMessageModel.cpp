@@ -113,13 +113,9 @@ MqttMessageFilter::MqttMessageFilter(QObject *parent) : QSortFilterProxyModel(pa
     setDynamicSortFilter(true);
 }
 
-QString MqttMessageFilter::setCriteria(const QString &direction, const QString &topic, const QString &content) {
+QString MqttMessageFilter::setCriteria(const QString &direction, const QString &content) {
     if (direction != "all" && direction != "received" && direction != "sent") return QStringLiteral("收发过滤条件无效。");
-    if (!topic.isEmpty()) {
-        if (auto error = Mqtt::validateSubscription(topic, 0); !error.isEmpty()) return error;
-    }
     m_direction = direction;
-    m_topic = topic.toUtf8();
     m_content = content;
     invalidateFilter();
     return {};
@@ -181,11 +177,6 @@ bool MqttMessageFilter::acceptsMessage(const Mqtt::Message &message) const {
     }
     if (m_direction == "received" && !message.received) return false;
     if (m_direction == "sent" && message.received) return false;
-    if (!m_topic.isEmpty()) {
-        bool matches = false;
-        mosquitto_topic_matches_sub(m_topic.constData(), message.topic.toUtf8().constData(), &matches);
-        if (!matches) return false;
-    }
     if (!m_content.isEmpty()) {
         return QString::fromUtf8(message.payload).contains(m_content, Qt::CaseInsensitive)
             || QString::fromLatin1(message.payload.toHex(' ')).contains(m_content, Qt::CaseInsensitive);

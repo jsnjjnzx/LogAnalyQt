@@ -282,6 +282,7 @@ QVariantMap MqttSession::saveSubscription(const QString &topic, int qos, bool en
     m_config.insert("subscriptions", subscriptions);
     m_config.insert("cancelledSubscriptions", cancelled);
     sendSubscriptions();
+    if (!found) emit subscriptionSaved(subscription);
     return report({});
 }
 
@@ -299,8 +300,8 @@ QVariantMap MqttSession::removeSubscription(const QString &topic) {
     return report({});
 }
 
-QVariantMap MqttSession::setFilter(const QString &direction, const QString &topic, const QString &content) {
-    const auto error = m_filter.setCriteria(direction, topic, content);
+QVariantMap MqttSession::setFilter(const QString &direction, const QString &content) {
+    const auto error = m_filter.setCriteria(direction, content);
     emit messagesChanged();
     return report(error);
 }

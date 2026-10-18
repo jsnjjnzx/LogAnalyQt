@@ -56,7 +56,7 @@ public:
     Q_INVOKABLE QVariantMap setSubscriptionAppearance(const QString &topic, const QString &color, bool visible);
     Q_INVOKABLE void setAllSubscriptionsVisible(bool visible);
     Q_INVOKABLE QVariantMap removeSubscription(const QString &topic);
-    Q_INVOKABLE QVariantMap setFilter(const QString &direction, const QString &topic, const QString &content);
+    Q_INVOKABLE QVariantMap setFilter(const QString &direction, const QString &content);
     Q_INVOKABLE QVariantMap message(qulonglong id, const QString &format) const;
     Q_INVOKABLE qulonglong idAt(int row) const;
     Q_INVOKABLE void copyMessage(qulonglong id, const QString &format);
@@ -67,6 +67,7 @@ public:
 signals:
     void configurationChanged();
     void subscriptionsChanged();
+    void subscriptionSaved(const QVariantMap &subscription);
     void stateChanged();
     void messagesChanged();
     void noticeChanged();

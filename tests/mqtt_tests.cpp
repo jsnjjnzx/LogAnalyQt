@@ -5,6 +5,8 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QLockFile>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -168,7 +170,7 @@ void subscriptionDisplay(const QString &helper) {
     receiver->saveSubscription("color/b", 1, true, {}, "#34d399");
     receiver->saveSubscription("color/c", 1, true, {}, "#fbbf24");
     require(receiver->connectToBroker().value("ok").toBool() && waitFor([&] { return subscribedTo(receiver, "color/a") && subscribedTo(receiver, "color/b") && subscribedTo(receiver, "color/c"); }), "three concurrent subscriptions");
-    receiver->setFilter("received", "", "");
+    receiver->setFilter("received", "");
     for (const auto &topic : {"color/a", "color/b", "color/c"}) controller.localClient()->publishMessage(topic, "initial", "Text", 1, false);
     require(waitFor([&] { return receiver->receivedCount() == 3 && receiver->messageCount() == 3; }), "all three topics initially visible");
     const auto before = receiver->configuration();
@@ -198,6 +200,80 @@ void subscriptionDisplay(const QString &helper) {
     require(subscribedTo(receiver, "color/a") && subscribedTo(receiver, "color/b") && subscribedTo(receiver, "color/c"), "display choices preserve protocol subscription states");
     receiver->disconnectFromBroker(); controller.localClient()->disconnectFromBroker(); controller.broker()->stop();
     require(waitFor([&] { return !receiver->active() && !controller.localClient()->active() && !controller.broker()->active(); }), "topic display fixture cleanup");
+}
+
+void commonSubscriptions(const QString &helper) {
+    QTemporaryDir directory;
+    QString path;
+    auto read = [](const QString &fileName) { QFile file(fileName); require(file.open(QIODevice::ReadOnly), "read common fixture"); return file.readAll(); };
+    auto write = [](const QString &fileName, const QByteArray &bytes) { QFile file(fileName); require(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(), "write common fixture"); };
+    const QString topic = QStringLiteral("设备/+/状态");
+    {
+        MqttController controller(directory.path(), nullptr, helper);
+        path = controller.commonSubscriptionsPath();
+        require(controller.commonSubscriptions().isEmpty(), "new installation starts with no common subscriptions");
+        require(controller.remote()->saveSubscription(topic, 1, true, {}, "#60a5fa").value("ok").toBool(), "new subscription is saved");
+        require(controller.commonSubscriptions().size() == 1 && QFile::exists(path), "new topic is automatically collected locally");
+        const auto original = read(path);
+        controller.remote()->saveSubscription(topic, 2, true, {}, "#f472b6");
+        controller.localClient()->saveSubscription(topic, 0, true, {}, "#fbbf24");
+        require(controller.saveCommonSubscription({{"topic", topic}, {"qos", 0}, {"color", "#a78bfa"}}).value("ok").toBool(), "duplicate common topic is accepted without adding");
+        require(controller.commonSubscriptions().size() == 1 && read(path) == original, "duplicates across sessions do not overwrite saved QoS/color");
+        const auto active = controller.remote()->configuration();
+        require(controller.saveCommonSubscription({{"topic", topic}, {"qos", 0}, {"color", "#34d399"}}, topic).value("ok").toBool(), "edit common subscription");
+        require(controller.remote()->configuration() == active, "editing common list leaves current connection unchanged");
+        require(controller.useCommonSubscription(topic, false).value("ok").toBool() && controller.remote()->configuration() == active, "using an already present topic is idempotent");
+        require(controller.saveConnection(controller.newConnection()).value("ok").toBool(), "create another connection");
+        require(controller.useCommonSubscription(topic, false).value("ok").toBool(), "reuse common topic across connections");
+        auto subscription = controller.remote()->subscriptions().first().toMap();
+        require(subscription.value("qos").toInt() == 0 && subscription.value("color").toString() == "#34d399" && subscription.value("visible").toBool(), "reused subscription receives saved settings and is shown");
+        controller.removeCommonSubscription(topic);
+        controller.remote()->saveSubscription(topic, 2, false);
+        require(controller.commonSubscriptions().isEmpty() && controller.remote()->subscriptions().size() == 1, "deleting common entry does not remove active configuration or reappear on edits");
+        controller.saveCommonSubscription({{"topic", topic}, {"qos", 1}, {"color", "#fb923c"}});
+        require(!controller.remote()->active() && !controller.localClient()->active() && !controller.broker()->active(), "common list operations never connect automatically");
+        // No explicit saveNow: normal shutdown must also persist connection subscriptions.
+    }
+    {
+        MqttController controller(directory.path(), nullptr, helper);
+        require(controller.commonSubscriptions().size() == 1 && controller.commonSubscriptionsError().isEmpty(), "common list survives restart");
+        require(controller.remote()->subscriptions().size() == 1 && controller.remote()->subscriptions().first().toMap().value("qos").toInt() == 2, "connection subscriptions survive shutdown without manual saving");
+        const QJsonObject manual{{"topic", "manual/#"}, {"qos", 2}, {"color", "#22d3ee"}};
+        QJsonArray entries = QJsonArray::fromVariantList(controller.commonSubscriptions());
+        entries.append(manual); entries.append(manual);
+        auto valid = QJsonDocument(QJsonObject{{"schema", 1}, {"subscriptions", entries}}).toJson();
+        write(path, valid);
+        require(controller.reloadCommonSubscriptions().value("ok").toBool() && controller.commonSubscriptions().size() == 2, "manual file edits reload and duplicate topics are collapsed");
+        write(path, "not valid JSON");
+        require(!controller.reloadCommonSubscriptions().value("ok").toBool() && controller.commonSubscriptions().size() == 2, "bad file preserves the last valid list");
+        require(controller.remote()->saveSubscription("still/works", 0).value("ok").toBool(), "bad common file does not block current subscriptions");
+        require(read(path) == "not valid JSON" && !controller.commonSubscriptionsError().isEmpty(), "automatic collection never overwrites bad manual edits");
+        write(path, valid);
+        require(controller.reloadCommonSubscriptions().value("ok").toBool(), "reload repaired file");
+        QLockFile lock(path + ".lock"); require(lock.tryLock(), "lock common fixture");
+        require(!controller.saveCommonSubscription({{"topic", "locked/#"}}).value("ok").toBool() && read(path) == valid, "concurrent lock preserves file");
+        lock.unlock();
+        MqttController other(directory.path(), nullptr, helper);
+        require(controller.saveCommonSubscription({{"topic", "first/#"}}).value("ok").toBool(), "first instance adds common topic");
+        require(other.saveCommonSubscription({{"topic", "second/#"}}).value("ok").toBool(), "stale instance adds another topic");
+        controller.reloadCommonSubscriptions();
+        require(controller.commonSubscriptions().size() == 4, "stale instance preserves another instance's saved topics");
+        const auto before = read(path);
+        require(!controller.saveCommonSubscription({{"topic", "bad/#/topic"}}).value("ok").toBool() && read(path) == before, "invalid common topic never changes saved data");
+        require(!controller.saveCommonSubscription({{"topic", "second/#"}}, "first/#").value("ok").toBool() && read(path) == before, "rename cannot overwrite another common subscription");
+    }
+    require(QFile::remove(path), "remove own library fixture to emulate upgrade from older configuration");
+    {
+        MqttController controller(directory.path(), nullptr, helper);
+        bool found = false;
+        for (const auto &entry : controller.commonSubscriptions()) found |= entry.toMap().value("topic").toString() == topic;
+        require(found, "first run imports existing saved connection subscriptions");
+        controller.removeCommonSubscription(topic);
+    }
+    {
+        MqttController controller(directory.path(), nullptr, helper);
+        for (const auto &entry : controller.commonSubscriptions()) require(entry.toMap().value("topic").toString() != topic, "deleted common item must not be imported again on restart");
+    }
 }
 
 void integration(const QString &helper) {
@@ -235,10 +311,10 @@ void integration(const QString &helper) {
     require(waitFor([&] { return controller.broker()->clients().size() == 2; }), "connected client list");
     require(!remote->publishMessage("bad/+", "{}", "JSON", 0, false).value("ok").toBool(), "invalid publication never sent");
     require(!remote->publishMessage("bad/payload", "{", "JSON", 0, false).value("ok").toBool(), "invalid JSON never sent");
-    require(remote->setFilter("received", "test/+/data", "68 ff").value("ok").toBool(), "topic and Hex content filtering");
+    require(remote->setFilter("received", "68 ff").value("ok").toBool(), "direction and Hex content filtering");
     require(waitFor([&] { return remote->messageCount() == 3; }), "filter only matching received rows");
-    require(!remote->setFilter("all", "bad/#/topic", "").value("ok").toBool() && remote->messageCount() == 3, "invalid filter preserves last valid view");
-    remote->setFilter("all", "", "");
+    require(!remote->setFilter("invalid", "").value("ok").toBool() && remote->messageCount() == 3, "invalid direction preserves last valid view");
+    remote->setFilter("all", "");
 
     local->setPaused(true);
     const int visible = local->messageCount();
@@ -547,6 +623,8 @@ int main(int argc, char **argv) {
         QTextStream(stdout) << "PASS plaintext settings, restart and corrupt-file preservation\n";
         subscriptionDisplay(QString::fromLocal8Bit(argv[1]));
         QTextStream(stdout) << "PASS subscription colors, overlap, display-only selection, hidden reception and history restoration\n";
+        commonSubscriptions(QString::fromLocal8Bit(argv[1]));
+        QTextStream(stdout) << "PASS common subscription collection, deduplication, independent edits, reuse, reload and file preservation\n";
         integration(QString::fromLocal8Bit(argv[1]));
         QTextStream(stdout) << "PASS broker, QoS 0/1/2, binary, filters, pause, retain, will, export, MQTT 5 and port ownership\n";
         authentication(QString::fromLocal8Bit(argv[1]));

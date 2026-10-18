@@ -24,6 +24,7 @@ Item {
     property int editingQos: 0
     property bool editingEnabled: true
     property bool editingVisible: true
+    property bool editingCommonSubscription: false
     property bool subscriptionsOpen: true
     readonly property var topicColors: ["#60a5fa", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#22d3ee", "#fb923c", "#f87171", "#a3e635", "#2dd4bf", "#818cf8", "#fb7185"]
     property string pendingDeleteId: ""
@@ -62,12 +63,11 @@ Item {
         }
         selectedMessage = message
     }
-    function applyFilter() { showResult(session.setFilter(["all", "received", "sent"][direction.currentIndex], topicFilter.text, contentFilter.text)) }
+    function applyFilter() { showResult(session.setFilter(["all", "received", "sent"][direction.currentIndex], contentFilter.text)) }
     function changeMode(next) {
         if (next === mode) return
         saveDraft()
         mode = next
-        topicFilter.text = ""
         contentFilter.text = ""
         direction.currentIndex = 0
         applyFilter()
@@ -78,16 +78,23 @@ Item {
         if (showResult(mqtt.selectConnection(id))) loadDraft()
     }
     function openPanel(which) { saveDraft(); panel = which; sidePanel.open() }
-    function editSubscription(subscription) {
+    function editSubscription(subscription) { prepareSubscriptionEditor(subscription, false) }
+    function editCommonSubscription(subscription) { prepareSubscriptionEditor(subscription, true) }
+    function prepareSubscriptionEditor(subscription, common) {
         actionMessage = ""
+        editingCommonSubscription = common
         editingTopic = subscription ? subscription.topic : ""
         editingQos = subscription ? subscription.qos : 0
-        editingEnabled = subscription ? subscription.enabled : true
-        editingVisible = subscription ? subscription.visible : true
+        editingEnabled = subscription ? subscription.enabled !== false : true
+        editingVisible = subscription ? subscription.visible !== false : true
         subscriptionTopic.text = editingTopic
         subscriptionQos.currentIndex = editingQos
-        subscriptionColor.text = subscription ? subscription.color : topicColors[session.subscriptions.length % topicColors.length]
+        subscriptionColor.text = subscription ? subscription.color : topicColors[(common ? mqtt.commonSubscriptions.length : session.subscriptions.length) % topicColors.length]
         openPanel("subscriptions")
+    }
+    function openCommonSubscriptions() { showResult(mqtt.reloadCommonSubscriptions()); openPanel("commonSubscriptions") }
+    function hasSubscription(topic) {
+        return session.subscriptions.some(function(subscription) { return subscription.topic === topic })
     }
     function send() {
         saveDraft()
@@ -199,7 +206,7 @@ Item {
         Label { textFormat: Text.PlainText;
             Layout.fillWidth: true
             visible: text.length > 0
-            text: mqtt.storageError || root.actionMessage || (root.session.state === "error" || root.session.state === "reconnecting" ? root.session.detail : "") || (root.mode === 1 && mqtt.broker.state === "error" ? mqtt.broker.detail : "")
+            text: mqtt.storageError || mqtt.commonSubscriptionsError || root.actionMessage || (root.session.state === "error" || root.session.state === "reconnecting" ? root.session.detail : "") || (root.mode === 1 && mqtt.broker.state === "error" ? mqtt.broker.detail : "")
             color: root.theme.warning; font.pixelSize: 12
             wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
         }
@@ -265,10 +272,10 @@ Item {
                                 Next.GlassButton { objectName: "mqtt-add-subscription"; text: "＋ 新增"; implicitHeight: 28; implicitWidth: 65; font.pixelSize: 11; onClicked: root.editSubscription(null) }
                             }
                             RowLayout {
-                                Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8
-                                Next.GlassButton { objectName: "mqtt-show-all-topics"; text: "全选"; implicitHeight: 26; implicitWidth: 54; font.pixelSize: 11; onClicked: root.session.setAllSubscriptionsVisible(true) }
-                                Next.GlassButton { objectName: "mqtt-hide-all-topics"; text: "全不选"; implicitHeight: 26; implicitWidth: 66; font.pixelSize: 11; onClicked: root.session.setAllSubscriptionsVisible(false) }
-                                Item { Layout.fillWidth: true }
+                                Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8; spacing: 4
+                                Next.GlassButton { objectName: "mqtt-show-all-topics"; text: "全选"; implicitHeight: 26; implicitWidth: 44; horizontalPadding: 6; font.pixelSize: 11; onClicked: root.session.setAllSubscriptionsVisible(true) }
+                                Next.GlassButton { objectName: "mqtt-hide-all-topics"; text: "全不选"; implicitHeight: 26; implicitWidth: 58; horizontalPadding: 6; font.pixelSize: 11; onClicked: root.session.setAllSubscriptionsVisible(false) }
+                                Next.GlassButton { objectName: "mqtt-open-common-subscriptions"; text: "常用"; implicitHeight: 26; implicitWidth: 54; horizontalPadding: 6; font.pixelSize: 11; onClicked: root.openCommonSubscriptions(); ToolTip.visible: hovered; ToolTip.text: "本地常用订阅（" + mqtt.commonSubscriptions.length + "）" }
                             }
                             Label { Layout.fillWidth: true; Layout.margins: 8; text: "勾选控制接收显示"; font.pixelSize: 10; color: root.theme.subText }
                             ListView {
@@ -297,7 +304,7 @@ Item {
                                             Label { textFormat: Text.PlainText; text: subscriptionRow.modelData.state.startsWith("已订阅") ? subscriptionRow.modelData.state : "QoS " + subscriptionRow.modelData.qos + " · " + subscriptionRow.modelData.state; Layout.fillWidth: true; elide: Text.ElideRight; color: root.theme.subText; font.pixelSize: 9 }
                                         }
                                         Next.GlassButton {
-                                            text: "⋯"; implicitWidth: 26; implicitHeight: 28; padding: 0
+                                            text: "⋯"; implicitWidth: 26; implicitHeight: 28; horizontalPadding: 0
                                             Accessible.name: "配置订阅：" + subscriptionRow.modelData.topic
                                             ToolTip.visible: hovered
                                             ToolTip.text: "编辑颜色、停用或删除"
@@ -323,9 +330,8 @@ Item {
                             Layout.fillHeight: true; spacing: 0
                             ColumnLayout {
                                 Layout.fillWidth: true; Layout.margins: 9; spacing: 6
-                                Next.GlassTextField { id: topicFilter; Layout.fillWidth: true; implicitHeight: 30; placeholderText: "主题过滤，例如 terminal/#"; font.pixelSize: 11; onTextEdited: filterTimer.restart() }
-                                Next.GlassTextField { id: contentFilter; Layout.fillWidth: true; implicitHeight: 30; placeholderText: "搜索内容 / Hex"; font.pixelSize: 11; onTextEdited: filterTimer.restart() }
-                                Next.GlassComboBox { id: direction; Layout.fillWidth: true; implicitHeight: 28; model: ["全部消息", "仅接收", "仅发送"]; font.pixelSize: 11; onActivated: root.applyFilter() }
+                                Next.GlassTextField { id: contentFilter; objectName: "mqtt-content-filter"; Layout.fillWidth: true; implicitHeight: 30; placeholderText: "搜索内容 / Hex"; font.pixelSize: 11; onTextEdited: filterTimer.restart() }
+                                Next.GlassComboBox { id: direction; objectName: "mqtt-message-direction"; Layout.fillWidth: true; implicitHeight: 28; model: ["全部消息", "仅接收", "仅发送"]; font.pixelSize: 11; onActivated: root.applyFilter() }
                             }
                             ListView {
                                 id: messageList
@@ -472,16 +478,52 @@ Item {
     }
     Next.GlassDialog {
         id: sidePanel
+        objectName: "mqtt-side-panel"
         focus: true
         parent: Overlay.overlay
         modal: true; width: 480; height: root.panel === "subscriptions" ? Math.min(400, parent ? parent.height - 24 : 400) : (parent ? parent.height - 24 : 740)
         x: parent ? parent.width - width - 12 : 0; y: root.panel === "subscriptions" && parent ? (parent.height - height) / 2 : 12
-        title: ({connections:"连接管理", subscriptions:"主题订阅", clients:"接入终端与服务事件", history:"发送历史"})[root.panel] || "MQTT"
+        title: root.panel === "subscriptions" && root.editingCommonSubscription ? "常用订阅配置" : ({connections:"连接管理", subscriptions:"主题订阅", commonSubscriptions:"本地常用订阅", clients:"接入终端与服务事件", history:"发送历史"})[root.panel] || "MQTT"
         palette.window: root.theme.popupBackground; palette.windowText: root.theme.text; palette.mid: root.theme.groupBorder
         contentItem: ColumnLayout {
             spacing: 12
+            ColumnLayout {
+                visible: root.panel === "commonSubscriptions"
+                Layout.fillWidth: true; Layout.fillHeight: true
+                Label { Layout.fillWidth: true; text: "新增订阅会自动收录，按主题去重。修改常用项只影响以后添加的订阅，不改变当前连接。"; wrapMode: Text.Wrap; color: root.theme.subText; font.pixelSize: 12 }
+                RowLayout {
+                    Next.GlassButton { objectName: "mqtt-new-common-subscription"; text: "新增常用"; onClicked: root.editCommonSubscription(null) }
+                    Next.GlassButton { objectName: "mqtt-reload-common-subscriptions"; text: "重新加载"; onClicked: root.showResult(mqtt.reloadCommonSubscriptions()) }
+                    Next.GlassButton { text: "打开文件"; onClicked: root.showResult(mqtt.openCommonSubscriptionsFile()) }
+                }
+                Next.GlassTextField { Layout.fillWidth: true; readOnly: true; text: mqtt.commonSubscriptionsPath; font.pixelSize: 10; selectByMouse: true }
+                Label { Layout.fillWidth: true; visible: text.length > 0; text: mqtt.commonSubscriptionsError || root.actionMessage; color: root.theme.warning; wrapMode: Text.Wrap; font.pixelSize: 11 }
+                ListView {
+                    id: commonList
+                    objectName: "mqtt-common-subscriptions-list"
+                    Layout.fillWidth: true; Layout.fillHeight: true
+                    clip: true; model: root.panel === "commonSubscriptions" ? mqtt.commonSubscriptions : []
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar {}
+                    delegate: ColumnLayout {
+                        required property var modelData
+                        required property int index
+                        width: commonList.width; height: 108; spacing: 4
+                        Label { textFormat: Text.PlainText; text: modelData.topic; color: modelData.color; Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; maximumLineCount: 2; elide: Text.ElideMiddle; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 12 }
+                        Label { text: "QoS " + modelData.qos; color: root.theme.subText; font.pixelSize: 11 }
+                        RowLayout {
+                            Next.GlassButton { objectName: "mqtt-use-common-" + index; text: root.hasSubscription(modelData.topic) ? "已在当前连接" : "添加到当前连接"; enabled: !root.hasSubscription(modelData.topic); onClicked: root.showResult(mqtt.useCommonSubscription(modelData.topic, root.mode === 1)) }
+                            Next.GlassButton { objectName: "mqtt-edit-common-" + index; text: "编辑"; onClicked: root.editCommonSubscription(modelData) }
+                            Next.GlassButton { objectName: "mqtt-remove-common-" + index; text: "删除"; onClicked: root.showResult(mqtt.removeCommonSubscription(modelData.topic)) }
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: root.theme.separator }
+                    }
+                    Label { anchors.centerIn: parent; visible: commonList.count === 0; text: "暂无常用订阅，新增主题后会自动保存"; color: root.theme.subText; font.pixelSize: 12 }
+                }
+            }
             ScrollView {
                 id: panelScroll
+                visible: root.panel !== "commonSubscriptions"
                 Layout.fillWidth: true; Layout.fillHeight: true
                 contentWidth: availableWidth; clip: true
                 ColumnLayout {
@@ -511,7 +553,7 @@ Item {
                     }
                     ColumnLayout {
                         Layout.fillWidth: true; visible: root.panel === "subscriptions"
-                        Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: "订阅决定接收哪些主题；主界面过滤只改变显示。"; wrapMode: Text.Wrap; color: root.theme.subText; font.pixelSize: 12 }
+                        Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.editingCommonSubscription ? "修改只影响常用列表，当前连接的订阅保持原设置。" : "新增主题会自动存入本地常用列表；已有主题不会重复保存。"; wrapMode: Text.Wrap; color: root.theme.subText; font.pixelSize: 12 }
                         Next.GlassTextField { id: subscriptionTopic; objectName: "mqtt-subscription-topic"; Layout.fillWidth: true; placeholderText: "主题，例如 terminal/+/status 或 #" }
                         Label { text: "主题颜色"; color: root.theme.text }
                         RowLayout {
@@ -532,17 +574,21 @@ Item {
                             Next.GlassComboBox { id: subscriptionQos; objectName: "mqtt-subscription-qos"; model: ["QoS 0", "QoS 1", "QoS 2"] }
                             Next.GlassButton {
                                 objectName: "mqtt-save-subscription"
-                                text: root.editingTopic ? "保存修改" : "新增订阅"
+                                text: root.editingTopic ? "保存修改" : root.editingCommonSubscription ? "保存常用" : "新增订阅"
                                 onClicked: {
-                                    const result = root.editingTopic && root.editingTopic === subscriptionTopic.text && root.editingQos === subscriptionQos.currentIndex
+                                    const result = root.editingCommonSubscription
+                                        ? mqtt.saveCommonSubscription({topic: subscriptionTopic.text, qos: subscriptionQos.currentIndex, color: subscriptionColor.text}, root.editingTopic)
+                                        : root.editingTopic && root.editingTopic === subscriptionTopic.text && root.editingQos === subscriptionQos.currentIndex
                                         ? root.session.setSubscriptionAppearance(root.editingTopic, subscriptionColor.text, root.editingVisible)
                                         : root.session.saveSubscription(subscriptionTopic.text, subscriptionQos.currentIndex, root.editingEnabled, root.editingTopic, subscriptionColor.text)
                                     if (root.showResult(result)) {
-                                        root.editingTopic = ""; sidePanel.close()
+                                        root.editingTopic = ""
+                                        if (root.editingCommonSubscription) root.openCommonSubscriptions()
+                                        else sidePanel.close()
                                     }
                                 }
                             }
-                            Next.GlassButton { text: "取消"; onClicked: sidePanel.close() }
+                            Next.GlassButton { text: "取消"; onClicked: { if (root.editingCommonSubscription) root.openCommonSubscriptions(); else sidePanel.close() } }
                         }
                         Label { textFormat: Text.PlainText; text: root.actionMessage; visible: text.length > 0; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.theme.warning }
                     }
@@ -580,7 +626,7 @@ Item {
                 }
             }
             Label { textFormat: Text.PlainText; Layout.fillWidth: true; visible: root.actionMessage.length > 0; text: root.actionMessage; color: root.theme.warning; wrapMode: Text.Wrap }
-            Next.GlassButton { Layout.alignment: Qt.AlignRight; text: "返回数据区"; onClicked: sidePanel.close() }
+            Next.GlassButton { objectName: "mqtt-close-side-panel"; Layout.alignment: Qt.AlignRight; text: "返回数据区"; onClicked: sidePanel.close() }
         }
     }
     Next.GlassDialog {
