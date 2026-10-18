@@ -27,7 +27,11 @@ Item {
             settingsSignal.target = page; settingsSignal.clear(); resultSignal.target = page; resultSignal.clear()
         }
         function cleanup() { settingsSignal.target = null; resultSignal.target = null }
-        function item(name) { const found = findChild(page,name); verify(found !== null,name); return found }
+        function item(name) {
+            // ListView creates result delegates on a later render pass.
+            tryVerify(function() { return findChild(page,name) !== null },5000,name)
+            return findChild(page,name)
+        }
         function renderPage() { page.Window.window.update(); verify(waitForRendering(page)) }
         function enter(field,text) { field.forceActiveFocus(); field.selectAll(); keyClick(Qt.Key_Backspace); for(let i=0;i<text.length;++i) keyClick(text.charAt(i)) }
         function prepare() { enter(item("ai-terminal-address"),"010203040506"); enter(item("ai-composer"),"read time") }
