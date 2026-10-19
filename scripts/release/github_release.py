@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 from generate_release_notes import generate
 from release_metadata import expected_asset_names, normalize_tag, project_version
@@ -34,7 +35,7 @@ def manifest(directory, tag, notes, repository):
         path = directory / name
         assets.append({"name": name, "size": path.stat().st_size,
                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                       "browser_download_url": f"{base}/download/{tag}/{name}"})
+                       "browser_download_url": f"{base}/download/{tag}/{quote(name)}"})
     return {"tag_name": tag, "body": notes, "html_url": f"{base}/tag/{tag}",
             "assets": assets}
 

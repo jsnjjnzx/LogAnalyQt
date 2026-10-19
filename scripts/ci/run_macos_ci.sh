@@ -39,8 +39,8 @@ else
 fi
 
 ARCH=$(uname -m)
-DMG="$ROOT_DIR/release_package/LogAnalyQt_v${VERSION}_macOS_${ARCH}.dmg"
-UPDATE_ZIP="$ROOT_DIR/release_package/LogAnalyQt_v${VERSION}_macOS_${ARCH}_update.zip"
+DMG="$ROOT_DIR/release_package/通联工坊_v${VERSION}_macOS_${ARCH}.dmg"
+UPDATE_ZIP="$ROOT_DIR/release_package/通联工坊_v${VERSION}_macOS_${ARCH}_update.zip"
 
 python3 scripts/release/gitee_release.py upload --tag "$RELEASE_TAG" --file "$DMG"
 python3 scripts/release/gitee_release.py upload --tag "$RELEASE_TAG" --file "$DMG.sha256"
@@ -49,11 +49,11 @@ python3 scripts/release/gitee_release.py upload --tag "$RELEASE_TAG" --file "$UP
 
 python3 scripts/release/gitee_release.py finalize \
   --tag "$RELEASE_TAG" \
-  --expect "LogAnalyQt_v${VERSION}_Windows_x64.exe" \
-  --expect "LogAnalyQt_v${VERSION}_Windows_x64.exe.sha256" \
-  --expect "LogAnalyQt_v${VERSION}_macOS_${ARCH}.dmg" \
-  --expect "LogAnalyQt_v${VERSION}_macOS_${ARCH}.dmg.sha256" \
-  --expect "LogAnalyQt_v${VERSION}_macOS_${ARCH}_update.zip" \
-  --expect "LogAnalyQt_v${VERSION}_macOS_${ARCH}_update.zip.sha256"
+  --expect "通联工坊_v${VERSION}_Windows_x64.exe" \
+  --expect "通联工坊_v${VERSION}_Windows_x64.exe.sha256" \
+  --expect "通联工坊_v${VERSION}_macOS_${ARCH}.dmg" \
+  --expect "通联工坊_v${VERSION}_macOS_${ARCH}.dmg.sha256" \
+  --expect "通联工坊_v${VERSION}_macOS_${ARCH}_update.zip" \
+  --expect "通联工坊_v${VERSION}_macOS_${ARCH}_update.zip.sha256"
 
 print "macOS assets uploaded and Gitee Release finalized: $RELEASE_TAG"

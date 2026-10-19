@@ -186,9 +186,9 @@ void UpdateChecker::onReplyFinished(QNetworkReply *reply) {
 
   const QString releaseBase = QStringLiteral("https://github.com/jsnjjnzx/LogAnalyQt/releases/download/v%1/").arg(m_latestVersion);
 #ifdef Q_OS_WIN
-  const QString expectedName = QStringLiteral("LogAnalyQt_v%1_Windows_x64.exe").arg(m_latestVersion);
+  const QString expectedName = QStringLiteral("通联工坊_v%1_Windows_x64.exe").arg(m_latestVersion);
 #else
-  const QString expectedName = QStringLiteral("LogAnalyQt_v%1_macOS_arm64_update.zip").arg(m_latestVersion);
+  const QString expectedName = QStringLiteral("通联工坊_v%1_macOS_arm64_update.zip").arg(m_latestVersion);
 #endif
   int matches = 0;
   if (obj.contains("assets") && obj["assets"].isArray()) {
@@ -205,7 +205,7 @@ void UpdateChecker::onReplyFinished(QNetworkReply *reply) {
     }
 
   }
-  if (matches != 1 || m_downloadUrl != releaseBase + expectedName ||
+  if (matches != 1 || QUrl(m_downloadUrl) != QUrl(releaseBase + expectedName) ||
       !QRegularExpression(QStringLiteral("^[0-9a-f]{64}$")).match(m_expectedSha256).hasMatch()) {
     m_downloadUrl.clear();
     m_downloadFileName.clear();

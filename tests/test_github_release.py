@@ -6,6 +6,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from urllib.parse import unquote
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/release"))
@@ -57,8 +58,11 @@ class GitHubReleaseTests(unittest.TestCase):
         self.assertEqual(len(metadata["assets"]), 6)
         self.assertEqual(metadata["tag_name"], self.tag)
         for asset in metadata["assets"]:
+            self.assertTrue(asset["name"].startswith("通联工坊_v"))
             self.assertEqual(asset["sha256"], hashlib.sha256((self.directory / asset["name"]).read_bytes()).hexdigest())
             self.assertIn(f"/download/{self.tag}/", asset["browser_download_url"])
+            self.assertTrue(asset["browser_download_url"].isascii())
+            self.assertEqual(unquote(asset["browser_download_url"].rsplit("/", 1)[1]), asset["name"])
 
     def test_publishes_only_after_seven_uploaded_digests_match(self):
         with patch.object(github_release, "gh", side_effect=self.fake_gh()) as command:
@@ -79,7 +83,7 @@ class GitHubReleaseTests(unittest.TestCase):
         self.assertFalse(any("upload" in call.args for call in command.call_args_list))
 
     def test_missing_platform_or_corrupt_hash_cannot_create_draft(self):
-        (self.directory / "LogAnalyQt_v3.1.1_macOS_arm64.dmg").write_bytes(b"corrupt")
+        (self.directory / "通联工坊_v3.1.1_macOS_arm64.dmg").write_bytes(b"corrupt")
         with patch.object(github_release, "gh") as command:
             with self.assertRaisesRegex(ValueError, "SHA256"):
                 github_release.publish(self.directory, self.tag, "notes", self.repository, "tested-commit")

@@ -31,7 +31,7 @@ if (-not (Test-Path "$QtDir/lib/libQt6Core.a")) {
 if (-not (Test-Path "$MingwDir/bin/g++.exe")) {
     throw "MinGW compiler missing: $MingwDir/bin/g++.exe"
 }
-$AppName = "LogAnalyQt"
+$AppName = "通联工坊"
 $OriginalAppName = "appLogAnalyQt"
 $MaxThreads = 8 # 最大编译线程数
 
@@ -129,7 +129,7 @@ else {
 if (Test-Path $TargetPath) {
     $Hash = (Get-FileHash $TargetPath -Algorithm SHA256).Hash.ToLower()
     $HashPath = "$TargetPath.sha256"
-    "$Hash  $OutputName" | Set-Content -Path $HashPath -Encoding ascii
+    [System.IO.File]::WriteAllText($HashPath, "$Hash  $OutputName`n", [System.Text.UTF8Encoding]::new($false))
     Write-Host "------------------------------------------------------------"
     Write-Host "SHA256: $Hash"
     Write-Host "SHA256 file: $HashPath"

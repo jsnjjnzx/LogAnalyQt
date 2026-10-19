@@ -66,12 +66,13 @@ public:
     checker.m_networkManager = network;
     checker.m_currentVersion = "3.1.0";
 #ifdef Q_OS_WIN
-    const QString name = "LogAnalyQt_v3.1.1_Windows_x64.exe";
+    const QString name = "通联工坊_v3.1.1_Windows_x64.exe";
 #else
-    const QString name = "LogAnalyQt_v3.1.1_macOS_arm64_update.zip";
+    const QString name = "通联工坊_v3.1.1_macOS_arm64_update.zip";
 #endif
     const QByteArray payload = "downloaded release package";
-    const QString url = "https://github.com/jsnjjnzx/LogAnalyQt/releases/download/v3.1.1/" + name;
+    const QString rawUrl = "https://github.com/jsnjjnzx/LogAnalyQt/releases/download/v3.1.1/" + name;
+    const QString url = QUrl(rawUrl).toString(QUrl::FullyEncoded);
     QJsonObject asset{{"name", name}, {"browser_download_url", url},
                       {"sha256", QString(QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex())}};
     QJsonObject metadata{{"tag_name", "v3.1.1"}, {"assets", QJsonArray{asset}}, {"body", "notes"}};
@@ -87,6 +88,12 @@ public:
     check(metadata);
     expect(results == 1 && errors == 0 && checker.isUpdateAvailable(), "recognizes GitHub update");
     expect(checker.downloadUrl() == url && checker.automaticInstallAvailable(), "exact platform package selected");
+    auto unicodeAsset = asset;
+    unicodeAsset["browser_download_url"] = rawUrl;
+    auto unicodeMetadata = metadata;
+    unicodeMetadata["assets"] = QJsonArray{unicodeAsset};
+    check(unicodeMetadata);
+    expect(checker.isUpdateAvailable(), "accepts Unicode and percent-encoded Chinese download URLs");
     checker.m_currentVersion = "3.1.1";
     check(metadata);
     expect(!checker.isUpdateAvailable(), "same version does not update");
