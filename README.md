@@ -10,7 +10,7 @@
 
 程序正式名称统一为“通联工坊”，定位为“通信开发与调试工作台”。窗口、侧栏、帮助页、备份说明及更新提示使用新名称，macOS 安装包内的应用改为 `通联工坊.app`，Windows 程序产品名称同步更新。
 
-保留原有配置目录、系统凭据标识和内部模块，继续读取已有设置。发布附件文件名统一为中文前缀“通联工坊”；已发布的 v4.3.0 及更早程序使用旧版更新文件名校验，后续升级请手动下载安装。
+保留原有配置目录、系统凭据标识和内部模块，继续读取已有设置。Release 页面附件显示“通联工坊”前缀，实际下载文件名使用 `TonglianWorkshop` 前缀；已发布的 v4.3.0 及更早程序使用旧版更新文件名校验，后续升级请手动下载安装。
 
 ## 新版工作台界面
 
@@ -216,8 +216,8 @@ powershell -ExecutionPolicy Bypass -File ./scripts/package_single.ps1 -Version 3
 
 脚本生成：
 
-- `release_package/通联工坊_v<版本>_Windows_x64.exe`
-- `release_package/通联工坊_v<版本>_Windows_x64.exe.sha256`
+- `release_package/TonglianWorkshop_v<版本>_Windows_x64.exe`
+- `release_package/TonglianWorkshop_v<版本>_Windows_x64.exe.sha256`
 
 构建机可通过 `QT_STATIC_DIR` 和 `MINGW_DIR` 环境变量覆盖脚本中的默认工具链路径。
 
@@ -238,10 +238,10 @@ cmake --build --preset macos-debug
 
 脚本生成：
 
-- `release_package/通联工坊_v<版本>_macOS_<架构>.dmg`
-- `release_package/通联工坊_v<版本>_macOS_<架构>.dmg.sha256`
-- `release_package/通联工坊_v<版本>_macOS_<架构>_update.zip`
-- `release_package/通联工坊_v<版本>_macOS_<架构>_update.zip.sha256`
+- `release_package/TonglianWorkshop_v<版本>_macOS_<架构>.dmg`
+- `release_package/TonglianWorkshop_v<版本>_macOS_<架构>.dmg.sha256`
+- `release_package/TonglianWorkshop_v<版本>_macOS_<架构>_update.zip`
+- `release_package/TonglianWorkshop_v<版本>_macOS_<架构>_update.zip.sha256`
 
 DMG 用于用户首次安装，`_update.zip` 专供程序内自动更新。当前 GitHub 发布使用
 ad-hoc 签名，不需要额外 Secrets；尚未完成 Apple 公证或首次下载的 Gatekeeper 验收。

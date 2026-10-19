@@ -34,7 +34,7 @@ class GitHubReleaseTests(unittest.TestCase):
             else:
                 path.write_bytes(b"test package")
 
-    def fake_gh(self, published=False, broken_digest=False):
+    def fake_gh(self, published=False, broken_digest=False, broken_label=False):
         def call(*arguments):
             if arguments[0] == "api" and "commits" in arguments[1]:
                 return "tested-commit\n"
@@ -48,6 +48,7 @@ class GitHubReleaseTests(unittest.TestCase):
                 paths = [self.directory / name for name in github_release.expected_asset_names("3.1.1", "arm64")]
                 paths.append(self.directory / "update.json")
                 return json.dumps({"draft": True, "tag_name": self.tag, "assets": [{"name": path.name, "size": path.stat().st_size,
+                    "label": "wrong" if broken_label else path.name.replace("TonglianWorkshop_", "通联工坊_", 1),
                     "digest": "sha256:" + ("0" * 64 if broken_digest else hashlib.sha256(path.read_bytes()).hexdigest())}
                     for path in paths]})
             return ""
@@ -58,7 +59,7 @@ class GitHubReleaseTests(unittest.TestCase):
         self.assertEqual(len(metadata["assets"]), 6)
         self.assertEqual(metadata["tag_name"], self.tag)
         for asset in metadata["assets"]:
-            self.assertTrue(asset["name"].startswith("通联工坊_v"))
+            self.assertTrue(asset["name"].startswith("TonglianWorkshop_v"))
             self.assertEqual(asset["sha256"], hashlib.sha256((self.directory / asset["name"]).read_bytes()).hexdigest())
             self.assertIn(f"/download/{self.tag}/", asset["browser_download_url"])
             self.assertTrue(asset["browser_download_url"].isascii())
@@ -68,7 +69,16 @@ class GitHubReleaseTests(unittest.TestCase):
         with patch.object(github_release, "gh", side_effect=self.fake_gh()) as command:
             github_release.publish(self.directory, self.tag, "notes", self.repository, "tested-commit")
         self.assertIn("--draft", command.call_args_list[2].args)
+        upload = next(call for call in command.call_args_list if call.args[:2] == ("release", "upload"))
+        for name in github_release.expected_asset_names("3.1.1", "arm64"):
+            self.assertIn(f"{self.directory / name}#{name.replace('TonglianWorkshop_', '通联工坊_', 1)}", upload.args)
         self.assertEqual(command.call_args.args[-2:], ("--draft=false", "--latest"))
+
+    def test_wrong_display_label_leaves_draft(self):
+        with patch.object(github_release, "gh", side_effect=self.fake_gh(broken_label=True)) as command:
+            with self.assertRaisesRegex(ValueError, "verification"):
+                github_release.publish(self.directory, self.tag, "notes", self.repository, "tested-commit")
+        self.assertFalse(any("--draft=false" in call.args for call in command.call_args_list))
 
     def test_damaged_uploaded_asset_leaves_draft(self):
         with patch.object(github_release, "gh", side_effect=self.fake_gh(broken_digest=True)) as command:
@@ -83,7 +93,7 @@ class GitHubReleaseTests(unittest.TestCase):
         self.assertFalse(any("upload" in call.args for call in command.call_args_list))
 
     def test_missing_platform_or_corrupt_hash_cannot_create_draft(self):
-        (self.directory / "通联工坊_v3.1.1_macOS_arm64.dmg").write_bytes(b"corrupt")
+        (self.directory / "TonglianWorkshop_v3.1.1_macOS_arm64.dmg").write_bytes(b"corrupt")
         with patch.object(github_release, "gh") as command:
             with self.assertRaisesRegex(ValueError, "SHA256"):
                 github_release.publish(self.directory, self.tag, "notes", self.repository, "tested-commit")

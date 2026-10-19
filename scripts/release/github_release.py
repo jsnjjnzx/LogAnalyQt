@@ -7,7 +7,6 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import quote
 
 from generate_release_notes import generate
 from release_metadata import expected_asset_names, normalize_tag, project_version
@@ -35,7 +34,7 @@ def manifest(directory, tag, notes, repository):
         path = directory / name
         assets.append({"name": name, "size": path.stat().st_size,
                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                       "browser_download_url": f"{base}/download/{tag}/{quote(name)}"})
+                       "browser_download_url": f"{base}/download/{tag}/{name}"})
     return {"tag_name": tag, "body": notes, "html_url": f"{base}/tag/{tag}",
             "assets": assets}
 
@@ -59,7 +58,8 @@ def publish(directory, tag, notes, repository, commit):
     else:
         gh("release", "edit", tag, "--repo", repository, "--notes-file", str(notes_file))
     paths = [directory / asset["name"] for asset in metadata["assets"]] + [output]
-    gh("release", "upload", tag, *map(str, paths), "--repo", repository, "--clobber")
+    uploads = [f"{path}#{path.name.replace('TonglianWorkshop_', '通联工坊_', 1)}" for path in paths]
+    gh("release", "upload", tag, *uploads, "--repo", repository, "--clobber")
     details = json.loads(gh("release", "view", tag, "--repo", repository, "--json", "apiUrl"))
     release_id = details["apiUrl"].rsplit("/", 1)[-1]
     if not release_id.isdecimal():
@@ -73,7 +73,8 @@ def publish(directory, tag, notes, repository, commit):
     for asset in uploaded["assets"]:
         path = expected[asset["name"]]
         digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-        if asset["size"] != path.stat().st_size or asset.get("digest") != digest:
+        if (asset["size"] != path.stat().st_size or asset.get("digest") != digest or
+                asset.get("label") != path.name.replace("TonglianWorkshop_", "通联工坊_", 1)):
             raise ValueError(f"Uploaded attachment failed verification: {path.name}; draft retained")
     gh("release", "edit", tag, "--repo", repository, "--draft=false", "--latest")
     print(f"Published https://github.com/{repository}/releases/tag/{tag}")

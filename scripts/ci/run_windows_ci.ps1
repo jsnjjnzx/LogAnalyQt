@@ -47,7 +47,7 @@ python scripts/release/gitee_release.py prepare `
     --target $TargetCommit
 if ($LASTEXITCODE -ne 0) { throw "Gitee prerelease preparation failed" }
 
-$Package = Join-Path $RootDir "release_package/通联工坊_v${Version}_Windows_x64.exe"
+$Package = Join-Path $RootDir "release_package/TonglianWorkshop_v${Version}_Windows_x64.exe"
 python scripts/release/gitee_release.py upload --tag $ReleaseTag --file $Package
 if ($LASTEXITCODE -ne 0) { throw "Windows package upload failed" }
 python scripts/release/gitee_release.py upload --tag $ReleaseTag --file "$Package.sha256"

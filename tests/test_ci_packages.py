@@ -40,7 +40,7 @@ class PackageChecks(unittest.TestCase):
     def test_windows_architecture_and_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            package = root / "通联工坊_v3.1.0_Windows_x64.exe"
+            package = root / "TonglianWorkshop_v3.1.0_Windows_x64.exe"
             data = bytearray(256)
             data[:2] = b"MZ"
             struct.pack_into("<I", data, 0x3C, 128)

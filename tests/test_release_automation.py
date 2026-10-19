@@ -125,12 +125,12 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(
             expected_asset_names("3.1.4", "arm64"),
             [
-                "通联工坊_v3.1.4_Windows_x64.exe",
-                "通联工坊_v3.1.4_Windows_x64.exe.sha256",
-                "通联工坊_v3.1.4_macOS_arm64.dmg",
-                "通联工坊_v3.1.4_macOS_arm64.dmg.sha256",
-                "通联工坊_v3.1.4_macOS_arm64_update.zip",
-                "通联工坊_v3.1.4_macOS_arm64_update.zip.sha256",
+                "TonglianWorkshop_v3.1.4_Windows_x64.exe",
+                "TonglianWorkshop_v3.1.4_Windows_x64.exe.sha256",
+                "TonglianWorkshop_v3.1.4_macOS_arm64.dmg",
+                "TonglianWorkshop_v3.1.4_macOS_arm64.dmg.sha256",
+                "TonglianWorkshop_v3.1.4_macOS_arm64_update.zip",
+                "TonglianWorkshop_v3.1.4_macOS_arm64_update.zip.sha256",
             ],
         )
 
@@ -222,8 +222,7 @@ class WindowsReleaseScriptTests(unittest.TestCase):
         self.assertIn("$env:MINGW_DIR", script)
         self.assertIn('-DCMAKE_BUILD_TYPE=Release', script)
         self.assertIn('"${AppName}_v${Version}_Windows_x64.exe"', script)
-        self.assertIn('$AppName = "通联工坊"', script)
-        self.assertIn('[System.Text.UTF8Encoding]::new($false)', script)
+        self.assertIn('$AppName = "TonglianWorkshop"', script)
         self.assertNotIn("Extract Version from CHANGELOG.md", script)
         self.assertNotIn('-DCMAKE_BUILD_TYPE=Debug', script)
 
@@ -241,8 +240,8 @@ class WindowsReleaseScriptTests(unittest.TestCase):
 class MacosReleaseScriptTests(unittest.TestCase):
     def test_macos_packager_outputs_dmg_and_dedicated_update_zip(self):
         script = (ROOT / "scripts" / "package_macos.sh").read_text(encoding="utf-8")
-        self.assertIn('OUTPUT_UPDATE_NAME="通联工坊_v${VERSION}_macOS_${ARCH}_update.zip"', script)
-        self.assertIn('OUTPUT_DMG_NAME="通联工坊_v${VERSION}_macOS_${ARCH}.dmg"', script)
+        self.assertIn('OUTPUT_UPDATE_NAME="TonglianWorkshop_v${VERSION}_macOS_${ARCH}_update.zip"', script)
+        self.assertIn('OUTPUT_DMG_NAME="TonglianWorkshop_v${VERSION}_macOS_${ARCH}.dmg"', script)
         self.assertIn('APP_BUNDLE="$PACKAGE_DIR/通联工坊.app"', script)
         self.assertIn('-volname "通联工坊 $VERSION"', script)
         self.assertIn("hdiutil create", script)
@@ -262,7 +261,7 @@ class MacosReleaseScriptTests(unittest.TestCase):
         self.assertIn("package_macos.sh", script)
         self.assertGreaterEqual(script.count("gitee_release.py upload"), 4)
         self.assertIn("gitee_release.py finalize", script)
-        self.assertIn("通联工坊_v${VERSION}_Windows_x64.exe", script)
+        self.assertIn("TonglianWorkshop_v${VERSION}_Windows_x64.exe", script)
 
     def test_existing_updater_keeps_dmg_for_manual_install_only(self):
         source = (ROOT / "src" / "core" / "UpdateChecker.cpp").read_text(

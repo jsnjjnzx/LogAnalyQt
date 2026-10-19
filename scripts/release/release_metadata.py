@@ -35,8 +35,8 @@ def expected_asset_names(version: str, mac_arch: str) -> List[str]:
     if not re.fullmatch(r"[A-Za-z0-9_]+", mac_arch):
         raise ValueError("macOS 架构名称只能包含字母、数字和下划线")
 
-    windows = f"通联工坊_v{version}_Windows_x64.exe"
-    mac_prefix = f"通联工坊_v{version}_macOS_{mac_arch}"
+    windows = f"TonglianWorkshop_v{version}_Windows_x64.exe"
+    mac_prefix = f"TonglianWorkshop_v{version}_macOS_{mac_arch}"
     return [
         windows,
         f"{windows}.sha256",
