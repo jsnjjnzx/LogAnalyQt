@@ -91,7 +91,7 @@ def main():
     if normalize_tag(args.tag) != project_version(root / "CMakeLists.txt"):
         raise ValueError("Tag and project version differ")
     notes = generate(root, args.tag)
-    notes += "\nGitee 旧版用户请手动安装本版一次，后续版本从 GitHub 更新。macOS 使用 ad-hoc 签名，未经 Apple 公证。\n"
+    notes += "\nv4.3.0 及更早版本请从本 Release 页面手动安装一次；v4.4.0 起使用 TonglianWorkshop 附件名检查后续更新。macOS 使用 ad-hoc 签名，未经 Apple 公证。\n"
     publish(args.directory, args.tag, notes, os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"])
 
 
