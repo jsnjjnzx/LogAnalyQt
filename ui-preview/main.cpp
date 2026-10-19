@@ -7,6 +7,7 @@
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("LogAnalyQt Preview");
+    app.setApplicationDisplayName(QStringLiteral("通联工坊预览"));
     QQuickStyle::setStyle("Basic");
     QQmlApplicationEngine engine;
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,

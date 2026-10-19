@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 4.2.0 LANGUAGES CXX)
+project(LogAnalyQt VERSION 4.3.0 LANGUAGES CXX)
 if(APPLE)
     enable_language(OBJCXX)
     set(CMAKE_OBJCXX_STANDARD 17)
@@ -747,6 +747,8 @@ endif()
 # explicit, fixed bundle identifier manually though.
 set_target_properties(appLogAnalyQt PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER com.loganalyqt.LogAnalyQt
+    MACOSX_BUNDLE_BUNDLE_NAME "通联工坊"
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/assets/Info.plist.in"
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     MACOSX_BUNDLE_ICON_FILE "logo.icns"

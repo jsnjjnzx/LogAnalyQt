@@ -197,18 +197,18 @@ jobs:
         run: |
           test "$(uname -m)" = arm64
           RUN_TESTS=1 scripts/package_macos.sh
-          python3 scripts/ci/check_build.py --macos-bundle build/macos-release/package/LogAnalyQt.app
+          python3 scripts/ci/check_build.py --macos-bundle build/macos-release/package/通联工坊.app
           python3 scripts/ci/check_build.py --packages release_package --platform macos
           hdiutil verify release_package/*.dmg
       - name: Run deployed app without Qt environment overrides
         env:
           QT_QPA_PLATFORM: cocoa
         run: |
-          test "$(lipo -archs build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt)" = arm64
+          test "$(lipo -archs build/macos-release/package/通联工坊.app/Contents/MacOS/appLogAnalyQt)" = arm64
           env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
-            python3 tests/test_ui_migration_runtime.py build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt
+            python3 tests/test_ui_migration_runtime.py build/macos-release/package/通联工坊.app/Contents/MacOS/appLogAnalyQt
           env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
-            python3 tests/test_github_update.py build/macos-release/package/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt --probe
+            python3 tests/test_github_update.py build/macos-release/package/通联工坊.app/Contents/MacOS/appLogAnalyQt --probe
       - uses: actions/upload-artifact@v4
         with:
           name: LogAnalyQt-macOS-arm64

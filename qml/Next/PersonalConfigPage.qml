@@ -32,7 +32,7 @@ ColumnLayout {
     Flow {
         Layout.fillWidth: true; spacing: 10
         Next.GlassButton { text: "导出配置 JSON"; enabled: !!root.manager; onClicked: { if (!root.flushEdits()) return; root.fullBackup = false; saveDialog.nameFilters = ["JSON 配置 (*.json)"]; saveDialog.open() } }
-        Next.GlassButton { objectName: "personal-config-export-full"; text: "导出完整备份包"; enabled: !!root.manager; onClicked: { if (!root.flushEdits()) return; root.fullBackup = true; saveDialog.nameFilters = ["LogAnalyQt 备份 (*.laqbackup)"]; saveDialog.open() } }
+        Next.GlassButton { objectName: "personal-config-export-full"; text: "导出完整备份包"; enabled: !!root.manager; onClicked: { if (!root.flushEdits()) return; root.fullBackup = true; saveDialog.nameFilters = ["通联工坊 备份 (*.laqbackup)"]; saveDialog.open() } }
         Next.GlassButton { text: "恢复备份…"; enabled: !!root.manager; onClicked: { if (root.flushEdits()) restoreDialog.open() } }
         Next.GlassButton { text: "导入旧配置…"; enabled: !!root.manager; onClicked: legacyDialog.open() }
         Next.GlassButton { text: "打开数据目录"; enabled: !!root.manager; onClicked: root.manager.openDirectory() }
@@ -78,7 +78,7 @@ ColumnLayout {
         onAccepted: { if (root.flushEdits()) root.show(root.manager.exportBackup(selectedFile, root.fullBackup, includeWorkspace.checked, includeTrust.checked)) }
     }
     Dialogs.FileDialog {
-        id: restoreDialog; fileMode: Dialogs.FileDialog.OpenFile; title: "选择配置或完整备份"; nameFilters: ["LogAnalyQt 配置与备份 (*.json *.laqbackup)"]
+        id: restoreDialog; fileMode: Dialogs.FileDialog.OpenFile; title: "选择配置或完整备份"; nameFilters: ["通联工坊 配置与备份 (*.json *.laqbackup)"]
         onAccepted: {
             if (!root.flushEdits()) return
             var reply = root.manager.previewRestore(selectedFile); root.show(reply)

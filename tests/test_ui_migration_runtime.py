@@ -2,6 +2,7 @@
 import os
 import json
 import pathlib
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,9 @@ def main():
         runtime = pathlib.Path(directory)
         if binary.parent.name == "MacOS":
             bundle = binary.parents[2]
+            info = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
+            assert info["CFBundleName"] == info["CFBundleDisplayName"] == "通联工坊", "Mac app and Launchpad display names are incorrect"
+            assert info["CFBundleIdentifier"] == "com.loganalyqt.LogAnalyQt", "rename must preserve the bundle identity"
             # Old debug bundles can contain real portable data; use only synthetic test data.
             portable_data = {"settings.json", "mqtt", "LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log"}
             shutil.copytree(bundle, runtime / bundle.name, symlinks=True,

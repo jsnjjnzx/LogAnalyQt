@@ -16,7 +16,7 @@ ARCH=$(uname -m)
 BUILD_DIR="$ROOT_DIR/build/macos-release"
 BUILD_APP="$BUILD_DIR/appLogAnalyQt.app"
 PACKAGE_DIR="$BUILD_DIR/package"
-APP_BUNDLE="$PACKAGE_DIR/LogAnalyQt.app"
+APP_BUNDLE="$PACKAGE_DIR/通联工坊.app"
 DMG_ROOT="$BUILD_DIR/dmg-root"
 RELEASE_DIR="$ROOT_DIR/release_package"
 OUTPUT_UPDATE_NAME="LogAnalyQt_v${VERSION}_macOS_${ARCH}_update.zip"
@@ -109,10 +109,10 @@ fi
 
 # DMG 面向首次安装，包含应用和指向系统 Applications 目录的快捷方式。
 mkdir -p "$DMG_ROOT"
-/usr/bin/ditto "$APP_BUNDLE" "$DMG_ROOT/LogAnalyQt.app"
+/usr/bin/ditto "$APP_BUNDLE" "$DMG_ROOT/通联工坊.app"
 ln -s /Applications "$DMG_ROOT/Applications"
 hdiutil create \
-  -volname "LogAnalyQt $VERSION" \
+  -volname "通联工坊 $VERSION" \
   -srcfolder "$DMG_ROOT" \
   -ov -format UDZO \
   "$OUTPUT_DMG"

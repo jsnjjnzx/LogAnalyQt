@@ -1,1 +1,22 @@
+#pragma code_page(65001)
+#include <winver.h>
+
 IDI_APP_ICON ICON "logo.ico"
+
+1 VERSIONINFO
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "FileDescription", "通联工坊\0"
+            VALUE "ProductName", "通联工坊\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0804, 1200
+    END
+END

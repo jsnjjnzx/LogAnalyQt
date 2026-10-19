@@ -61,11 +61,11 @@ int runCommand(const std::vector<std::string> &arguments) {
 }
 
 void showError(const std::string &message) {
-  std::cerr << "LogAnalyQt updater: " << message << '\n';
+  std::cerr << "通联工坊 更新器: " << message << '\n';
 #ifndef LOGANALYQT_UPDATER_TESTING
   const std::string script =
       "on run argv\n"
-      "display alert \"LogAnalyQt 更新失败\" message (item 1 of argv) "
+      "display alert \"通联工坊 更新失败\" message (item 1 of argv) "
       "as critical buttons {\"确定\"} default button \"确定\"\n"
       "end run";
   runCommand({"/usr/bin/osascript", "-e", script, message});
@@ -210,7 +210,7 @@ int main(int argc, char *argv[]) {
   if (newApp.empty() ||
       !fs::exists(newApp / "Contents/MacOS/appLogAnalyQt")) {
     fs::remove_all(staging, error);
-    showError("更新包必须包含且只能包含一个完整的 LogAnalyQt.app");
+    showError("更新包必须包含且只能包含一个完整的通联工坊应用包");
     return 1;
   }
 

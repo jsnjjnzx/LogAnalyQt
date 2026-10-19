@@ -45,7 +45,7 @@ def main():
     source = args.build / "appLogAnalyQt.app"
     assert source.is_dir()
     with tempfile.TemporaryDirectory(prefix="loganalyqt-preview-package-") as temporary:
-        bundle = Path(temporary) / "LogAnalyQt 配置测试版.app"
+        bundle = Path(temporary) / "通联工坊 配置测试版.app"
         shutil.copytree(source, bundle, symlinks=True)
         run("macdeployqt", bundle, "-qmldir=" + str(ROOT / "qml"), "-always-overwrite", "-verbose=1", "-no-codesign")
         for name in ("libqsqlodbc.dylib", "libqsqlpsql.dylib", "libqsqlmimer.dylib"):
@@ -57,7 +57,7 @@ def main():
         run("xcrun", "clang++", "-std=c++17", "-arch", "arm64", "-fobjc-arc", "-framework", "AppKit", ROOT / "scripts/testing/ConfigPreviewLauncher.mm", "-o", launcher)
         info_path = bundle / "Contents/Info.plist"
         info = plistlib.loads(info_path.read_bytes())
-        info.update(CFBundleExecutable="ConfigPreview", CFBundleName="LogAnalyQt 配置测试版", CFBundleDisplayName="LogAnalyQt 配置测试版", CFBundleIdentifier="com.loganalyqt.configpreview", CFBundleGetInfoString="个人配置管理本地测试版；默认使用独立演示数据")
+        info.update(CFBundleExecutable="ConfigPreview", CFBundleName="通联工坊 配置测试版", CFBundleDisplayName="通联工坊 配置测试版", CFBundleIdentifier="com.loganalyqt.configpreview", CFBundleGetInfoString="个人配置管理本地测试版；默认使用独立演示数据")
         info_path.chmod(0o644)
         info_path.write_bytes(plistlib.dumps(info))
         run("codesign", "--force", "--deep", "--sign", "-", bundle)
@@ -72,11 +72,11 @@ def main():
         delivered = args.output / bundle.name
         shutil.copytree(bundle, delivered, symlinks=True)
         run("codesign", "--verify", "--deep", "--strict", delivered)
-    archive = args.output / "LogAnalyQt-config-macOS-arm64-test.zip"
+    archive = args.output / "通联工坊-config-macOS-arm64-test.zip"
     run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", delivered, archive)
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
     (args.output / (archive.name + ".sha256")).write_text(checksum + "  " + archive.name + "\n")
-    (args.output / "使用说明.txt").write_text("LogAnalyQt macOS 配置测试版（Apple Silicon）\n\n双击“LogAnalyQt 配置测试版.app”即可。无需拖到应用程序目录。\n\n首次启动显示旧配置迁移确认框，示例数据为合成数据。\n点击“迁移并继续”后，打开“系统设置 → 个人配置”查看迁移结果，并试用备份恢复。\n取消则退出，演示旧配置保持不变。以后再次打开会保留上一次测试状态。\n\n测试数据独立保存在：~/Library/Application Support/LogAnalyQt Config Preview/\n测试凭据使用独立的 LogAnalyQt.ConfigPreview 服务域。\n测试版关闭自动检查更新，不替换现有安装版，不迁移实际个人配置。\n\n如需再次体验首次迁移弹窗：先退出测试版，将上述独立测试目录重命名保留，再重新打开测试版。\n\n本包只做本地 ad-hoc 签名，未公证；没有发布到任何服务。\n", encoding="utf-8")
+    (args.output / "使用说明.txt").write_text("通联工坊 macOS 配置测试版（Apple Silicon）\n\n双击“通联工坊 配置测试版.app”即可。无需拖到应用程序目录。\n\n首次启动显示旧配置迁移确认框，示例数据为合成数据。\n点击“迁移并继续”后，打开“系统设置 → 个人配置”查看迁移结果，并试用备份恢复。\n取消则退出，演示旧配置保持不变。以后再次打开会保留上一次测试状态。\n\n测试数据独立保存在：~/Library/Application Support/LogAnalyQt Config Preview/\n测试凭据使用独立的 LogAnalyQt.ConfigPreview 服务域。\n测试版关闭自动检查更新，不替换现有安装版，不迁移实际个人配置。\n\n如需再次体验首次迁移弹窗：先退出测试版，将上述独立测试目录重命名保留，再重新打开测试版。\n\n本包只做本地 ad-hoc 签名，未公证；没有发布到任何服务。\n", encoding="utf-8")
     (args.output / "package-checks.json").write_text(json.dumps({"architecture": "arm64", "signature": "ad-hoc", "notarized": False, "published": False, "installed_app_replaced": False, "default_data_root": description["dataRoot"], "credential_namespace": description["credentialNamespace"], "zip_sha256": checksum}, ensure_ascii=False, indent=2) + "\n")
     print("Delivered:", delivered)
     print("Archive:", archive)

@@ -33,8 +33,13 @@ def main():
                     "CFBundleName": "LogAnalyQt", "CFBundlePackageType": "APPL", "CFBundleVersion": "3.1.1"}
             (target / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
             subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(target)], check=True, capture_output=True)
+            renamed = root / "通联工坊.app"
+            shutil.copytree(target, renamed)
+            info.update(CFBundleName="通联工坊", CFBundleDisplayName="通联工坊")
+            (renamed / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
+            subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(renamed)], check=True, capture_output=True)
             package = root / "new.zip"
-            subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(target), str(package)], check=True)
+            subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(renamed), str(package)], check=True)
             (target / "old-version-marker").write_text("old installation")
             (target / "Contents/MacOS/LogAnalyQt.ini").write_text("older bundle settings must not overwrite portable settings")
             legacy_prompt = target / "Contents/MacOS/prompts/user.md"
@@ -101,6 +106,8 @@ def main():
             assert target.read_bytes() == fixture.read_bytes()
         else:
             assert not (target / "old-version-marker").exists(), "old bundle was not replaced"
+            info = plistlib.loads((target / "Contents/Info.plist").read_bytes())
+            assert info["CFBundleName"] == info["CFBundleDisplayName"] == "通联工坊", "old installation did not receive the new display name"
             assert (data_root / "prompts/user.md").read_text() == "preserve legacy edited prompt"
             assert (data_root / "LogAnalyQt.ini").read_text() == "older bundle settings must not overwrite portable settings"
             assert not (root / "prompts").exists(), "updater wrote data next to the application"

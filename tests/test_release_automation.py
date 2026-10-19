@@ -144,6 +144,7 @@ class ReleaseMetadataTests(unittest.TestCase):
                 ("3333333", "更新说明文字", ""),
             ],
         )
+        self.assertIn("## 通联工坊 v3.1.4", notes)
         self.assertIn("v3.1.3...v3.1.4", notes)
         self.assertIn("### 新增功能", notes)
         self.assertIn("新增南网协议 (`1111111`)", notes)
@@ -240,6 +241,8 @@ class MacosReleaseScriptTests(unittest.TestCase):
         script = (ROOT / "scripts" / "package_macos.sh").read_text(encoding="utf-8")
         self.assertIn('OUTPUT_UPDATE_NAME="LogAnalyQt_v${VERSION}_macOS_${ARCH}_update.zip"', script)
         self.assertIn('OUTPUT_DMG_NAME="LogAnalyQt_v${VERSION}_macOS_${ARCH}.dmg"', script)
+        self.assertIn('APP_BUNDLE="$PACKAGE_DIR/通联工坊.app"', script)
+        self.assertIn('-volname "通联工坊 $VERSION"', script)
         self.assertIn("hdiutil create", script)
         self.assertIn('/Applications', script)
         self.assertIn("REQUIRE_MACOS_DISTRIBUTION", script)

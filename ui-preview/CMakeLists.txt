@@ -12,7 +12,7 @@ qt_add_resources(LogAnalyQtPreview icons PREFIX "/icons" BASE "../assets"
 target_link_libraries(LogAnalyQtPreview PRIVATE Qt6::Quick Qt6::QuickControls2)
 set_target_properties(LogAnalyQtPreview PROPERTIES MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_GUI_IDENTIFIER com.loganalyqt.visualpreview
-    MACOSX_BUNDLE_BUNDLE_NAME "LogAnalyQt Preview")
+    MACOSX_BUNDLE_BUNDLE_NAME "通联工坊预览")
 enable_testing()
 find_program(QML_TEST_RUNNER qmltestrunner HINTS "${Qt6_DIR}/../../../bin"
     /opt/homebrew/opt/qtdeclarative/bin)

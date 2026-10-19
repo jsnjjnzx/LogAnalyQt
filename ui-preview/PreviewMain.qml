@@ -12,7 +12,7 @@ ApplicationWindow {
     minimumWidth: 1100
     minimumHeight: 680
     visible: true
-    title: "多协议解析器 · 界面预览"
+    title: "通联工坊 · 界面预览"
     color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
     font.family: Qt.platform.os === "osx" ? "PingFang SC" : "Microsoft YaHei UI"
@@ -170,8 +170,8 @@ ApplicationWindow {
                 Image { source: "assets/app-logo.png"; Layout.preferredWidth: 55; Layout.preferredHeight: 55; smooth: true }
                 Column {
                     spacing: 4
-                    Text { text: "多协议解析器"; font.pixelSize: 22; font.weight: Font.Bold; color: "#f1f5fc" }
-                    Text { text: "LogAnalyQt"; font.pixelSize: 15; color: "#aebed0" }
+                    Text { text: "通联工坊"; font.pixelSize: 22; font.weight: Font.Bold; color: "#f1f5fc" }
+                    Text { text: "通联工坊"; font.pixelSize: 15; color: "#aebed0" }
                 }
             }
             Flickable {

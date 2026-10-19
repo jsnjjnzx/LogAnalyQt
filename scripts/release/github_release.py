@@ -54,7 +54,7 @@ def publish(directory, tag, notes, repository, commit):
     notes_file.write_text(notes, encoding="utf-8")
     if release is None:
         gh("release", "create", tag, "--repo", repository, "--draft", "--verify-tag",
-           "--title", f"LogAnalyQt {tag}", "--notes-file", str(notes_file))
+           "--title", f"通联工坊 {tag}", "--notes-file", str(notes_file))
     else:
         gh("release", "edit", tag, "--repo", repository, "--notes-file", str(notes_file))
     paths = [directory / asset["name"] for asset in metadata["assets"]] + [output]

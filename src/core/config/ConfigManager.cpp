@@ -93,12 +93,12 @@ QString ConfigManager::summary() const {
   if (!ConfigJson::read(QDir(m_root).filePath("settings.json"), &root, &error)) return error;
   const auto mqtt = root.value("mqtt").toObject();
   QString text = QStringLiteral("配置：%1\n格式版本：1\nMQTT 连接：%2；常用订阅：%3\nSSH 自定义命令：%4；预置报文：%5；组帧模板：%6\n解析标签：%7\n密码保存在系统凭据存储，不包含在备份中。\n协议、提示词和证书仍是独立资源；证书和私钥需另行保管。")
-    .arg(QDir(m_root).filePath("settings.json")).arg(mqtt.value("connections").toArray().size()).arg(mqtt.value("commonSubscriptions").toArray().size())
+    .arg(QStringLiteral("settings.json（点击“打开数据目录”访问）")).arg(mqtt.value("connections").toArray().size()).arg(mqtt.value("commonSubscriptions").toArray().size())
     .arg(root.value("ssh").toObject().value("customCommands").toArray().size()).arg(root.value("messages").toObject().value("presets").toArray().size())
     .arg(root.value("framingTemplates").toObject().size()).arg(root.value("workspace").toObject().value("parse").toObject().value("tabs").toArray().size());
   const auto statePath = QDir(m_root).filePath("migration-state.json");
   if (QFile::exists(statePath)) {
-    QJsonObject state; if (ConfigJson::read(statePath, &state)) text += QStringLiteral("\n迁移状态：%1\n迁移回退快照：%2").arg(state.value("phase").toString(), state.value("snapshot").toString());
+    QJsonObject state; if (ConfigJson::read(statePath, &state)) text += QStringLiteral("\n迁移状态：%1\n迁移回退快照：%2").arg(state.value("phase").toString(), QDir(m_root).relativeFilePath(state.value("snapshot").toString()));
   }
   for (const auto &entry : mqtt.value("connections").toArray()) {
     const auto row = entry.toObject();
@@ -231,7 +231,7 @@ QVariantMap ConfigManager::stageRestore(const QStringList &groups, bool resource
 QVariantMap ConfigManager::previewLegacy(const QUrl &url) {
   if (!url.isLocalFile()) return result(false, QStringLiteral("请选择本地旧配置目录"));
   const QFileInfo chosen(url.toLocalFile());
-  if (!chosen.isDir() && chosen.fileName() != "LogAnalyQt.ini") return result(false, QStringLiteral("请选择旧配置目录或 LogAnalyQt.ini；目录可以没有 INI 文件"));
+  if (!chosen.isDir() && chosen.fileName() != "LogAnalyQt.ini") return result(false, QStringLiteral("请选择旧配置目录或旧版 INI 配置文件；目录可以没有 INI 文件"));
   m_legacyRoot = chosen.isDir() ? chosen.absoluteFilePath() : chosen.absolutePath();
   m_plan = ConfigMigration::inspect(m_root, {m_legacyRoot}, false);
   m_error = m_plan.error; emit changed(); return result(m_error.isEmpty() && m_plan.pending(), m_plan.description());

@@ -64,4 +64,4 @@ jobs:
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*_macOS_arm64_update.zip*' --dir packages
           (cd packages && shasum -a 256 -c *.sha256)
           ditto -x -k packages/*_macOS_arm64_update.zip runtime
-          python3 tests/test_github_update.py runtime/LogAnalyQt.app/Contents/MacOS/appLogAnalyQt "$RELEASE_TAG"
+          python3 tests/test_github_update.py runtime/*.app/Contents/MacOS/appLogAnalyQt "$RELEASE_TAG"

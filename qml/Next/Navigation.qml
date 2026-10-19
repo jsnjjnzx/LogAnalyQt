@@ -101,10 +101,9 @@ Rectangle {
             width: parent.width; height: 44; spacing: 10
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 3
-                Text { text: "多协议解析器"; font.pixelSize: 13; font.weight: Font.DemiBold; color: nav.theme.text }
+                Text { text: "通联工坊"; font.pixelSize: 13; font.weight: Font.DemiBold; color: nav.theme.text }
                 RowLayout {
                     Layout.fillWidth: true; spacing: 4
-                    Text { text: "LogAnalyQt"; font.pixelSize: 10; color: nav.theme.subText }
                     Item { Layout.fillWidth: true }
                     Text { text: "v" + nav.version; font.pixelSize: 10; color: nav.theme.subText }
                 }

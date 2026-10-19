@@ -5,7 +5,7 @@ import QtQuick.Layouts
 ApplicationWindow {
     id: root
     width: 760; height: 620; minimumWidth: 580; minimumHeight: 450
-    visible: true; title: "LogAnalyQt · 旧配置迁移确认"
+    visible: true; title: "通联工坊 · 旧配置迁移确认"
     color: "#1d2025"
     property var choices: ({})
     property bool accepted: false

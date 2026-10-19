@@ -109,7 +109,7 @@ ApplicationWindow {
     visible: true
     font.family: Qt.platform.os === "osx" ? "PingFang SC" : "Microsoft YaHei UI"
     font.pixelSize: 14
-    title: "多协议解析器 v" + backend.appVersion
+    title: "通联工坊 v" + backend.appVersion
     color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
     readonly property real windowCornerRadius: visibility === Window.Maximized || visibility === Window.FullScreen ? 0 : 18
@@ -2536,7 +2536,7 @@ ApplicationWindow {
     GlassPage {
         id: helpWindow
         objectName: "page-11"
-        title: "功能说明 - 多协议解析器 v" + mainWindow.appVersion
+        title: "功能说明 - 通联工坊 v" + mainWindow.appVersion
         parent: pageDeck
         anchors.fill: parent
         theme: mainWindow.uiTheme
@@ -2566,7 +2566,7 @@ ApplicationWindow {
     GlassPage {
         id: changelogWindow
         objectName: "page-12"
-        title: "升级日志 - 多协议解析器 v" + mainWindow.appVersion
+        title: "升级日志 - 通联工坊 v" + mainWindow.appVersion
         parent: pageDeck
         anchors.fill: parent
         theme: mainWindow.uiTheme
@@ -2601,7 +2601,7 @@ ApplicationWindow {
         width: 800
         height: 600
         flags: Qt.Window | Qt.FramelessWindowHint
-        title: "明文 APDU 解析 - 多协议解析器 v" + mainWindow.appVersion
+        title: "明文 APDU 解析 - 通联工坊 v" + mainWindow.appVersion
         visible: false
         color: theme.background
         Next.TitleBar {
@@ -3519,9 +3519,9 @@ ApplicationWindow {
             RowLayout {
                 spacing: 20
                 Image { source: "assets/app-logo.png"; Layout.preferredWidth: 76; Layout.preferredHeight: 76 }
-                Column { spacing: 8; Label { text: "多协议解析器"; color: theme.text; font.pixelSize: 25; font.bold: true } Label { text: "LogAnalyQt · v" + mainWindow.appVersion; color: theme.subText; font.pixelSize: 16 } }
+                Column { spacing: 8; Label { objectName: "help-app-name"; text: "通联工坊"; color: theme.text; font.pixelSize: 25; font.bold: true } Label { text: "v" + mainWindow.appVersion; color: theme.subText; font.pixelSize: 16 } }
             }
-            Label { text: "报文解析、协议构建与日志调试工作台"; color: theme.subText; font.pixelSize: 16 }
+            Label { objectName: "help-app-subtitle"; text: "通信开发与调试工作台"; color: theme.subText; font.pixelSize: 16 }
             RowLayout {
                 spacing: 16
                 StyledButton { text: "功能说明"; onClicked: mainWindow.navigate(11) }

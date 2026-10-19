@@ -22,6 +22,9 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     if (!ok) throw QString::fromUtf8(message);
   };
   try {
+    require(QGuiApplication::applicationDisplayName() == QString::fromUtf8("通联工坊"), "application display name is incorrect");
+    require(QCoreApplication::applicationName() == "LogAnalyQt", "renaming the display must preserve the storage identity");
+    require(window->title().startsWith(QString::fromUtf8("通联工坊")), "main window title is incorrect");
     require(!QFile::exists(":/qt/qml/LogAnalyQt/qml/Main.qml"), "legacy UI is still embedded in the app");
     for (auto *model : QList<QAbstractItemModel *>{new ParseResultModel, new GlobalPreviewModel}) {
       bool reset = false;
@@ -129,8 +132,18 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     clickParse();
     require(backend->resultModel()->rowCount() == 0 && uiItem("parseStatus")->property("text").toString() == backend->parseResult()
                 && backend->parseResult().contains(QString::fromUtf8("无法识别")), "truncated APDU must show a failure");
+    std::function<void(QQuickItem *)> checkBrand = [&](QQuickItem *item) {
+      if (!item->isVisible()) return;
+      require(!item->property("text").toString().contains("LogAnalyQt"), "visible UI still contains the old brand");
+      for (auto *child : item->childItems()) checkBrand(child);
+    };
     for (int page = 0; page < 15; ++page) {
       navigate(page);
+      checkBrand(window->contentItem());
+      if (page == 10) {
+        require(uiItem("help-app-name") && uiItem("help-app-name")->property("text").toString() == QString::fromUtf8("通联工坊"), "help app name is incorrect");
+        require(uiItem("help-app-subtitle") && uiItem("help-app-subtitle")->property("text").toString() == QString::fromUtf8("通信开发与调试工作台"), "help subtitle is incorrect");
+      }
       if (page >= 4) {
         auto *view = window->findChild<QQuickItem *>(QString("page-%1").arg(page));
         require(view && view->isVisible(), "workspace is not visible");
@@ -403,6 +416,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     const QByteArray mergedText = merged.readAll();
     require(mergedText.indexOf("earlier") >= 0 && mergedText.indexOf("later") > mergedText.indexOf("earlier"), "merge timestamp order is incorrect");
     require(backend->getReadmeContent().contains(QString::fromUtf8("多协议")), "bundled help is missing");
+    require(!backend->getReadmeContent().contains("LogAnalyQt"), "in-app help still contains the old brand");
     require(backend->getChangelogContent() != "CHANGELOG.md not found.", "bundled changelog is missing");
     navigate(1);
     backend->setProtocolType(0);

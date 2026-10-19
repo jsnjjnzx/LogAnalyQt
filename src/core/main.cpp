@@ -99,7 +99,9 @@ static void qtMessageToFile(QtMsgType type, const QMessageLogContext &context,
 
 int main(int argc, char *argv[]) {
   QGuiApplication app(argc, argv);
+  // Keep the storage and credential identity stable across the display-name change.
   QCoreApplication::setApplicationName(QStringLiteral("LogAnalyQt"));
+  QGuiApplication::setApplicationDisplayName(QStringLiteral("通联工坊"));
 #ifdef LOGANALYQT_UI_TESTING
   const bool updateTest = app.arguments().contains(QStringLiteral("--update-test")) ||
                           app.arguments().contains(QStringLiteral("--update-probe"));
@@ -175,7 +177,7 @@ int main(int argc, char *argv[]) {
     errorEngine.rootContext()->setContextProperty("startupError", migrationError);
     errorEngine.loadData(R"QML(import QtQuick
 import QtQuick.Controls
-ApplicationWindow { visible: true; width: 660; height: 350; title: "LogAnalyQt 配置未能加载"
+ApplicationWindow { visible: true; width: 660; height: 350; title: "通联工坊 配置未能加载"
 Column { anchors.fill: parent; anchors.margins: 24; spacing: 20
 Label { width: parent.width; text: startupError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
 Label { width: parent.width; text: "原文件及回退快照已保留。请处理后重新启动；取消待恢复任务可移走 restore-pending.json 或 import-pending.json。"; wrapMode: Text.Wrap }

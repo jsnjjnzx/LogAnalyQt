@@ -43,13 +43,13 @@ static void showError(const std::wstring &msg) {
 #ifdef LOGANALYQT_UPDATER_TESTING
     fwprintf(stderr, L"%ls\n", msg.c_str());
 #else
-    MessageBoxW(NULL, msg.c_str(), L"LogAnalyQt 更新器", MB_OK | MB_ICONERROR);
+    MessageBoxW(NULL, msg.c_str(), L"通联工坊 更新器", MB_OK | MB_ICONERROR);
 #endif
 }
 
 // 显示信息消息框
 static void showInfo(const std::wstring &msg) {
-    MessageBoxW(NULL, msg.c_str(), L"LogAnalyQt 更新器",
+    MessageBoxW(NULL, msg.c_str(), L"通联工坊 更新器",
                 MB_OK | MB_ICONINFORMATION);
 }
 

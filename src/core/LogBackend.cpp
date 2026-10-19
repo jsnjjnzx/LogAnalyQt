@@ -1860,7 +1860,8 @@ QString LogBackend::getReadmeContent() {
     if (file.exists() && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
       QTextStream in(&file);
       in.setEncoding(QStringConverter::Utf8);
-      return in.readAll();
+      // In-app help covers usage; build and release instructions stay in the repository.
+      return in.readAll().section(QStringLiteral("\n## 📦 构建与打包"), 0, 0);
     }
   }
   return "README.md not found.";
