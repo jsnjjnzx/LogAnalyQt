@@ -1,0 +1,322 @@
+{
+  "content_errors": 0,
+  "cpu_percent_one_core": 3.322213774523577,
+  "cpu_seconds": 2.010039,
+  "device_pixel_ratio": 2,
+  "elapsed_seconds": 60.503,
+  "event_loop_delay": {
+    "max_ms": 20,
+    "p50_ms": 0,
+    "p95_ms": 2,
+    "p99_ms": 2,
+    "samples": 6043
+  },
+  "full_application": true,
+  "latest_visible_sender_to_frame": {
+    "max_ms": 0,
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0,
+    "samples": 0
+  },
+  "model_commits": 116,
+  "model_resets": 0,
+  "model_to_next_frame": {
+    "max_ms": 0,
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "p99_ms": 0,
+    "samples": 0
+  },
+  "overflow_signals": 0,
+  "payload_mib_per_second": 0.9916863626597028,
+  "platform": "cocoa",
+  "qt_version": "6.11.1",
+  "rate_per_session": 1048576,
+  "received_lines": 122880,
+  "rss_final_mib": 690.328125,
+  "rss_initial_mib": 679.046875,
+  "rss_peak_mib": 690.328125,
+  "rss_samples": [
+    [
+      0,
+      685.1875
+    ],
+    [
+      1,
+      687.359375
+    ],
+    [
+      2,
+      689.140625
+    ],
+    [
+      3,
+      689.703125
+    ],
+    [
+      4,
+      689.875
+    ],
+    [
+      5,
+      689.84375
+    ],
+    [
+      6,
+      689.90625
+    ],
+    [
+      7,
+      689.921875
+    ],
+    [
+      8,
+      689.96875
+    ],
+    [
+      9,
+      690.046875
+    ],
+    [
+      10,
+      690.109375
+    ],
+    [
+      11,
+      690.109375
+    ],
+    [
+      12,
+      690.109375
+    ],
+    [
+      13,
+      690.109375
+    ],
+    [
+      14,
+      690.109375
+    ],
+    [
+      15,
+      690.109375
+    ],
+    [
+      16,
+      690.109375
+    ],
+    [
+      17,
+      690.109375
+    ],
+    [
+      18,
+      690.109375
+    ],
+    [
+      19,
+      690.109375
+    ],
+    [
+      20,
+      690.109375
+    ],
+    [
+      21,
+      690.140625
+    ],
+    [
+      22,
+      690.140625
+    ],
+    [
+      23,
+      690.1875
+    ],
+    [
+      24,
+      690.109375
+    ],
+    [
+      25,
+      690.15625
+    ],
+    [
+      26,
+      690.1875
+    ],
+    [
+      27,
+      690.265625
+    ],
+    [
+      28,
+      690.265625
+    ],
+    [
+      29,
+      690.265625
+    ],
+    [
+      30,
+      690.265625
+    ],
+    [
+      31,
+      690.265625
+    ],
+    [
+      32,
+      690.265625
+    ],
+    [
+      33,
+      690.265625
+    ],
+    [
+      34,
+      690.265625
+    ],
+    [
+      35,
+      690.265625
+    ],
+    [
+      36,
+      690.265625
+    ],
+    [
+      37,
+      690.265625
+    ],
+    [
+      38,
+      690.265625
+    ],
+    [
+      39,
+      690.265625
+    ],
+    [
+      40,
+      690.265625
+    ],
+    [
+      41,
+      690.328125
+    ],
+    [
+      42,
+      690.328125
+    ],
+    [
+      43,
+      690.328125
+    ],
+    [
+      44,
+      690.328125
+    ],
+    [
+      45,
+      690.328125
+    ],
+    [
+      46,
+      690.328125
+    ],
+    [
+      47,
+      690.328125
+    ],
+    [
+      48,
+      690.328125
+    ],
+    [
+      49,
+      690.328125
+    ],
+    [
+      50,
+      690.328125
+    ],
+    [
+      51,
+      690.328125
+    ],
+    [
+      52,
+      690.328125
+    ],
+    [
+      53,
+      690.328125
+    ],
+    [
+      54,
+      690.328125
+    ],
+    [
+      55,
+      690.328125
+    ],
+    [
+      56,
+      690.328125
+    ],
+    [
+      57,
+      690.328125
+    ],
+    [
+      58,
+      690.328125
+    ],
+    [
+      59,
+      690.328125
+    ]
+  ],
+  "search": false,
+  "seconds_requested": 60,
+  "sender_to_model": {
+    "max_ms": 516,
+    "p50_ms": 259,
+    "p95_ms": 505,
+    "p99_ms": 507,
+    "samples": 122880
+  },
+  "session_progress": [
+    {
+      "max_commit_gap_ms": 538,
+      "received_lines": 122880
+    }
+  ],
+  "sessions": 1,
+  "ui": true,
+  "view_state": "background",
+  "window_active_samples": 60,
+  "window_exposed_samples": 60,
+  "window_height": 900,
+  "window_samples": 60,
+  "window_width": 1440,
+  "server": {
+    "0": {
+      "sent_lines": 122880,
+      "sent_bytes": 62914560,
+      "send_seconds": 60.01006420800695,
+      "longest_send_ms": 1.3010419788770378
+    }
+  },
+  "diagnostics": [],
+  "payload_storage": "RAM only; no payload files",
+  "source": "complete application with real LogBackend and embedded production QML; isolated credentials",
+  "app_diagnostics_bytes": 23084,
+  "app_warnings": [],
+  "transport": "encrypted loopback SSH, Paramiko server",
+  "burst_first": false,
+  "validated": true,
+  "controlled_window": true
+}

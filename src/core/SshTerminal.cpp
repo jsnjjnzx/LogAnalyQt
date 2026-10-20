@@ -19,6 +19,8 @@
 #include <QJsonArray>
 #include <cstring>
 #include <cerrno>
+#include <QSocketNotifier>
+#include <algorithm>
 
 
 // libssh2 和 socket 头文件
@@ -103,15 +105,18 @@ public:
 public slots:
   void shutdown() { cleanup(); }
   void doConnect(quint64 generation, const QString &host, int port,
-                 const QString &user, const QString &password) {
+                 const QString &user, const QString &password, const QString &encoding) {
     cleanup();
     if (generation != m_buffer->activeGeneration.load()) return;
     m_generation = generation;
+    m_encoding = encoding;
+    m_streamRevision = m_buffer->contentRevision.load();
+    m_stream.reset(m_encoding);
+    if (!m_stream.encodingAvailable()) { fail(QStringLiteral("当前系统不支持所选 SSH 字符编码"), true); return; }
     m_host = host;
     m_port = port;
     m_user = user;
     m_password = password.toUtf8();
-    m_overflowNotified = false;
 #ifdef Q_OS_WIN
     static const bool socketsReady = [] {
       WSADATA data;
@@ -126,6 +131,8 @@ public slots:
       m_timer->setInterval(10);
       connect(m_timer, &QTimer::timeout, this, &SshWorker::advance);
     }
+    m_timer->setSingleShot(false);
+    m_timer->setInterval(10);
     m_timer->start();
     m_lookupId = QHostInfo::lookupHost(host, this,
         [this, generation](const QHostInfo &info) {
@@ -163,20 +170,50 @@ public slots:
   void doSendCommand(const QString &cmd, bool appendNewline,
                      const QString &encoding) {
     if (m_phase != Running) return;
-    QByteArray data = encoding.toUpper().contains("GB") ? cmd.toLocal8Bit() : cmd.toUtf8();
+    QByteArray data = SshLogStream::encode(cmd, encoding);
+    if (!cmd.isEmpty() && data.isEmpty()) { fail(QStringLiteral("SSH 命令字符编码失败")); return; }
     if (appendNewline && !data.endsWith('\n')) data.append('\n');
-    if (m_outgoing.size() + data.size() > 1024 * 1024) {
+    if (m_outgoing.size() + m_writeInFlight.size() + data.size() > 1024 * 1024) {
       fail(QStringLiteral("SSH 待发送数据超过上限"));
       return;
     }
     m_outgoing.append(data);
+    resumeRead();
+  }
+  void resetStream(quint64 revision, const QString &encoding, bool discardPartial) {
+    if (revision != m_buffer->contentRevision.load()) return;
+    m_streamRevision = revision; m_encoding = encoding;
+    m_replay.clear(); m_replayOffset = 0;
+    m_stream.reset(encoding, discardPartial);
+    if (!m_stream.encodingAvailable()) { fail(QStringLiteral("当前系统不支持所选 SSH 字符编码"), true); return; }
+    resumeRead();
+  }
+  void beginTabCapture(quint64 generation) {
+    if (m_phase != Running || generation != m_generation || generation != m_buffer->activeGeneration.load()) return;
+    QMutexLocker lock(&m_buffer->mutex);
+    m_buffer->tabCapture = true;
+    m_buffer->tabData.clear(); m_buffer->tabOverflow = false;
+  }
+  void endTabCapture(quint64 generation) {
+    if (generation != m_generation || generation != m_buffer->activeGeneration.load()) return;
+    QByteArray late;
+    {
+      QMutexLocker lock(&m_buffer->mutex);
+      m_buffer->tabCapture = false;
+      late.swap(m_buffer->tabData);
+    }
+    if (!late.isEmpty() && m_phase == Running) m_replay.append(late);
+    resumeRead();
+  }
+  void resumeRead() {
+    if (m_phase == Running && m_timer && !m_timer->isActive()) m_timer->start(0);
   }
 
 signals:
   void connected(quint64 generation);
   void errorOccurred(quint64 generation, const QString &error, bool securityFailure);
   void disconnected(quint64 generation);
-  void bufferOverflowed();
+  void dataReady(quint64 generation, quint64 revision);
   void hostKeyRequired(quint64 generation, const QString &host, int port,
                        const QString &algorithm, const QString &fingerprint,
                        const QString &requestId);
@@ -236,15 +273,47 @@ private:
     emit errorOccurred(generation, error, securityFailure);
     emit disconnected(generation);
   }
-  void appendData(const char *data, int size) {
-    QMutexLocker lock(&m_buffer->mutex);
-    constexpr int limit = 4 * 1024 * 1024;
-    const int overflow = m_buffer->data.size() + size - limit;
-    if (overflow > 0) {
-      m_buffer->data.remove(0, overflow);
-      if (!m_overflowNotified) { m_overflowNotified = true; emit bufferOverflowed(); }
+  void publish(std::vector<SshLogLine> lines) {
+    bool notify = false;
+    {
+      QMutexLocker lock(&m_buffer->mutex);
+      if (m_generation != m_buffer->activeGeneration.load() ||
+          m_streamRevision != m_buffer->contentRevision.load()) return;
+      for (auto &line : lines) {
+        m_buffer->bytes += line.storageBytes();
+        m_buffer->lines.push_back(std::move(line));
+      }
+      m_buffer->partial = {m_stream.partialLine(), m_stream.logicalId(), m_stream.continuation(), m_stream.hasPendingInput()};
+      if ((!m_buffer->lines.empty() || !m_buffer->tabData.isEmpty() || m_buffer->tabOverflow) &&
+          !m_buffer->notificationPending) {
+        m_buffer->notificationPending = true; notify = true;
+      }
     }
-    m_buffer->data.append(data, size);
+    if (notify) emit dataReady(m_generation, m_streamRevision);
+  }
+  void appendData(const char *data, int size) {
+    QByteArray replay;
+    bool capturing = false;
+    {
+      QMutexLocker lock(&m_buffer->mutex);
+      if (m_generation != m_buffer->activeGeneration.load() ||
+          m_streamRevision != m_buffer->contentRevision.load()) return;
+      if (m_buffer->tabCapture) {
+        if (m_buffer->tabData.size() + size <= 256 * 1024) {
+          m_buffer->tabData.append(data, size); capturing = true;
+        } else {
+          // A noisy peer must not make completion an unbounded side channel or lose its output.
+          replay.swap(m_buffer->tabData);
+          m_buffer->tabCapture = false; m_buffer->tabOverflow = true;
+        }
+      }
+    }
+    if (!replay.isEmpty()) {
+      m_replay = std::move(replay); m_replayOffset = 0;
+      m_replay.append(data, size);
+      publish({});
+    } else if (capturing) publish({});
+    else publish(m_stream.feed(QByteArrayView(data, size)));
   }
   void advance() {
     if (m_phase == Stopped) return;
@@ -348,23 +417,78 @@ private:
       break;
     case RequestingShell:
       rc = libssh2_channel_shell(m_channel);
-      if (rc == 0) { m_phase = Running; emit connected(m_generation); return; }
+      if (rc == 0) {
+        m_phase = Running;
+        m_timer->stop(); m_timer->setSingleShot(true);
+        m_readNotifier = new QSocketNotifier(qintptr(m_sock), QSocketNotifier::Read, this);
+        m_writeNotifier = new QSocketNotifier(qintptr(m_sock), QSocketNotifier::Write, this);
+        m_writeNotifier->setEnabled(false);
+        connect(m_readNotifier, &QSocketNotifier::activated, this, [this] { advance(); });
+        connect(m_writeNotifier, &QSocketNotifier::activated, this, [this] { advance(); });
+        emit connected(m_generation); resumeRead(); return;
+      }
       break;
     case Running: {
-      if (!m_outgoing.isEmpty()) {
-        const auto sent = libssh2_channel_write(m_channel, m_outgoing.constData(), m_outgoing.size());
-        if (sent > 0) m_outgoing.remove(0, sent);
+      m_timer->stop();
+      m_readNotifier->setEnabled(false); m_writeNotifier->setEnabled(false);
+      if (m_streamRevision != m_buffer->contentRevision.load()) return;
+      int waitDirections = 0;
+      bool writeProgress = false;
+      if (m_writeInFlight.isEmpty()) m_writeInFlight.swap(m_outgoing);
+      if (!m_writeInFlight.isEmpty()) {
+        const auto sent = libssh2_channel_write(m_channel, m_writeInFlight.constData(), m_writeInFlight.size());
+        if (sent > 0) { m_writeInFlight.remove(0, sent); writeProgress = true; }
         else if (sent != LIBSSH2_ERROR_EAGAIN) { fail(QStringLiteral("发送 SSH 数据失败")); return; }
+        else waitDirections |= libssh2_session_block_directions(m_session);
       }
-      char buffer[16384];
-      for (int stream = 0; stream < 2; ++stream) {
-        const auto size = libssh2_channel_read_ex(m_channel, stream, buffer, sizeof(buffer));
-        if (size > 0) appendData(buffer, size);
-        else if (size < 0 && size != LIBSSH2_ERROR_EAGAIN) { fail(QStringLiteral("读取 SSH 数据失败")); return; }
+      QElapsedTimer budget; budget.start();
+      qsizetype bytesRead = 0;
+      bool paused = false, drained = false;
+      char buffer[65536];
+      while (bytesRead < 256 * 1024 && budget.nsecsElapsed() < 2 * 1000 * 1000) {
+        bool progress = false;
+        for (int stream = 0; stream < 2; ++stream) {
+          if (m_generation != m_buffer->activeGeneration.load() ||
+              m_streamRevision != m_buffer->contentRevision.load()) return;
+          qsizetype allowance;
+          {
+            QMutexLocker lock(&m_buffer->mutex);
+            // Account for worst-case one-character rows and a final unterminated segment.
+            allowance = (SshLogStream::PendingBytes - m_buffer->bytes -
+                         4 * SshLogStream::SegmentCharacters) / 128;
+          }
+          if (allowance <= 0) { paused = true; break; }
+          if (m_replayOffset < m_replay.size()) {
+            // Completion recovery uses the same budget as socket input, including newline-heavy output.
+            const auto take = qMin(allowance, m_replay.size() - m_replayOffset);
+            publish(m_stream.feed(QByteArrayView(m_replay).sliced(m_replayOffset, take)));
+            m_replayOffset += take; bytesRead += take; progress = true;
+            if (m_replayOffset == m_replay.size()) { m_replay.clear(); m_replayOffset = 0; }
+            break;
+          }
+          const auto size = libssh2_channel_read_ex(m_channel, stream, buffer,
+                                                   size_t(qMin(qsizetype(sizeof(buffer)), allowance)));
+          if (size > 0) { appendData(buffer, int(size)); bytesRead += size; progress = true; }
+          else if (size == LIBSSH2_ERROR_EAGAIN) waitDirections |= libssh2_session_block_directions(m_session);
+          else if (size < 0) { fail(QStringLiteral("读取 SSH 数据失败")); return; }
+        }
+        if (paused) break;
+        if (!progress) { drained = true; break; }
       }
-      if (libssh2_channel_eof(m_channel)) {
+      if (drained && libssh2_channel_eof(m_channel)) {
+        publish(m_stream.finish());
         const auto generation = m_generation;
         cleanup(); emit disconnected(generation);
+        return;
+      }
+      if ((!paused && !drained) || (writeProgress && !m_writeInFlight.isEmpty()) ||
+          (!m_outgoing.isEmpty() && m_writeInFlight.isEmpty())) {
+        // Yield to commands/cancellation, then drain libssh2's already-buffered bytes as well as the socket.
+        m_timer->start(0);
+      } else {
+        if (!paused || (!m_writeInFlight.isEmpty() && (waitDirections & LIBSSH2_SESSION_BLOCK_INBOUND)))
+          m_readNotifier->setEnabled(true);
+        if (waitDirections & LIBSSH2_SESSION_BLOCK_OUTBOUND) m_writeNotifier->setEnabled(true);
       }
       return;
     }
@@ -375,6 +499,9 @@ private:
   void cleanup() {
     m_phase = Stopped;
     if (m_timer) m_timer->stop();
+    for (auto **notifier : {&m_readNotifier, &m_writeNotifier}) {
+      if (*notifier) { (*notifier)->setEnabled(false); (*notifier)->deleteLater(); *notifier = nullptr; }
+    }
     if (m_lookupId >= 0) { QHostInfo::abortHostLookup(m_lookupId); m_lookupId = -1; }
     // Shut down before freeing, but keep the descriptor allocated until libssh2
     // is done so another thread cannot reuse it during cleanup.
@@ -390,7 +517,8 @@ private:
     m_channel = nullptr;
     m_password.fill(0); m_password.clear();
     m_credentialsLoaded = false;
-    m_outgoing.clear(); m_hostKey.clear(); m_requestId.clear();
+    m_outgoing.clear(); m_writeInFlight.clear(); m_replay.clear(); m_replayOffset = 0;
+    m_hostKey.clear(); m_requestId.clear();
     m_addresses.clear();
   }
   std::shared_ptr<SshSharedBuffer> m_buffer;
@@ -398,6 +526,8 @@ private:
   QString m_dataRoot;
   SshHostKeyStore m_trust;
   QTimer *m_timer = nullptr;
+  QSocketNotifier *m_readNotifier = nullptr;
+  QSocketNotifier *m_writeNotifier = nullptr;
   QElapsedTimer m_deadline;
   QList<QHostAddress> m_addresses;
   int m_lookupId = -1;
@@ -408,82 +538,180 @@ private:
   quint64 m_generation = 0;
   QString m_host, m_user, m_requestId;
   int m_port = 22;
-  QByteArray m_password, m_hostKey, m_outgoing;
+  QByteArray m_password, m_hostKey, m_outgoing, m_writeInFlight, m_replay;
+  qsizetype m_replayOffset = 0;
   bool m_credentialsLoaded = false;
-  bool m_overflowNotified = false;
+  QString m_encoding = QStringLiteral("UTF-8");
+  SshLogStream m_stream;
+  quint64 m_streamRevision = 0;
 };
 
 // --- TerminalLineModel 实现 ---
 
 TerminalLineModel::TerminalLineModel(int maxLines, QObject *parent)
-    : QAbstractListModel(parent), m_maxLines(maxLines) {}
+    : QAbstractListModel(parent), m_maxLines(qBound(100, maxLines, 200000)) {}
 
 int TerminalLineModel::rowCount(const QModelIndex &parent) const {
   if (parent.isValid())
     return 0;
-  return m_lines.size();
+  return int(m_lines.size());
 }
 
 QVariant TerminalLineModel::data(const QModelIndex &index, int role) const {
-  if (!index.isValid() || index.row() < 0 || index.row() >= m_lines.size())
+  if (!index.isValid() || index.row() < 0 || index.row() >= int(m_lines.size()))
     return {};
+  const auto &line = m_lines[size_t(index.row())];
   if (role == LineTextRole || role == Qt::DisplayRole)
-    return m_lines.at(index.row());
+    return line.text;
+  if (role == LineIdRole) return lineId(index.row());
+  if (role == ContinuationRole) return line.continuation;
+  if (role == ContinuesRole) return line.continues;
   return {};
 }
 
 QHash<int, QByteArray> TerminalLineModel::roleNames() const {
-  return {{LineTextRole, "lineText"}};
+  return {{LineTextRole, "lineText"}, {LineIdRole, "lineId"},
+          {ContinuationRole, "continuation"}, {ContinuesRole, "continues"}};
 }
 
 void TerminalLineModel::appendLines(const QStringList &lines) {
-  if (lines.isEmpty())
-    return;
-
-  const int incoming = lines.size();
-
-  // 若新行数本身就超出上限，只取最后 m_maxLines 行
-  const QStringList *toAdd = &lines;
-  QStringList trimmed;
-  if (incoming > m_maxLines) {
-    trimmed = lines.mid(incoming - m_maxLines);
-    toAdd = &trimmed;
+  std::vector<SshLogLine> records;
+  for (const auto &line : lines) {
+    const auto logicalId = m_syntheticId--;
+    for (qsizetype pos = 0; pos < line.size() || pos == 0;) {
+      auto length = qMin(SshLogStream::SegmentCharacters, line.size() - pos);
+      if (pos + length < line.size() && line[pos + length - 1].isHighSurrogate() && line[pos + length].isLowSurrogate()) --length;
+      const auto text = QStringView(line).mid(pos, length).toString();
+      records.push_back({text, logicalId, pos != 0, pos + text.size() < line.size()});
+      if (line.isEmpty()) break;
+      pos += length;
+    }
   }
+  appendRecords(std::move(records));
+}
 
-  int overflow = m_lines.size() + toAdd->size() - m_maxLines;
-  if (overflow > 0) {
-    // 溢出时用 beginResetModel 一次信号替代 remove+insert 两次信号，
-    // 避免 ListView 内部对 5000 行位置偏移做两轮 O(n) 更新。
-    // 就地修改 m_lines，不触发任何中间信号。
-    beginResetModel();
-    m_lines.erase(m_lines.begin(), m_lines.begin() + overflow);
-    m_lines.append(*toAdd);
-    endResetModel();
-  } else {
-    // 未溢出：简单尾部插入
-    const int first = m_lines.size();
-    beginInsertRows(QModelIndex(), first, first + toAdd->size() - 1);
-    m_lines.append(*toAdd);
+void TerminalLineModel::appendRecords(std::vector<SshLogLine> lines) {
+  if (lines.empty()) return;
+  qsizetype incomingBytes = 0;
+  for (const auto &line : lines) incomingBytes += line.storageBytes();
+  size_t start = 0;
+  while (start < lines.size() && (int(lines.size() - start) > m_maxLines ||
+                                  incomingBytes > SshLogStream::HistoryBytes))
+    incomingBytes -= lines[start++].storageBytes();
+  const int incoming = int(lines.size() - start);
+  // If even the incoming batch was trimmed, every existing row is older than discarded data.
+  int removed = start ? int(m_lines.size()) : 0;
+  qsizetype removedBytes = start ? m_bytes : 0;
+  while (removed < int(m_lines.size()) &&
+         (int(m_lines.size()) - removed + incoming > m_maxLines ||
+          m_bytes - removedBytes + incomingBytes > SshLogStream::HistoryBytes))
+    removedBytes += m_lines[size_t(removed++)].storageBytes();
+  if (removed > 0 && removed == incoming && start == 0) {
+    // A full rolling window keeps its slots; repaint visible data without rebuilding ListView geometry.
+    for (int i = 0; i < removed; ++i) m_lines.pop_front();
+    for (auto &line : lines) m_lines.push_back(std::move(line));
+    m_firstLineId += removed; m_nextLineId += incoming;
+    m_bytes += incomingBytes - removedBytes;
+    emit dataChanged(index(0), index(rowCount() - 1));
+    return;
+  }
+  if (removed) {
+    beginRemoveRows({}, 0, removed - 1);
+    for (int i = 0; i < removed; ++i) m_lines.pop_front();
+    m_bytes -= removedBytes; m_firstLineId += removed;
+    endRemoveRows();
+  }
+  m_nextLineId += qint64(start);
+  if (m_lines.empty()) m_firstLineId = m_nextLineId;
+  if (incoming) {
+    const int first = int(m_lines.size());
+    beginInsertRows({}, first, first + incoming - 1);
+    for (; start < lines.size(); ++start) m_lines.push_back(std::move(lines[start]));
+    m_nextLineId += incoming; m_bytes += incomingBytes;
     endInsertRows();
   }
 }
 
+void TerminalLineModel::setMaxLines(int maxLines) {
+  m_maxLines = qBound(100, maxLines, 200000);
+  const int remove = qMax(0, int(m_lines.size()) - m_maxLines);
+  if (!remove) return;
+  beginRemoveRows({}, 0, remove - 1);
+  for (int i = 0; i < remove; ++i) { m_bytes -= m_lines.front().storageBytes(); m_lines.pop_front(); }
+  m_firstLineId += remove;
+  endRemoveRows();
+}
+
 void TerminalLineModel::clear() {
-  if (m_lines.isEmpty())
+  if (m_lines.empty())
     return;
   beginResetModel();
   m_lines.clear();
+  m_bytes = 0; m_firstLineId = m_nextLineId;
   endResetModel();
 }
 
 QString TerminalLineModel::lineAt(int index) const {
-  if (index < 0 || index >= m_lines.size()) {
+  if (index < 0 || index >= int(m_lines.size())) {
     return {};
   }
-  return m_lines.at(index);
+  return m_lines[size_t(index)].text;
 }
 
-QStringList TerminalLineModel::lines() const { return m_lines; }
+QStringList TerminalLineModel::lines() const {
+  QStringList result;
+  for (const auto &line : m_lines) result.append(line.text);
+  return result;
+}
+
+QString TerminalLineModel::bufferText() const {
+  QString result;
+  for (const auto &line : m_lines) {
+    result.append(line.text);
+    if (!line.continues) result.append('\n');
+  }
+  return result;
+}
+
+qint64 TerminalLineModel::lineId(int index) const {
+  return index >= 0 && index < int(m_lines.size()) ? m_firstLineId + index : -1;
+}
+
+int TerminalLineModel::indexForId(qint64 id) const {
+  return id >= m_firstLineId && id < m_nextLineId ? int(id - m_firstLineId) : -1;
+}
+
+int TerminalLineModel::logicalStart(int index) const {
+  if (index < 0 || index >= int(m_lines.size())) return -1;
+  while (index > 0 && m_lines[size_t(index - 1)].logicalId == m_lines[size_t(index)].logicalId) --index;
+  return index;
+}
+
+int TerminalLineModel::logicalEnd(int index) const {
+  if (index < 0 || index >= int(m_lines.size())) return -1;
+  while (index + 1 < int(m_lines.size()) && m_lines[size_t(index + 1)].logicalId == m_lines[size_t(index)].logicalId) ++index;
+  return index;
+}
+
+QString TerminalLineModel::logicalLineAt(int index) const {
+  const int start = logicalStart(index), end = logicalEnd(index);
+  if (start < 0) return {};
+  QString result;
+  for (int i = start; i <= end; ++i) result.append(m_lines[size_t(i)].text);
+  return result;
+}
+
+bool TerminalLineModel::completeLineAt(int index) const {
+  const int start = logicalStart(index), end = logicalEnd(index);
+  return start >= 0 && !m_lines[size_t(start)].continuation && !m_lines[size_t(end)].continues;
+}
+
+int TerminalLineModel::segmentOffset(int index) const {
+  const int start = logicalStart(index);
+  int offset = 0;
+  for (int i = start; i >= 0 && i < index; ++i) offset += int(m_lines[size_t(i)].text.size());
+  return offset;
+}
 
 // --- SshTerminal 实现 ---
 
@@ -506,6 +734,8 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
 
   m_encoding = settings.value("ssh/encoding", "UTF-8").toString();
   m_maxBufferLines = settings.value("ssh/maxLines", 10000).toInt();
+  m_maxBufferLines = qBound(100, m_maxBufferLines, 200000);
+  m_lineModel->setMaxLines(m_maxBufferLines);
   m_autoReconnectEnabled =
       settings.value("ssh/autoReconnectEnabled", true).toBool();
   m_reconnectMaxAttempts =
@@ -538,7 +768,10 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
   connect(m_worker, &SshWorker::disconnected, this, [this](quint64 generation) {
     if (generation == m_generation) { clearHostKeyRequest(); onWorkerDisconnected(); }
   });
-  connect(m_worker, &SshWorker::bufferOverflowed, this, &SshTerminal::sharedBufferOverflowed);
+  connect(m_worker, &SshWorker::dataReady, this, [this](quint64 generation, quint64 revision) {
+    if (generation != m_generation || revision != m_buffer->contentRevision.load()) return;
+    if (!m_flushTimer->isActive()) m_flushTimer->start(m_presentationActive ? 180 : 500);
+  });
   connect(m_worker, &SshWorker::hostKeyRequired, this,
       [this](quint64 generation, const QString &host, int port, const QString &algorithm,
              const QString &fingerprint, const QString &requestId) {
@@ -574,9 +807,9 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
   m_workerThread->start();
   refreshCredentials();
 
-  m_flushTimer->setInterval(
-      500); // 500ms：日志监控场景无需 10fps，减少场景图提交压力
-  m_flushTimer->setSingleShot(false);
+  m_flushTimer->setInterval(180);
+  m_flushTimer->setTimerType(Qt::PreciseTimer);
+  m_flushTimer->setSingleShot(true);
   connect(m_flushTimer, &QTimer::timeout, this, &SshTerminal::flushPendingData);
 
   m_reconnectTimer = new QTimer(this);
@@ -733,7 +966,10 @@ QString SshTerminal::encoding() const { return m_encoding; }
 
 void SshTerminal::setEncoding(const QString &encoding) {
   if (m_encoding != encoding) {
+    ++m_buffer->contentRevision;
+    flushFinalPendingData();
     m_encoding = encoding;
+    resetPendingData(false);
     auto settings = this->settings();
     settings.setValue("ssh/encoding", m_encoding);
   settings.sync();
@@ -795,15 +1031,26 @@ int SshTerminal::reconnectAttempt() const { return m_reconnectAttempt; }
 
 int SshTerminal::maxBufferLines() const { return m_maxBufferLines; }
 void SshTerminal::setMaxBufferLines(int maxLines) {
+  maxLines = qBound(100, maxLines, 200000);
   if (m_maxBufferLines != maxLines) {
-    m_maxBufferLines = qMax(100, maxLines);
+    emit linesAboutToChange();
+    m_maxBufferLines = maxLines;
+    m_lineModel->setMaxLines(maxLines);
     emit maxBufferLinesChanged();
+    emit lineCountChanged();
   }
 }
 
 int SshTerminal::currentLineCount() const { return m_lineModel->rowCount(); }
 
 TerminalLineModel *SshTerminal::lineModel() const { return m_lineModel; }
+
+void SshTerminal::setPresentationActive(bool active) {
+  if (m_presentationActive == active) return;
+  m_presentationActive = active;
+  if (m_flushTimer->isActive()) m_flushTimer->start(active ? 0 : 500);
+  emit presentationActiveChanged();
+}
 
 void SshTerminal::setConnected(bool connected) {
   if (m_connected != connected) {
@@ -839,8 +1086,9 @@ void SshTerminal::startConnection() {
   clearHostKeyRequest();
   const quint64 previous = m_generation++;
   m_buffer->activeGeneration.store(m_generation);
+  resetPendingData(false);
   emit sigDisconnect(previous);
-  emit sigStartConnect(m_generation, m_host, m_port, m_username, m_password);
+  emit sigStartConnect(m_generation, m_host, m_port, m_username, m_password, m_encoding);
 }
 
 void SshTerminal::connectToHost() {
@@ -868,10 +1116,12 @@ void SshTerminal::connectToHost() {
 void SshTerminal::disconnectFromHost() {
   const auto generation = m_generation++;
   m_buffer->activeGeneration.store(m_generation);
+  flushFinalPendingData();
+  resetPendingData(false);
   m_manualDisconnectRequested = true;
   m_reconnectPending = false;
   if (m_tabTimer) m_tabTimer->stop();
-  m_tabMode = false; m_tabBusy = false; m_tabPhase = 0;
+  m_tabBusy = false; m_tabPhase = 0;
   m_tabPrefix.clear(); m_tabRawBuffer.clear();
   clearHostKeyRequest();
   if (m_reconnectTimer) m_reconnectTimer->stop();
@@ -888,8 +1138,7 @@ void SshTerminal::sendCommand(const QString &cmd) {
     // 先清空远端当前输入行，避免 Tab
     // 补全阶段残留内容（候选/前缀）与最终命令拼接 Ctrl+U: Unix shell
     // 行编辑“清空到行首”
-    emit sigSendCommand("\x15", false, m_encoding);
-    emit sigSendCommand(cmd, true, m_encoding);
+    emit sigSendCommand(QString(QChar(0x15)) + cmd, true, m_encoding);
   }
 }
 
@@ -912,32 +1161,26 @@ void SshTerminal::sendTabCompletion(const QString &prefix) {
   m_tabPrefix = prefix;
   m_tabRawBuffer.clear();
   m_tabBusy = true; // 整个序列期间锁定
-  m_tabMode = true; // 截获 SSH 数据流
   m_tabPhase = 0;
   m_tabTimer->setInterval(600); // Phase0：600ms 等待首次响应
   m_tabTimer->start();
-
-  // 记录触发日志
-  do {
-    QFile logFile("log/log.txt");
-    if (logFile.open(QIODevice::Append | QIODevice::Text)) {
-      QString ts = QDateTime::currentDateTime().toString(Qt::ISODate);
-      logFile.write(("[" + ts + "] TAB REQ: " + prefix + "\n").toUtf8());
-      logFile.close();
-    }
-  } while (0);
+  const auto generation = m_generation;
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, generation] { worker->beginTabCapture(generation); });
 
   // 发送「当前文本 + \t」触发远端 shell 补全
   emit sigSendCommand(prefix + "\t", false, m_encoding);
 }
 
-QString SshTerminal::getBufferText() {
-  // 从 lineModel 拼接所有行（用于调试或复制全文）
-  QStringList lines = m_lineModel->lines();
-  QMutexLocker locker(&m_buffer->mutex);
-  if (!m_partialLine.isEmpty())
-    lines << m_partialLine;
-  return lines.join("\n");
+QString SshTerminal::getBufferText() const {
+  QString partial;
+  {
+    QMutexLocker locker(&m_buffer->mutex);
+    partial = m_buffer->lines.empty() ? m_buffer->partial.text : m_committedPartial;
+  }
+  QString text = m_lineModel->bufferText();
+  text.append(partial);
+  if (partial.isEmpty() && text.endsWith('\n')) text.chop(1);
+  return text;
 }
 
 QVariantList SshTerminal::findLineIndexes(const QString &keyword,
@@ -980,14 +1223,30 @@ QVariantList SshTerminal::findLineIndexesInRange(const QString &keyword,
 }
 
 QString SshTerminal::lineAt(int index) const {
-  return m_lineModel->lineAt(index);
+  return m_lineModel->logicalLineAt(index);
+}
+
+QVariantList SshTerminal::findLineIds(const QString &keyword, qint64 fromId) const {
+  QVariantList result;
+  if (keyword.isEmpty()) return result;
+  const auto startId = qMax(fromId, firstLineId());
+  int row = m_lineModel->indexForId(startId);
+  if (row < 0) return result;
+  row = m_lineModel->logicalStart(row);
+  while (row < m_lineModel->rowCount()) {
+    if (m_lineModel->logicalLineAt(row).contains(keyword, Qt::CaseInsensitive))
+      result.append(m_lineModel->lineId(row));
+    row = m_lineModel->logicalEnd(row) + 1;
+  }
+  return result;
 }
 
 void SshTerminal::copyLineToClipboard(int index) const {
-  const QString line = m_lineModel->lineAt(index);
+  QString line = m_lineModel->logicalLineAt(index);
   if (line.isEmpty()) {
     return;
   }
+  if (!m_lineModel->completeLineAt(index)) line.prepend(QStringLiteral("[日志片段，内容尚未完整或较早部分已淘汰]\n"));
   if (QGuiApplication::clipboard()) {
     QGuiApplication::clipboard()->setText(line);
   }
@@ -995,14 +1254,10 @@ void SshTerminal::copyLineToClipboard(int index) const {
 
 void SshTerminal::copyBufferToClipboard() const {
   if (QGuiApplication::clipboard()) {
-    QStringList lines = m_lineModel->lines();
-    {
-      QMutexLocker locker(&m_buffer->mutex);
-      if (!m_partialLine.isEmpty()) {
-        lines << m_partialLine;
-      }
-    }
-    QGuiApplication::clipboard()->setText(lines.join("\n"));
+    QString text = getBufferText();
+    if (m_lineModel->rowCount() && !m_lineModel->completeLineAt(0))
+      text.prepend(QStringLiteral("[首条日志为片段，较早内容已淘汰或尚未完整]\n"));
+    QGuiApplication::clipboard()->setText(text);
   }
 }
 
@@ -1014,11 +1269,8 @@ QString SshTerminal::clipboardText() const {
 }
 
 void SshTerminal::clearBuffer() {
-  {
-    QMutexLocker locker(&m_buffer->mutex);
-    m_partialLine.clear();
-    m_buffer->data.clear();
-  }
+  resetPendingData(true);
+  emit linesAboutToChange();
   m_lineModel->clear();
   emit lineCountChanged();
 }
@@ -1048,11 +1300,10 @@ void SshTerminal::onWorkerConnected() {
 }
 
 void SshTerminal::onWorkerError(const QString &errorStr) {
-  // 错误消息写入共享缓冲（保持数据路径一致，不走事件队列）
-  {
-    QMutexLocker locker(&m_buffer->mutex);
-    m_buffer->data.append((errorStr + "\r\n").toLocal8Bit());
-  }
+  flushFinalPendingData();
+  emit linesAboutToChange();
+  m_lineModel->appendLines({errorStr});
+  emit lineCountChanged();
   setLastError(errorStr);
   setStatusMessage(errorStr);
   emit connectionError(errorStr);
@@ -1062,7 +1313,7 @@ void SshTerminal::onWorkerError(const QString &errorStr) {
 
 void SshTerminal::onWorkerDisconnected() {
   m_flushTimer->stop();
-  flushPendingData(); // 将剩余缓冲内容最后刷一次到界面
+  flushFinalPendingData();
   setConnected(false);
 
   if (m_manualDisconnectRequested) {
@@ -1137,91 +1388,95 @@ void SshTerminal::triggerReconnect() {
   startConnection();
 }
 
-void SshTerminal::enforceBufferLimit() {
-  // 行上限由 TerminalLineModel::appendLines 内部管理，此函数保留仅供兼容
+void SshTerminal::resetPendingData(bool discardPartial) {
+  m_flushTimer->stop();
+  m_committedPartial.clear();
+  const auto revision = ++m_buffer->contentRevision;
+  bool hadPartial = false;
+  {
+    QMutexLocker lock(&m_buffer->mutex);
+    hadPartial = !m_buffer->partial.text.isEmpty() || m_buffer->partial.continuation || m_buffer->partial.continues;
+    m_buffer->lines.clear(); m_buffer->bytes = 0; m_buffer->partial = {};
+    m_buffer->tabData.clear(); m_buffer->tabCapture = false; m_buffer->tabOverflow = false;
+    m_buffer->notificationPending = false;
+  }
+  if (m_tabBusy) finishTabCapture();
+  const auto encoding = m_encoding;
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, revision, encoding, discard = discardPartial && hadPartial] {
+    worker->resetStream(revision, encoding, discard);
+  });
+}
+
+void SshTerminal::flushFinalPendingData() {
+  for (;;) {
+    flushPendingData();
+    QMutexLocker lock(&m_buffer->mutex);
+    if (m_buffer->lines.empty()) break;
+  }
+  SshLogLine tail;
+  {
+    QMutexLocker lock(&m_buffer->mutex);
+    tail = std::exchange(m_buffer->partial, {});
+  }
+  if (!tail.text.isEmpty()) {
+    tail.continues = false;
+    emit linesAboutToChange();
+    m_lineModel->appendRecords({std::move(tail)});
+    emit lineCountChanged();
+  }
+  m_flushTimer->stop();
 }
 
 void SshTerminal::flushPendingData() {
-  // Tab 补全截获模式：将数据路由到独立缓冲区，不推入终端显示
-  if (m_tabMode) {
-    QMutexLocker locker(&m_buffer->mutex);
-    if (!m_buffer->data.isEmpty()) {
-      m_tabRawBuffer.append(m_buffer->data);
-      m_buffer->data.clear();
-    }
-    return;
-  }
-
-  // 1. O(1) 取走共享缓冲区（持锁时间极短）
-  QByteArray rawData;
+  m_flushTimer->stop();
+  std::vector<SshLogLine> lines;
+  qsizetype bytes = 0;
+  bool more, tabOverflow;
   {
-    QMutexLocker locker(&m_buffer->mutex);
-    if (m_buffer->data.isEmpty())
-      return;
-    rawData.swap(m_buffer->data);
-  }
-
-  // 2. 解码（仅一次内存分配）
-  QString newText;
-  if (m_encoding.toUpper().contains("GB")) {
-    newText = QString::fromLocal8Bit(rawData);
-  } else {
-    newText = QString::fromUtf8(rawData);
-  }
-  rawData.clear(); // 立即释放原始字节
-
-  if (newText.isEmpty())
-    return;
-
-  // 3. ANSI 转义清理 + \r 处理
-  // 先处理 \r\n（PTY 标准换行），再将孤立 \r（readline 行首覆写）转为 \n，
-  // 不能直接删除 \r，否则 Tab 补全、进度条等输出会粘连到上一行不可见
-  static const QRegularExpression reAnsi(
-      "\x1B\\[[0-9;?]*[a-zA-Z]|\x1B\\].*?(?:\x07|\x1B\\\\)");
-  newText.replace(reAnsi, "");
-  newText.replace("\r\n", "\n"); // Windows / PTY 标准换行
-  newText.replace("\r", "\n");   // 孤立 \r：行首覆写 → 换行显示
-
-  // 3.5 newDataChunk 信号已废弃（TextArea 终端已移除），不再 emit，节省 QString
-  // 复制开销
-
-  // 4. 切分为行（拼接上次未完整的行尾）
-  QStringList newLines;
-  {
-    QMutexLocker locker(&m_buffer->mutex);
-    QString fullText = m_partialLine + newText;
-    m_partialLine.clear();
-    newText.clear();
-
-    newLines = fullText.split('\n');
-    if (!newLines.isEmpty()) {
-      m_partialLine = newLines.takeLast(); // 末尾不完整行留待下次
+    QMutexLocker lock(&m_buffer->mutex);
+    while (!m_buffer->lines.empty() && lines.size() < 4096 && bytes < 2 * 1024 * 1024) {
+      bytes += m_buffer->lines.front().storageBytes();
+      lines.push_back(std::move(m_buffer->lines.front())); m_buffer->lines.pop_front();
     }
+    m_buffer->bytes -= bytes;
+    more = !m_buffer->lines.empty();
+    m_committedPartial = more ? QString() : m_buffer->partial.text;
+    m_buffer->notificationPending = more;
+    tabOverflow = m_buffer->tabOverflow; m_buffer->tabOverflow = false;
   }
+  if (!lines.empty()) {
+    emit linesAboutToChange();
+    m_lineModel->appendRecords(std::move(lines));
+    emit lineCountChanged();
+  }
+  if (tabOverflow) {
+    finishTabCapture();
+    setStatusMessage(QStringLiteral("Tab 响应过大，已停止补全并恢复普通日志接收"));
+    emit tabCompletionReady({}, {});
+  }
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker] { worker->resumeRead(); });
+  if (more) m_flushTimer->start(1);
+}
 
-  if (newLines.isEmpty())
-    return;
+void SshTerminal::finishTabCapture() {
+  m_tabBusy = false;
+  m_tabRawBuffer.clear();
+  if (m_tabTimer) m_tabTimer->stop();
+  const auto generation = m_generation;
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, generation] { worker->endTabCapture(generation); });
+}
 
-  // 5. 追加到行模型。
-  // 【核心】TerminalLineModel
-  // 内部维护固定上限（默认5000行），超出时直接丢弃最老行。 ListView
-  // 只渲染当前可见的约30行，内存占用 = 行数 × 平均行大小 ≈ 1MB，永远有界。
-  m_lineModel->appendLines(newLines);
-  emit lineCountChanged();
+void SshTerminal::collectTabData() {
+  QMutexLocker lock(&m_buffer->mutex);
+  m_tabRawBuffer.append(m_buffer->tabData);
+  m_buffer->tabData.clear();
 }
 
 void SshTerminal::processTabCompletion() {
   if (!m_connected || !m_tabBusy) return;
-  // 不在开头清 m_tabMode，避免窗口期间数据被当成普通终端输出
+  // Keep worker capture active until completion has been resolved.
 
-  // 将截获期间可能还残留在共享缓冲的数据一并取出
-  {
-    QMutexLocker locker(&m_buffer->mutex);
-    if (!m_buffer->data.isEmpty()) {
-      m_tabRawBuffer.append(m_buffer->data);
-      m_buffer->data.clear();
-    }
-  }
+  collectTabData();
 
   if (m_tabRawBuffer.isEmpty()) {
     // BEL 只（或真空）：根据阶段处理
@@ -1239,38 +1494,21 @@ void SshTerminal::processTabCompletion() {
       m_tabTimer->start();
     } else {
       // 总计等了 2.6s 仍无内容：放弃
-      m_tabMode = false;
-      m_tabBusy = false;
+      finishTabCapture();
       emit tabCompletionReady("", {});
     }
     return;
   }
 
-  // 解码
-  QString raw = m_encoding.toUpper().contains("GB")
-                    ? QString::fromLocal8Bit(m_tabRawBuffer)
-                    : QString::fromUtf8(m_tabRawBuffer);
-
-  // 记录原始 Tab 响应到日志文件，便于调试与分析
-  do {
-    QFile logFile("log/log.txt");
-    if (logFile.open(QIODevice::Append | QIODevice::Text)) {
-      QString ts = QDateTime::currentDateTime().toString(Qt::ISODate);
-      QByteArray out = ("[" + ts + "] TAB RAW:\n").toUtf8();
-      out.append(raw.toUtf8());
-      out.append('\n');
-      logFile.write(out);
-      logFile.close();
-    }
-  } while (0);
-
-  // 清理 ANSI 转义、BEL、\r 等控制字符
-  static const QRegularExpression reAnsi(
-      "\x1B\\[[0-9;?]*[a-zA-Z]|\x1B\\].*?(?:\x07|\x1B\\\\)");
-  raw.replace(reAnsi, "");
-  raw.replace("\x07", ""); // BEL
-  raw.replace("\r\n", "\n");
-  raw.replace("\r", "\n");
+  SshLogStream response(m_encoding);
+  auto records = response.feed(m_tabRawBuffer);
+  auto tail = response.finish();
+  records.insert(records.end(), std::make_move_iterator(tail.begin()), std::make_move_iterator(tail.end()));
+  QString raw;
+  for (const auto &record : records) {
+    raw.append(record.text);
+    if (!record.continues) raw.append('\n');
+  }
 
   const QStringList lines = raw.split('\n', Qt::SkipEmptyParts);
 
@@ -1322,8 +1560,8 @@ void SshTerminal::processTabCompletion() {
 
       QStringList allTokens;
       for (const QString &line : lines) {
-        // 跳过包含完整 prefix 的行（bash 重绘提示符行）
-        if (line.contains(m_tabPrefix))
+        // A column of candidates may itself contain the prefix (e.g. "lock/  log/").
+        if (line.contains(m_tabPrefix) && !line.contains("  ") && !line.contains('\t'))
           continue;
         const QStringList parts =
             line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
@@ -1346,15 +1584,12 @@ void SshTerminal::processTabCompletion() {
 
   if (!completedCmd.isEmpty()) {
     // 唯一补全：通知 QML 更新输入框
-    m_tabMode = false;
-    m_tabBusy = false;
-    m_tabRawBuffer.clear();
+    finishTabCapture();
     emit tabCompletionReady(completedCmd, {});
   } else if (!candidates.isEmpty()) {
     // 多候选：把候选词拼成一行干净展示到终端
-    m_tabMode = false;
-    m_tabBusy = false;
-    m_tabRawBuffer.clear();
+    finishTabCapture();
+    emit linesAboutToChange();
     m_lineModel->appendLines({candidates.join("  ")});
     emit lineCountChanged();
     emit tabCompletionReady("", candidates);
@@ -1362,7 +1597,7 @@ void SshTerminal::processTabCompletion() {
     // 无有效 token（如全是 ANSI 控制字符）——按阶段处理
     m_tabRawBuffer.clear();
     if (m_tabPhase == 0) {
-      // 第一阶段无增量：自动进入第二阶段， m_tabBusy/m_tabMode 保持 true
+      // 第一阶段无增量：自动进入第二阶段，保持截获状态
       m_tabPhase = 1;
       m_tabTimer->setInterval(1200);
       m_tabTimer->start();
@@ -1373,8 +1608,7 @@ void SshTerminal::processTabCompletion() {
       m_tabTimer->start();
     } else {
       // 最终放弃
-      m_tabMode = false;
-      m_tabBusy = false;
+      finishTabCapture();
       emit tabCompletionReady("", {});
     }
   }

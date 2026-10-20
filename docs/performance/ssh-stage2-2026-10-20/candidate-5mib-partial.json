@@ -1,0 +1,66 @@
+{
+  "content_errors": 0,
+  "cpu_percent_one_core": 9.896401092495752,
+  "cpu_seconds": 29.711965,
+  "device_pixel_ratio": 2,
+  "elapsed_seconds": 300.23,
+  "event_loop_delay": {
+    "max_ms": 28,
+    "p50_ms": 0,
+    "p95_ms": 1,
+    "p99_ms": 3,
+    "samples": 29924
+  },
+  "full_application": true,
+  "latest_visible_sender_to_frame": {
+    "max_ms": 41,
+    "p50_ms": 16,
+    "p95_ms": 25,
+    "p99_ms": 28,
+    "samples": 1616
+  },
+  "model_commits": 1616,
+  "model_resets": 0,
+  "model_to_next_frame": {
+    "max_ms": 29,
+    "p50_ms": 9,
+    "p95_ms": 16,
+    "p99_ms": 18,
+    "samples": 1616
+  },
+  "overflow_signals": 0,
+  "payload_mib_per_second": 4.998875861839256,
+  "platform": "cocoa",
+  "qt_version": "6.11.1",
+  "rate_per_session": 5242880,
+  "received_lines": 3073664,
+  "rss_final_mib": 679.84375,
+  "rss_initial_mib": 675.34375,
+  "rss_peak_mib": 699.296875,
+  "search": false,
+  "seconds_requested": 600,
+  "sender_to_model": {
+    "max_ms": 195,
+    "p50_ms": 97,
+    "p95_ms": 180,
+    "p99_ms": 188,
+    "samples": 3073664
+  },
+  "session_progress": [
+    {
+      "max_commit_gap_ms": 194,
+      "received_lines": 3073664
+    }
+  ],
+  "sessions": 1,
+  "ui": true,
+  "view_state": "live",
+  "window_active_samples": 285,
+  "window_exposed_samples": 300,
+  "window_height": 900,
+  "window_samples": 300,
+  "window_width": 1440,
+  "test_completed": false,
+  "stop_reason": "User ended foreground testing; preserve partial measurement only",
+  "case": "5mib"
+}

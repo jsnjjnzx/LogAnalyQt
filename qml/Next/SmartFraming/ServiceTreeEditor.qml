@@ -693,7 +693,7 @@ Item {
             title: "GET-NORMAL"
             subtitle: "OAD"
             visible: serviceCode === "GET_NORMAL"
-            Next.OadSelector { id: getNormalOad; Layout.fillWidth: true; theme: root.theme; backend: root.backend; methodMode: false; opFilter: "GET" }
+            Next.OadSelector { id: getNormalOad; objectName: "get-normal-oad"; Layout.fillWidth: true; theme: root.theme; backend: root.backend; methodMode: false; opFilter: "GET" }
         }
 
         TreeSection {

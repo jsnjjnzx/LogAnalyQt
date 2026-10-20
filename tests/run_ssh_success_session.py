@@ -13,7 +13,7 @@ def main():
     parser.add_argument("--binary", required=True, type=Path, help="independently built ssh_success_session_tests executable")
     arguments = parser.parse_args()
     binary = arguments.binary.resolve(strict=True)
-    with tempfile.TemporaryDirectory(prefix="loganalyqt-ssh-success-", dir="/private/tmp") as directory:
+    with tempfile.TemporaryDirectory(prefix="loganalyqt-ssh-success-") as directory:
         server = LoopbackSshServer(directory)
         server.start()
         try:

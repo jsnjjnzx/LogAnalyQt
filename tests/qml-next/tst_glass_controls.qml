@@ -74,6 +74,22 @@ Pane {
             view.toggle.enabled = false; mouseClick(view.toggle)
             verify(view.toggle.checked)
         }
+        function test_comboArrowAlignment() {
+            view.choice.model = ["协议 XML", "AI 提示词"]
+            for (const height of [28, 36, 44]) {
+                view.choice.Layout.preferredHeight = height
+                wait(20)
+                const arrow = view.choice.indicator
+                compare(arrow.width, 14)
+                compare(arrow.height, 14)
+                compare(arrow.y + arrow.height / 2, view.choice.height / 2)
+                compare(view.choice.width - arrow.x - arrow.width, 12)
+            }
+            mouseClick(view.choice)
+            tryCompare(view.choice.popup, "visible", true)
+            keyClick(Qt.Key_Down); keyClick(Qt.Key_Return)
+            compare(view.choice.currentIndex, 1)
+        }
         function test_reducedTransparency() {
             verify(theme.surface.a < 1); verify(theme.sidebar.a < 1)
             theme.reducedTransparency = true

@@ -1,0 +1,109 @@
+﻿LogAnalyQt：Windows 11 x64 编译环境检查与安装
+================================================
+
+适用：Intel / AMD 64 位 Windows 11，日常使用的电脑。
+默认目录：C:\LogAnalyQtBuild。
+
+第一步：只检查，不安装
+--------------------
+把整个 ZIP 解压到本地文件夹，双击 Setup-Windows-Build.cmd。
+不要直接在压缩包里面运行。
+
+脚本先检查：Git、Python 3.12 x64、PowerShell 7、GitHub CLI、CMake、Ninja、
+MSYS2 和 make/perl、MinGW 13.1、Qt 6.11.1 测试工具、静态 Qt、静态 OpenSSL，
+并显示所选磁盘的剩余空间。
+
+输出含义：
+  [REUSE]：发现可复用的安装，跳过安装。
+  [MISSING]：缺少所需版本或没有找到安装位置。
+  [INCOMPATIBLE/UNVERIFIED]：指定安装与要求不符或不能确认，保留原样。
+  FULL PLAN：完整待办清单，包括安装位置、依赖准备及小程序验证。
+  CHECK ONLY：本次只检查，没有创建安装目录或安装软件。
+
+请先把完整检查结果发给我，确认缺失项和安装位置后，再进行第二步。
+不在 PATH、常见目录或指定目录中的工具，可能无法自动识别，不能仅凭
+[MISSING] 就认定电脑没有安装。应先指定它的实际位置再检查。
+
+第二步：确认清单后，逐项安装
+--------------------------
+双击 Install-Windows-Build.cmd。它仍会先重新完整检查，列出最新计划。
+只有你看完计划并输入大写 INSTALL 后，才会开始按清单顺序安装和构建。
+直接回车或输入其他内容会取消，不安装、不下载，也不创建环境目录。
+
+安装期间可能出现 Windows 的管理员权限提示。首次编译静态 Qt 可能耗时
+数小时，请保持窗口打开、电脑接电、联网并避免睡眠。
+没有静态 Qt 时，脚本要求所选磁盘至少有 60 GiB 可用空间；已有可复用静态
+Qt 时至少有 10 GiB。实际需求与依赖、构建中间文件有关，建议多留空间。
+
+成功结束标志：
+  [READY] Environment created: C:\LogAnalyQtBuild\environment.ps1
+
+脚本在此之前会编译并运行一个很小的 Qt 程序，检查静态链接和 Qt 版本。
+完整 LogAnalyQt 编译、界面和更新验收是之后的步骤。
+
+保护范围
+--------
+符合版本要求的已有组件优先复用；其他版本保留，新增版本放入独立目录。
+WinGet 安装时使用 --no-upgrade，不请求升级或卸载已有软件。新安装器可能
+按自身规则登记程序和 PATH。生成的 environment.ps1 仅设置当前终端环境。
+MSYS2 只请求缺少的 make/perl；它们的必要依赖也属于确认后的安装范围。
+不自动重启 Windows，不关闭安全软件，不永久修改 PowerShell 执行策略，
+不登录 GitHub，不注册运行器，不改动远端仓库，不发布版本。
+已有但不完整、版本不符或来源不明的安装目录不会被自动删除或覆盖。
+
+当前安装入口使用微软 WinGet；WinGet 缺失时，需要先通过 Microsoft Store
+安装或更新“应用安装程序”。脚本不会另外装第三方包管理器绕过这个前提。
+新文件下载保留校验；aqtinstall 固定到现有 GitHub 流程已使用的提交。
+已有 MSYS2 的仓库数据库过旧时，软件包安装可能失败；脚本会停止并保留
+日志，不会擅自全量升级你已有的 MSYS2。
+
+日志位置：确认安装后才在 <安装根目录>\logs 生成日志。
+如有错误，请保留日志和窗口输出，不要为了重试先删除已有目录。
+
+自定义位置（在解压目录打开终端）
+----------------------------
+只检查 D 盘的独立目录：
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ci\setup_windows_build.ps1 -Root D:\LogAnalyQtBuild
+
+确认上述目录的清单后，进入安装确认：
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ci\setup_windows_build.ps1 -Root D:\LogAnalyQtBuild -Install
+
+安装根目录使用本机 NTFS 磁盘上的短英文路径，不含空格或中文。
+可通过参数指定已有工具：-QtStaticDir、-QtTestDir、-MingwDir、-MsysDir。
+也读取 QT_STATIC_DIR、QT_ROOT_DIR、MINGW_DIR、LOGANALYQT_MSYS2_DIR 环境变量。
+Python 要求 3.12 x64，MinGW 要求 13.1.0，Qt 要求 6.11.1。
+
+第三步：本地完整编译测试（环境准备成功后）
+--------------------------------------
+打开 PowerShell 7，使用全新的源码副本。下面下载 GitHub 当前 main 分支，
+不包含你在其他电脑上尚未推送的改动。每条命令成功后才执行下一条。
+若目录已经存在，先检查或改用新目录，不要直接删除或重置。
+
+  . C:\LogAnalyQtBuild\environment.ps1
+  git clone https://github.com/jsnjjnzx/LogAnalyQt.git C:\LogAnalyQtBuild\source
+  Set-Location C:\LogAnalyQtBuild\source
+  git rev-parse HEAD
+  python scripts/ci/check_build.py
+  python -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release -v
+  python tests/prot698_qml_tests.py
+  .\scripts\package_single.ps1 -BuildTests
+  python scripts/ci/check_build.py --packages release_package --platform windows
+
+改过安装根目录时，相应替换上述路径。
+package_single.ps1 会清理这个源码副本中的 build_release 目录，因此必须
+使用独立测试副本，不能直接在你日常使用的工作目录里尝试。
+编译后的 EXE 和 SHA256 位于 source\release_package，可手动打开 EXE 验证。
+本阶段不调用发布脚本，不安装自动更新，不读取日常应用的数据进行测试。
+
+第四步：以后再接 GitHub 调度
+--------------------------
+本地验收通过后，再把运行器注册到私有源码仓库。先在登录的桌面会话中
+测试，因为项目包含桌面界面和更新验证，不默认注册为后台系统服务。
+GitHub 工作目录应与本地测试副本分开；日常电脑不接收不可信公开仓库任务。
+现有云端流程还有固定 D 盘路径和临时改名 Qt 目录的步骤，接入前需要调整。
+
+验证边界
+--------
+脚本在 Mac 上进行了 PowerShell 语法和模拟行为测试，包括默认只检查、
+拒绝安装后零写入、复用已有工具、安装失败、保护已有文件及版本判断。
+这些不能代替 Windows 上真实的 WinGet 安装、Qt 编译、图形界面验收。

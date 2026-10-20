@@ -11,6 +11,7 @@
 #include <QTextStream>
 #include <QElapsedTimer>
 #include <QThread>
+#include <QRandomGenerator>
 #include "common/JsonSettings.h"
 #include "core/config/PresetCodec.h"
 #include <QJsonDocument>
@@ -329,6 +330,98 @@ void TestDiffReadFailures() {
   Expect(successes == 3 && failures == 4 && !lastGoodDiff.isEmpty() && !lastGoodDiff.first().toMap().value("text").toString().contains("无法读取"), "两侧真实缺失可报告为空，不能与读取错误混同");
 }
 
+void TestDiffAlignment(const QStringList &samplePaths) {
+  QTemporaryDir remote;
+  ProtocolSyncManager::Dependencies dependencies;
+  dependencies.credentials = std::make_shared<FakeCredentials>();
+  dependencies.settingsFile = remote.filePath("isolated.ini");
+  dependencies.openShare = [](const QUrl &) { return true; };
+  dependencies.mounts = [path = remote.path()] { return QList<SmbShare::Mount>{{"//test.invalid/share", path}}; };
+  ProtocolSyncManager manager(dependencies);
+#ifdef Q_OS_MACOS
+  manager.setSharePath("smb://test.invalid/share");
+  bool connected = false;
+  QObject::connect(&manager, &ProtocolSyncManager::connectionFinished, &manager,
+                   [&](bool ok, const QString &) { connected = ok; });
+  manager.connectToShare();
+  Expect(Wait([&] { return connected; }), "差异对齐测试连接隔离目录");
+#else
+  manager.setSharePath(remote.path());
+#endif
+  QDir().mkpath(AppPaths::protocolDirectory());
+  const QString localPath = QDir(AppPaths::protocolDirectory()).filePath("app_msg_protocol.xml");
+  const QString remotePath = remote.filePath("app_msg_protocol.xml");
+  const auto compare = [&](const QByteArray &local, const QByteArray &other) {
+    WriteFile(localPath, local); WriteFile(remotePath, other);
+#ifdef Q_OS_MACOS
+    bool done = false;
+    QVariantList result;
+    const auto connection = QObject::connect(&manager, &ProtocolSyncManager::diffFinished,
+        &manager, [&](const QString &, const QVariantList &diff) { result = diff; done = true; });
+    manager.getXmlDiff("app_msg_protocol.xml");
+    Expect(Wait([&] { return done; }), "差异对齐比较应成功完成");
+    QObject::disconnect(connection);
+    return result;
+#else
+    return manager.getXmlDiff("app_msg_protocol.xml");
+#endif
+  };
+  const auto checkRows = [&](const QVariantList &rows, int deletions, int additions) {
+    int deleted = 0, added = 0;
+    for (const auto &value : rows) {
+      const auto row = value.toMap();
+      if (row.value("leftType") == "del") ++deleted;
+      if (row.value("rightType") == "add") ++added;
+      if (row.value("leftType") == "same")
+        Expect(row.value("leftText") == row.value("rightText"), "相同行左右内容必须一致，插入删除后尾部仍对齐");
+    }
+    Expect(deleted == deletions && added == additions,
+           QString("差异应为删除 %1 / 新增 %2 行，实际 %3 / %4").arg(deletions).arg(additions).arg(deleted).arg(added));
+  };
+
+  QStringList local{"<protocol version=\"1\">"};
+  for (int i = 0; i < 3400; ++i) local.append(QString("<field id=\"%1\"/>").arg(i));
+  local.append("</protocol>");
+  QStringList other = local;
+  other[0] = "<protocol version=\"2\">";
+  for (int i = 0; i < 52; ++i) other.insert(3350 + i, QString("<added id=\"%1\"/>").arg(i));
+  const auto encode = [](const QStringList &lines) {
+    return lines.isEmpty() ? QByteArray() : (lines.join('\n') + '\n').toUtf8();
+  };
+  checkRows(compare(encode(local), encode(other)), 1, 53);
+  checkRows(compare(encode(other), encode(local)), 53, 1);
+  checkRows(compare("a\nb\nc\nd\ne\n", "a\ninsert\nb\nc\nd\ne\n"), 0, 1);
+
+  QRandomGenerator random(20261020);
+  for (int test = 0; test < 100; ++test) {
+    QStringList left, right;
+    const int m = random.bounded(7), n = random.bounded(7);
+    for (int i = 0; i < m; ++i) left.append(QString::number(random.bounded(3)));
+    for (int i = 0; i < n; ++i) right.append(QString::number(random.bounded(3)));
+    QVector<QVector<int>> lengths(m + 1, QVector<int>(n + 1));
+    for (int i = 1; i <= m; ++i)
+      for (int j = 1; j <= n; ++j)
+        lengths[i][j] = left[i - 1] == right[j - 1] ? lengths[i - 1][j - 1] + 1
+                                                   : qMax(lengths[i - 1][j], lengths[i][j - 1]);
+    const auto rows = compare(encode(left), encode(right));
+    if (m == 0 && n == 0) continue;
+    checkRows(rows, m - lengths[m][n], n - lengths[m][n]);
+    QStringList displayedLeft, displayedRight;
+    for (const auto &value : rows) {
+      const auto row = value.toMap();
+      if (row.value("leftType") == "same" || row.value("leftType") == "del") displayedLeft.append(row.value("leftText").toString());
+      if (row.value("rightType") == "same" || row.value("rightType") == "add") displayedRight.append(row.value("rightText").toString());
+    }
+    Expect(displayedLeft == left && displayedRight == right, "重复行及空侧比较必须完整保留两侧内容和顺序");
+  }
+  if (samplePaths.size() == 2) {
+    QElapsedTimer timer; timer.start();
+    checkRows(compare(ReadFile(samplePaths[0]), ReadFile(samplePaths[1])), 1, 53);
+    QTextStream(stdout) << "Desktop XML comparison: 1 deleted / 53 added lines, " << timer.elapsed() << " ms\n";
+  }
+  QFile::remove(localPath);
+}
+
 void TestProtocolSync(const QString &sourceXml) {
   const QString localRoot = AppPaths::writableDataRoot();
   const QString localPath =
@@ -638,6 +731,7 @@ int main(int argc, char *argv[]) {
   TestDiffReadFailures();
 #endif
   TestProtocolSync(sourceXml);
+  TestDiffAlignment(application.arguments().mid(1));
   TestPromptSync();
 #ifdef Q_OS_MACOS
   TestPresetExchange();

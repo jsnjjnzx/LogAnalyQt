@@ -83,7 +83,10 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 4.4.0 LANGUAGES CXX)
+project(LogAnalyQt VERSION 4.5.0 LANGUAGES CXX)
+if(NOT WIN32)
+    find_package(Iconv REQUIRED)
+endif()
 if(APPLE)
     enable_language(OBJCXX)
     set(CMAKE_OBJCXX_STANDARD 17)
@@ -111,7 +114,7 @@ if(WIN32 AND MINGW)
     set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Xml Network QuickControls2 Svg Concurrent)
+find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Xml Network QuickControls2 Svg Concurrent)
 include(cmake/MqttDependencies.cmake)
 
 option(LOGANALYQT_BUILD_PROTOCOL_TESTS
@@ -234,6 +237,8 @@ qt_add_executable(appLogAnalyQt
     src/core/LogMerger.cpp
     src/core/SshTerminal.h
     src/core/SshTerminal.cpp
+    src/core/SshLogStream.h
+    src/core/SshLogStream.cpp
     src/core/SshHostKeyStore.h
     src/core/SmbShare.h
     src/core/SmbShare.cpp
@@ -269,6 +274,11 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     add_test(NAME mqtt_tests COMMAND mqtt_tests $<TARGET_FILE:mosquitto>)
     set_tests_properties(mqtt_tests PROPERTIES TIMEOUT 90)
     target_compile_definitions(appLogAnalyQt PRIVATE LOGANALYQT_UI_TESTING)
+    target_sources(appLogAnalyQt PRIVATE tests/ssh-performance/ssh_performance.cpp)
+    target_compile_definitions(appLogAnalyQt PRIVATE LOGANALYQT_FULL_APP_BENCHMARK)
+    if(WIN32)
+        target_link_libraries(appLogAnalyQt PRIVATE psapi)
+    endif()
     if(APPLE)
         find_package(Qt6 REQUIRED COMPONENTS Test)
         add_executable(mac_backdrop_tests tests/mac_backdrop_tests.mm src/core/MacWindowBackdrop.mm src/core/MacWindowBackdrop.h)
@@ -375,10 +385,14 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
         add_test(NAME secure_credential_tests COMMAND secure_credential_tests)
         add_executable(ssh_security_tests tests/ssh_security_tests.cpp
             src/core/SshTerminal.h src/core/SshTerminal.cpp
+            src/core/SshLogStream.h src/core/SshLogStream.cpp
             src/core/SshHostKeyStore.h src/core/SecureCredentialStore.cpp)
         target_include_directories(ssh_security_tests PRIVATE src src/core)
         target_link_libraries(ssh_security_tests PRIVATE Qt6::Core Qt6::Gui
             Qt6::Network libssh2_static ${AI_SECURITY_FRAMEWORK} ${AI_CORE_FOUNDATION_FRAMEWORK})
+        if(NOT WIN32)
+            target_link_libraries(ssh_security_tests PRIVATE Iconv::Iconv)
+        endif()
         add_test(NAME ssh_security_tests COMMAND ssh_security_tests)
         set_tests_properties(ssh_security_tests PROPERTIES TIMEOUT 60)
         add_executable(secure_credential_native_check EXCLUDE_FROM_ALL
@@ -388,6 +402,22 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
         target_link_libraries(secure_credential_native_check PRIVATE Qt6::Core
             ${AI_SECURITY_FRAMEWORK} ${AI_CORE_FOUNDATION_FRAMEWORK})
     endif()
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(ssh_stream_tests tests/ssh_stream_tests.cpp
+        src/core/SshTerminal.h src/core/SshTerminal.cpp
+        src/core/SshLogStream.h src/core/SshLogStream.cpp src/core/SecureCredentialStore.cpp)
+    target_include_directories(ssh_stream_tests PRIVATE src src/core)
+    target_link_libraries(ssh_stream_tests PRIVATE Qt6::Gui Qt6::Network Qt6::Test libssh2_static)
+    if(APPLE)
+        target_link_libraries(ssh_stream_tests PRIVATE Iconv::Iconv ${AI_SECURITY_FRAMEWORK} ${AI_CORE_FOUNDATION_FRAMEWORK})
+    elseif(WIN32)
+        target_link_libraries(ssh_stream_tests PRIVATE advapi32)
+    else()
+        target_link_libraries(ssh_stream_tests PRIVATE Iconv::Iconv)
+    endif()
+    add_test(NAME ssh_stream_tests COMMAND ssh_stream_tests)
+    set_tests_properties(ssh_stream_tests PROPERTIES TIMEOUT 30)
+
     add_executable(app_paths_tests
         tests/app_paths_tests.cpp
     )
@@ -694,6 +724,9 @@ endif()
 
 # 纭繚澶存枃浠惰矾寰勮В鏋愭甯革細娣诲姞 src 鍙婂叾瀛愮洰褰?
 target_include_directories(appLogAnalyQt PRIVATE src src/core src/protocols ${CMAKE_SOURCE_DIR}/third_party/libssh2/include)
+if(NOT WIN32)
+    target_link_libraries(appLogAnalyQt PRIVATE Iconv::Iconv)
+endif()
 
 # 瀹氫箟鍗忚XML鏂囦欢
 set(PROTOCOL_XML_FILES

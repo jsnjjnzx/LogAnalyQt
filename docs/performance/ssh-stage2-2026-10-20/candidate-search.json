@@ -1,0 +1,323 @@
+{
+  "content_errors": 0,
+  "cpu_percent_one_core": 8.607161099870643,
+  "cpu_seconds": 5.189946,
+  "device_pixel_ratio": 2,
+  "elapsed_seconds": 60.298,
+  "event_loop_delay": {
+    "max_ms": 27,
+    "p50_ms": 0,
+    "p95_ms": 2,
+    "p99_ms": 11,
+    "samples": 5946
+  },
+  "full_application": true,
+  "latest_visible_sender_to_frame": {
+    "max_ms": 125,
+    "p50_ms": 36,
+    "p95_ms": 50,
+    "p99_ms": 54,
+    "samples": 304
+  },
+  "model_commits": 304,
+  "model_resets": 0,
+  "model_to_next_frame": {
+    "max_ms": 51,
+    "p50_ms": 11,
+    "p95_ms": 17,
+    "p99_ms": 19,
+    "samples": 304
+  },
+  "overflow_signals": 0,
+  "payload_mib_per_second": 0.9950578791999735,
+  "platform": "cocoa",
+  "qt_version": "6.11.1",
+  "rate_per_session": 1048576,
+  "received_lines": 122880,
+  "rss_final_mib": 694.5,
+  "rss_initial_mib": 676.40625,
+  "rss_peak_mib": 694.46875,
+  "rss_samples": [
+    [
+      0,
+      686.5625
+    ],
+    [
+      1,
+      689.09375
+    ],
+    [
+      2,
+      690.828125
+    ],
+    [
+      3,
+      691.90625
+    ],
+    [
+      4,
+      692.171875
+    ],
+    [
+      5,
+      692.40625
+    ],
+    [
+      6,
+      692.421875
+    ],
+    [
+      7,
+      692.421875
+    ],
+    [
+      8,
+      692.46875
+    ],
+    [
+      9,
+      692.46875
+    ],
+    [
+      10,
+      692.5
+    ],
+    [
+      11,
+      692.53125
+    ],
+    [
+      12,
+      692.5625
+    ],
+    [
+      13,
+      692.609375
+    ],
+    [
+      14,
+      692.640625
+    ],
+    [
+      15,
+      692.671875
+    ],
+    [
+      16,
+      692.78125
+    ],
+    [
+      17,
+      692.796875
+    ],
+    [
+      18,
+      692.84375
+    ],
+    [
+      19,
+      692.859375
+    ],
+    [
+      20,
+      692.9375
+    ],
+    [
+      21,
+      692.96875
+    ],
+    [
+      22,
+      693
+    ],
+    [
+      23,
+      693.046875
+    ],
+    [
+      24,
+      692.984375
+    ],
+    [
+      25,
+      693.015625
+    ],
+    [
+      26,
+      693.03125
+    ],
+    [
+      27,
+      693.09375
+    ],
+    [
+      28,
+      693.140625
+    ],
+    [
+      29,
+      693.171875
+    ],
+    [
+      30,
+      693.203125
+    ],
+    [
+      31,
+      693.25
+    ],
+    [
+      32,
+      693.296875
+    ],
+    [
+      33,
+      693.328125
+    ],
+    [
+      34,
+      693.375
+    ],
+    [
+      35,
+      693.421875
+    ],
+    [
+      36,
+      693.453125
+    ],
+    [
+      37,
+      693.5
+    ],
+    [
+      38,
+      693.53125
+    ],
+    [
+      39,
+      693.578125
+    ],
+    [
+      40,
+      693.625
+    ],
+    [
+      41,
+      693.671875
+    ],
+    [
+      42,
+      693.71875
+    ],
+    [
+      43,
+      693.734375
+    ],
+    [
+      44,
+      693.78125
+    ],
+    [
+      45,
+      693.828125
+    ],
+    [
+      46,
+      693.875
+    ],
+    [
+      47,
+      693.90625
+    ],
+    [
+      48,
+      693.953125
+    ],
+    [
+      49,
+      694.03125
+    ],
+    [
+      50,
+      694.078125
+    ],
+    [
+      51,
+      694.109375
+    ],
+    [
+      52,
+      694.15625
+    ],
+    [
+      53,
+      694.203125
+    ],
+    [
+      54,
+      694.234375
+    ],
+    [
+      55,
+      694.28125
+    ],
+    [
+      56,
+      694.34375
+    ],
+    [
+      57,
+      694.375
+    ],
+    [
+      58,
+      694.421875
+    ],
+    [
+      59,
+      694.46875
+    ]
+  ],
+  "search": true,
+  "seconds_requested": 60,
+  "sender_to_model": {
+    "max_ms": 200,
+    "p50_ms": 101,
+    "p95_ms": 189,
+    "p99_ms": 196,
+    "samples": 122880
+  },
+  "session_progress": [
+    {
+      "max_commit_gap_ms": 222,
+      "received_lines": 122880
+    }
+  ],
+  "sessions": 1,
+  "ui": true,
+  "view_state": "live",
+  "window_active_samples": 60,
+  "window_exposed_samples": 60,
+  "window_height": 900,
+  "window_samples": 60,
+  "window_width": 1440,
+  "diagnostic_only": false,
+  "server": {
+    "0": {
+      "sent_lines": 122880,
+      "sent_bytes": 62914560,
+      "send_seconds": 60.0100543750159,
+      "longest_send_ms": 3.1717079982627183
+    }
+  },
+  "diagnostics": [],
+  "payload_storage": "RAM only; no payload files",
+  "source": "complete application with real LogBackend and embedded production QML; isolated credentials",
+  "app_diagnostics_bytes": 23084,
+  "app_warnings": [],
+  "transport": "encrypted loopback SSH, Paramiko server",
+  "burst_first": false,
+  "validated": true,
+  "controlled_window": true
+}

@@ -1,0 +1,65 @@
+#pragma once
+
+#include <QByteArray>
+#include <QString>
+#include <QStringDecoder>
+#include <vector>
+#ifndef Q_OS_WIN
+#include <iconv.h>
+#endif
+
+struct SshLogLine {
+  QString text;
+  quint64 logicalId = 0;
+  bool continuation = false;
+  bool continues = false;
+
+  qsizetype storageBytes() const { return sizeof(SshLogLine) + text.capacity() * qsizetype(sizeof(QChar)); }
+};
+
+// Worker-owned stream state; a socket read is not a character, escape sequence or line boundary.
+class SshLogStream {
+public:
+  static constexpr qsizetype SegmentCharacters = 8192;
+  static constexpr qsizetype PendingBytes = 4 * 1024 * 1024;
+  static constexpr qsizetype HistoryBytes = 32 * 1024 * 1024;
+
+  explicit SshLogStream(const QString &encoding = QStringLiteral("UTF-8"));
+  ~SshLogStream();
+  SshLogStream(const SshLogStream &) = delete;
+  SshLogStream &operator=(const SshLogStream &) = delete;
+
+  void reset(const QString &encoding, bool clearedPartialLine = false);
+  std::vector<SshLogLine> feed(QByteArrayView bytes);
+  std::vector<SshLogLine> finish();
+  const QString &partialLine() const { return m_partial; }
+  quint64 logicalId() const { return m_logicalId; }
+  bool continuation() const { return m_continuation; }
+  bool hasPendingInput() const {
+    return !m_partial.isEmpty() || m_continuation || m_state != State::Text ||
+           m_pendingUtf8 > 0 || !m_pendingBytes.isEmpty();
+  }
+  static QByteArray encode(const QString &text, const QString &encoding);
+  bool encodingAvailable() const;
+
+private:
+  enum class State { Text, Escape, EscapeIntermediate, Csi, Osc, String, StringEscape };
+  QString decode(QByteArrayView bytes, bool final = false);
+  void consume(QStringView text, std::vector<SshLogLine> &lines);
+  void append(QStringView text, std::vector<SshLogLine> &lines);
+  void emitLine(std::vector<SshLogLine> &lines, bool continues);
+
+  QStringDecoder m_utf8{QStringConverter::Utf8};
+  bool m_gb = false;
+#ifndef Q_OS_WIN
+  iconv_t m_converter = nullptr;
+#endif
+  QByteArray m_pendingBytes;
+  QString m_partial;
+  quint64 m_logicalId = 0;
+  State m_state = State::Text;
+  State m_stringState = State::Osc;
+  bool m_afterCr = false;
+  bool m_continuation = false;
+  int m_pendingUtf8 = 0;
+};

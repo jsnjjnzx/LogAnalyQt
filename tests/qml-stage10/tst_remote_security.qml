@@ -99,6 +99,124 @@ Item {
             mouseClick(item("ssh-clear-password")); compare(ssh.clearCalls,1); verify(ssh.hasSavedPassword)
             ssh.finishPassword(true); verify(!ssh.hasSavedPassword)
         }
+        function test_sshEncodingTextFits() {
+            make(nextSsh)
+            const encoding = item("ssh-encoding")
+            for (const index of [0, 1]) {
+                encoding.currentIndex = index
+                wait(20)
+                verify(!encoding.contentItem.truncated, encoding.currentText + " must be fully visible")
+                verify(encoding.contentItem.x + encoding.contentItem.leftPadding + encoding.contentItem.contentWidth <= encoding.indicator.x,
+                       "encoding text must not overlap its arrow")
+            }
+        }
+        function test_sshSelectionAndSearchSurviveEviction() {
+            make(nextSsh)
+            const ssh = item("ssh-terminal-backend")
+            ssh.appendTestLines(["old", "RX 68 04 07 00 00 00", "tail"], 3)
+            wait(30)
+            page.searchKeyword = "RX"; page.refreshSearchResult()
+            compare(page.searchMatches.length, 1)
+            page.selectLineAndExtractHex(1)
+            wait(20)
+            const identity = page.selectedLineId
+            compare(page.selectedHexText.replace(/ /g, ""), "680407000000")
+            compare(item("ssh-selected-text").selectedText.replace(/ /g, ""), "680407000000")
+            ssh.appendTestLines(["new"], 3); wait(30)
+            compare(page.selectedLineId, identity)
+            compare(page.selectedLineIndex, 0)
+            compare(page.searchMatches[0], identity)
+            ssh.clearBuffer(); wait(30)
+            compare(page.selectedHexText, "")
+            compare(page.searchMatches.length, 0)
+            ssh.appendTestLines(["RX 05 01 02 40 00 02 00 00"], 3); wait(30)
+            page.selectLineAndExtractHex(0)
+            verify(page.selectedLineId > identity)
+            compare(page.selectedHexText.replace(/ /g, ""), "0501024000020000")
+        }
+        function test_sshPausedViewportSurvivesNewRows() {
+            make(nextSsh)
+            const ssh = item("ssh-terminal-backend")
+            let lines = []
+            for (let i = 0; i < 200; ++i) lines.push("Log row " + i)
+            ssh.appendTestLines(lines, 200); wait(40)
+            const view = item("ssh-log-list")
+            page.autoScroll = false
+            view.positionViewAtIndex(80, ListView.Beginning); wait(30)
+            page.captureLogViewport()
+            const anchor = page.viewAnchorId
+            verify(anchor >= 0)
+            ssh.appendTestLines(["next 1", "next 2", "next 3"], 200); wait(40)
+            compare(ssh.lineIdAt(view.indexAt(1, view.contentY + 1)), anchor)
+            page.autoScroll = true; page.applyLogViewport(); wait(30)
+            verify(view.atYEnd)
+        }
+        function test_sshBlankLineKeepsItsHeight() {
+            make(nextSsh)
+            const ssh = item("ssh-terminal-backend")
+            ssh.appendTestLines([""], 100); wait(30)
+            verify(item("ssh-log-line-0").height >= 17, "a blank line still occupies one text row")
+        }
+        function test_sshLongRowKeepsFullTextForSearchAndSelection() {
+            make(nextSsh)
+            const ssh = item("ssh-terminal-backend")
+            const text = "中文内容".repeat(300) + " RX 68 04 07 00 00 00"
+            ssh.appendTestLines([text], 100); wait(30)
+            const row = item("ssh-log-line-0")
+            let display = null
+            for (const child of row.children) if (child.text === text) display = child
+            verify(display !== null)
+            for (const width of [902, 1600]) {
+                page.width = width; wait(30)
+                compare(display.lineCount, 1)
+                verify(display.contentWidth <= display.width + 1)
+                verify(row.height < 40)
+                compare(ssh.lineAt(0), text)
+            }
+            page.searchKeyword = "RX"; page.refreshSearchResult()
+            compare(page.searchMatches.length, 1)
+            page.selectLineAndExtractHex(0); wait(30)
+            compare(item("ssh-selected-text").text, text)
+            compare(item("ssh-selected-text").selectedText.replace(/ /g, ""), "680407000000")
+        }
+        function test_sshConnectionOptionsStayOnOneScrollableRow() {
+            make(nextSsh)
+            item("ssh-terminal-backend").autoReconnectEnabled = true
+            const scroll = item("ssh-connection-scroll")
+            const encoding = item("ssh-encoding")
+            const fields = [item("ssh-host"), encoding, item("ssh-buffer-lines"),
+                            item("ssh-auto-reconnect"), item("ssh-reconnect-count"), item("ssh-reconnect-interval")]
+            for (const width of [902, 1160, 1600]) {
+                page.width = width
+                wait(30)
+                for (const field of fields) {
+                    compare(field.parent, fields[0].parent, "all connection options must share one row")
+                    verify(Math.abs(field.y + field.height / 2 - fields[0].y - fields[0].height / 2) < 1)
+                    verify(field.width > 0 && field.y + field.height <= scroll.height)
+                }
+                for (const index of [0, 1]) {
+                    encoding.currentIndex = index
+                    encoding.activated(index)
+                    wait(10)
+                    verify(!encoding.contentItem.truncated, encoding.currentText + " must fit at width " + width)
+                    compare(item("ssh-terminal-backend").encoding, encoding.currentText)
+                }
+                compare(scroll.ScrollBar.horizontal.visible, scroll.contentWidth > scroll.width)
+                if (width === 902) {
+                    verify(scroll.contentWidth > scroll.width)
+                    scroll.contentX = scroll.contentWidth - scroll.width
+                    const interval = fields[fields.length - 1]
+                    const right = interval.mapToItem(scroll, interval.width, 0).x
+                    verify(right <= scroll.width && right > 0, "horizontal scrolling must reveal reconnect interval")
+                    fields[0].forceActiveFocus()
+                    tryCompare(scroll, "contentX", fields[0].x)
+                    interval.forceActiveFocus()
+                    wait(20)
+                    verify(interval.mapToItem(scroll, interval.width, 0).x <= scroll.width,
+                           "keyboard focus must scroll the active field into view")
+                }
+            }
+        }
         function test_xmlDiffPreservesLiteralMarkup() {
             openSync(); connectSync(); page.requestDiff("698_protocol.xml")
             manager.busy = false; manager.diffFinished("698_protocol.xml",[{leftType:"equal",rightType:"equal",leftText:"<b>literal XML</b>",rightText:"<Item Name=\"<b>\" />"}]); wait(30)

@@ -17,9 +17,9 @@ Item {
 
     function getValue() {
         if (methodMode) {
-            return { oi: oiField.text.toUpperCase(), methodId: Number(idSpin.value), mode: Number(indexSpin.value), name: nameLabel.text }
+            return { oi: oiField.text.toUpperCase(), methodId: Number(idSpin.value), mode: Number(indexSpin.value) }
         }
-        return { oi: oiField.text.toUpperCase(), attrId: Number(idSpin.value), index: Number(indexSpin.value), name: nameLabel.text }
+        return { oi: oiField.text.toUpperCase(), attrId: Number(idSpin.value), index: Number(indexSpin.value) }
     }
 
     function setValue(value) {

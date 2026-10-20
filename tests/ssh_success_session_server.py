@@ -13,8 +13,8 @@ PASSWORD = "synthetic-loopback-password"
 
 
 class LoopbackSshServer:
-    def __init__(self, directory):
-        self.directory = Path(directory)
+    def __init__(self, directory=None):
+        self.directory = Path(directory) if directory is not None else None
         self.key = paramiko.RSAKey.generate(2048)
         self.fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(self.key.asbytes()).digest()).decode().rstrip("=")
         self.stop = threading.Event()
@@ -38,6 +38,8 @@ class LoopbackSshServer:
         return listener
 
     def write_stats(self):
+        if self.directory is None:
+            return  # The throughput peer keeps all counters and generated logs in RAM.
         with self.lock:
             temporary = self.directory / "stats.new"
             temporary.write_text(json.dumps(self.stats), encoding="utf-8")
@@ -112,40 +114,43 @@ class LoopbackSshServer:
                 return
             channel.settimeout(0.2)
             channel.sendall(b"TEST_READY\r\n")
-            line = bytearray()
-            while transport.is_active() and not self.stop.is_set():
-                try:
-                    received = channel.recv(4096)
-                except socket.timeout:
-                    continue
-                if not received:
-                    break
-                for byte in received:
-                    if byte == 0x15:
-                        line.clear()
-                    elif byte == 13:
-                        continue
-                    elif byte == 10:
-                        command = line.decode("utf-8", errors="replace")
-                        line.clear()
-                        if command == "__DROP_TEST_SESSION__":
-                            self.record("drops")
-                            return
-                        if command.startswith("echo "):
-                            value = command[5:]
-                            self.record("echoes", value)
-                            channel.sendall(("TEST_ECHO:" + value + "\r\n").encode("utf-8"))
-                        else:
-                            channel.sendall(b"TEST_REJECTED\r\n")
-                    elif len(line) < 4096:
-                        line.append(byte)
-                    else:
-                        return
+            self.serve_channel(channel, transport)
         except (EOFError, OSError, paramiko.SSHException):
             pass  # Interrupted negotiations/disconnects are deliberate cases, not successful sessions.
         finally:
             transport.close()
             client.close()
+
+    def serve_channel(self, channel, transport):
+        line = bytearray()
+        while transport.is_active() and not self.stop.is_set():
+            try:
+                received = channel.recv(4096)
+            except socket.timeout:
+                continue
+            if not received:
+                break
+            for byte in received:
+                if byte == 0x15:
+                    line.clear()
+                elif byte == 13:
+                    continue
+                elif byte == 10:
+                    command = line.decode("utf-8", errors="replace")
+                    line.clear()
+                    if command == "__DROP_TEST_SESSION__":
+                        self.record("drops")
+                        return
+                    if command.startswith("echo "):
+                        value = command[5:]
+                        self.record("echoes", value)
+                        channel.sendall(("TEST_ECHO:" + value + "\r\n").encode("utf-8"))
+                    else:
+                        channel.sendall(b"TEST_REJECTED\r\n")
+                elif len(line) < 4096:
+                    line.append(byte)
+                else:
+                    return
 
     def close(self):
         self.stop.set()

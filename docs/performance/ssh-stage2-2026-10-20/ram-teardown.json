@@ -1,0 +1,11 @@
+{
+  "time": "2026-10-20T03:12:22.717584+00:00",
+  "device": "/dev/disk12",
+  "image": "ram://2097152",
+  "mount": "/private/tmp/loganalyqt-ssh-stage2/ram",
+  "detached": true,
+  "user_stop_honored": true,
+  "normal_unmount_detail": "",
+  "detach_detail": "\"disk12\" ejected.\n",
+  "no_force_used": true
+}

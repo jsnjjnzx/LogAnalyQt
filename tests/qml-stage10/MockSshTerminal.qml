@@ -23,6 +23,8 @@ QtObject {
     property int reconnectAttempt: 0
     property int maxBufferLines: 10000
     property int currentLineCount: 0
+    property real firstLineId: 0
+    property bool presentationActive: true
     property ListModel lineModel: ListModel {}
     property bool initialized: false
     property int connectCalls: 0
@@ -39,6 +41,7 @@ QtObject {
     signal hostKeyConfirmationRequested(string host, int port, string algorithm, string fingerprint, string requestId)
     signal sharedBufferOverflowed()
     signal lineCountChanged()
+    signal linesAboutToChange()
     signal connectionError(string error)
     signal tabCompletionReady(string completedText, var candidates)
     Component.onCompleted: initialized = true
@@ -67,10 +70,28 @@ QtObject {
     function sendRawBytes(value) {}
     function sendTabCompletion(prefix) {}
     function getBufferText() { return "" }
-    function clearBuffer() {}
+    function clearBuffer() { linesAboutToChange(); firstLineId += currentLineCount; lineModel.clear(); currentLineCount = 0; lineCountChanged() }
     function findLineIndexes(keyword, sensitive) { return [] }
     function findLineIndexesInRange(keyword, start, end, sensitive) { return [] }
-    function lineAt(index) { return "" }
+    function findLineIds(keyword, fromId) {
+        let result = []
+        for (let i = 0; i < currentLineCount; ++i)
+            if ((fromId === undefined || firstLineId + i >= fromId) && lineAt(i).toLowerCase().indexOf(keyword.toLowerCase()) >= 0)
+                result.push(firstLineId + i)
+        return result
+    }
+    function lineIdAt(index) { return index >= 0 && index < currentLineCount ? firstLineId + index : -1 }
+    function indexForLineId(id) { return id >= firstLineId && id < firstLineId + currentLineCount ? id - firstLineId : -1 }
+    function lineIsComplete(index) { return index >= 0 && index < currentLineCount }
+    function lineSegmentOffset(index) { return 0 }
+    function lineAt(index) { return index >= 0 && index < currentLineCount ? lineModel.get(index).lineText : "" }
+    function appendTestLines(lines, limit) {
+        linesAboutToChange()
+        for (const text of lines) lineModel.append({lineText:text,lineId:firstLineId+lineModel.count,continuation:false,continues:false})
+        while (lineModel.count > limit) { lineModel.remove(0); firstLineId++ }
+        currentLineCount = lineModel.count
+        lineCountChanged()
+    }
     function copyLineToClipboard(index) {}
     function copyBufferToClipboard() {}
     function clipboardText() { return "" }

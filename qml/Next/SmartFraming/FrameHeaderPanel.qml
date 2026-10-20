@@ -21,7 +21,7 @@ Item {
     }
 
     function getOptions() {
-        return {
+        var options = {
             dir: dirCheck.checked,
             prm: prmCheck.checked,
             split: splitCheck.checked,
@@ -29,9 +29,12 @@ Item {
             funcCode: Number(funcCode.value),
             saType: saTypeCombo.currentIndex,
             logicAddress: Number(logicAddress.value),
-            ca: Number(caSpin.value),
-            physicalAddressHex: addrField.text.replace(/\s/g, "")
+            ca: Number(caSpin.value)
         }
+        var address = addrField.text.replace(/\s/g, "")
+        if (address.length > 0)
+            options.physicalAddressHex = address
+        return options
     }
 
     Rectangle {

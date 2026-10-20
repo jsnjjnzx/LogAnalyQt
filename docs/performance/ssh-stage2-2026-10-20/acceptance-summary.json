@@ -1,0 +1,34 @@
+{
+  "status": "completed_at_user_requested_stop_with_documented_limits",
+  "baseline": "stage1 complete application, controlled foreground",
+  "cpu_baseline_median_one_core_percent": 8.291826293476573,
+  "cpu_candidate_median_one_core_percent": 6.2200569171539195,
+  "cpu_reduction_percent": 24.9856823213069,
+  "cpu_30_percent_target_met": false,
+  "sender_to_model_p95_ms": 186,
+  "interaction_p95_max_ms": 25,
+  "interaction_failures": 0,
+  "two_mib_600s_passed": true,
+  "five_mib_600s_completed": false,
+  "five_mib_partial_verified_lines": 3073664,
+  "five_mib_partial_seconds": 300.23,
+  "full_application_3600s_completed": false,
+  "tests_stopped_on_user_request": true,
+  "pressure_payload_storage": "RAM only",
+  "production_files_changed": [
+    "qml/Next/LiveLogDialog.qml",
+    "src/core/SshTerminal.cpp"
+  ],
+  "scope_excludes": [
+    "Windows",
+    "real devices",
+    "native Keychain acceptance",
+    "persistent logs",
+    "multi-device UI",
+    "public release"
+  ],
+  "final_merged_package": "/Users/zx/CodeHaven/LogAnalyQt/release_package/通联工坊-20261019-本地验证/通联工坊.app",
+  "merged_smart_framing_changes_included": true,
+  "merged_package_offscreen_checks_passed": true,
+  "final_merged_foreground_performance_rerun": false
+}

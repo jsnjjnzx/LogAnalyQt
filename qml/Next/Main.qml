@@ -48,7 +48,7 @@ ApplicationWindow {
         backend.openFolder(folderPathField.text);
         var name = decodeURIComponent(path.substring(split + 1));
         backend.loadFile(name, encodingCombo.currentText);
-        fileCombo.currentIndex = fileCombo.find(name);
+        fileCombo.currentIndex = backend.fileList.indexOf(name);
         navigate(0);
     }
     TextEdit { id: clipboardBuffer; visible: false }
@@ -908,9 +908,12 @@ ApplicationWindow {
                         id: inputActions
                         objectName: "input-actions-" + targetModelId
                         Layout.alignment: Qt.AlignTop
+                        Layout.fillWidth: false
+                        Layout.maximumWidth: 140
                         spacing: 5
                         StyledButton {
                             text: "清空并粘贴"
+                            Layout.fillWidth: true
                             iconChar: mdi.contentPaste
                             onClicked: {
                                 manualParseInput.text = "";
@@ -920,6 +923,7 @@ ApplicationWindow {
                         }
                         StyledButton {
                             text: "解析"
+                            Layout.fillWidth: true
                             highlighted: true
                             objectName: "parse-button-" + targetModelId
                             iconChar: mdi.play
@@ -929,6 +933,7 @@ ApplicationWindow {
                         }
                         StyledButton {
                             text: autoFitLocked ? "🔒 列宽已锁定" : "自适应列宽"
+                            Layout.fillWidth: true
                             iconChar: autoFitLocked ? "" : mdi.refresh
                             onClicked: {
                                 if (autoFitLocked) {
@@ -1510,10 +1515,18 @@ ApplicationWindow {
             Layout.fillWidth: true; spacing: 12
             StyledButton { text: "打开日志"; highlighted: true; iconChar: mdi.folderOpen; visible: !theme.isManualMode; onClicked: logFileDialog.open() }
             StyledButton { text: "文件夹"; visible: !theme.isManualMode; onClicked: folderDialog.open() }
-            StyledComboBox { id: fileCombo; objectName: "fileCombo"; visible: !theme.isManualMode; Layout.fillWidth: true; Layout.minimumWidth: 110; model: backend.fileList; onActivated: backend.loadFile(currentText, encodingCombo.currentText) }
+            StyledComboBox {
+                id: fileCombo
+                objectName: "fileCombo"
+                visible: !theme.isManualMode
+                Layout.fillWidth: true
+                Layout.minimumWidth: 110
+                model: backend.fileDisplayList
+                onActivated: backend.loadFile(backend.fileList[currentIndex] || "", encodingCombo.currentText)
+            }
             Next.GlassTextField { id: folderPathField; visible: false }
             StyledButton { text: "刷新"; visible: !theme.isManualMode; onClicked: backend.openFolder(folderPathField.text) }
-            StyledComboBox { id: encodingCombo; objectName: "encodingCombo"; visible: mainWindow.currentPage !== 1; model: ["auto", "UTF-8", "GBK", "ASCII"]; Layout.preferredWidth: 100; onActivated: { saveMainUiSetting("encoding/current", currentText); if (!theme.isManualMode) backend.loadFile(fileCombo.currentText, currentText); } }
+            StyledComboBox { id: encodingCombo; objectName: "encodingCombo"; visible: mainWindow.currentPage !== 1; model: ["auto", "UTF-8", "GBK", "ASCII"]; Layout.preferredWidth: 100; onActivated: { saveMainUiSetting("encoding/current", currentText); if (!theme.isManualMode) backend.loadFile(backend.fileList[fileCombo.currentIndex] || "", currentText); } }
             StyledComboBox {
                 id: protocolComboMain
                 objectName: "protocolCombo"

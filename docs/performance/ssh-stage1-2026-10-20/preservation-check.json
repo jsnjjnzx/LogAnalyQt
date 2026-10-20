@@ -1,0 +1,26 @@
+{
+  "unchanged": [
+    "qml/Next/Main.qml",
+    "src/core/LogBackend.cpp",
+    "src/core/LogBackend.h",
+    "Install-Windows-Build.cmd",
+    "Setup-Windows-Build.cmd",
+    "scripts/ci/WINDOWS-SETUP.txt",
+    "scripts/ci/setup_windows_build.ps1",
+    "tests/test_windows_setup.ps1"
+  ],
+  "merged": [
+    {
+      "file": "qml/Next/LiveLogDialog.qml",
+      "original_added_lines_preserved_in_order": 38
+    },
+    {
+      "file": "tests/MigrationUiChecks.h",
+      "original_added_lines_preserved_in_order": 76
+    },
+    {
+      "file": "tests/qml-stage10/tst_remote_security.qml",
+      "original_added_lines_preserved_in_order": 49
+    }
+  ]
+}

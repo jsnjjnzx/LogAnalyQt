@@ -1273,41 +1273,56 @@ ProtocolSyncManager::buildLcsDiff(const QStringList &localLines,
   // 先构建统一 diff 列表，再转为左右配对
   QList<QPair<QString, QString>> diffEntries; // <type, text>
 
-  const int maxLcsSize = 2000;
-  if ((qint64)m * n > (qint64)maxLcsSize * maxLcsSize) {
-    // 大文件保护：直接列出
-    for (int i = 0; i < m; ++i)
-      diffEntries.append(qMakePair(QString("del"), midLocal[i]));
-    for (int j = 0; j < n; ++j)
-      diffEntries.append(qMakePair(QString("add"), midRemote[j]));
-  } else if (m > 0 || n > 0) {
-    // 正常 LCS 比对
-    QVector<QVector<int>> dp(m + 1, QVector<int>(n + 1, 0));
-    for (int i = 1; i <= m; ++i) {
-      for (int j = 1; j <= n; ++j) {
-        if (midLocal[i - 1] == midRemote[j - 1]) {
-          dp[i][j] = dp[i - 1][j - 1] + 1;
-        } else {
-          dp[i][j] = qMax(dp[i - 1][j], dp[i][j - 1]);
-        }
+  // Hirschberg LCS keeps exact alignment with linear workspace, including large XML files.
+  const auto lengths = [&](int lBegin, int lEnd, int rBegin, int rEnd, bool reverse) {
+    const int width = rEnd - rBegin;
+    QVector<int> scores(width + 1, 0);
+    for (int i = 0; i < lEnd - lBegin; ++i) {
+      int diagonal = 0;
+      const auto &line = midLocal[reverse ? lEnd - 1 - i : lBegin + i];
+      for (int j = 1; j <= width; ++j) {
+        const int previous = scores[j];
+        if (line == midRemote[reverse ? rEnd - j : rBegin + j - 1])
+          scores[j] = diagonal + 1;
+        else
+          scores[j] = qMax(scores[j], scores[j - 1]);
+        diagonal = previous;
       }
     }
-
-    int i = m, j = n;
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && midLocal[i - 1] == midRemote[j - 1]) {
-        diffEntries.prepend(qMakePair(QString("same"), midLocal[i - 1]));
-        --i;
-        --j;
-      } else if (j > 0 && (i == 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-        diffEntries.prepend(qMakePair(QString("add"), midRemote[j - 1]));
-        --j;
-      } else {
-        diffEntries.prepend(qMakePair(QString("del"), midLocal[i - 1]));
-        --i;
+    return scores;
+  };
+  std::function<void(int, int, int, int)> align;
+  align = [&](int lBegin, int lEnd, int rBegin, int rEnd) {
+    if (lBegin == lEnd) {
+      for (int j = rBegin; j < rEnd; ++j)
+        diffEntries.append(qMakePair(QString("add"), midRemote[j]));
+    } else if (rBegin == rEnd) {
+      for (int i = lBegin; i < lEnd; ++i)
+        diffEntries.append(qMakePair(QString("del"), midLocal[i]));
+    } else if (lEnd - lBegin == 1) {
+      int match = midRemote.indexOf(midLocal[lBegin], rBegin);
+      if (match < 0 || match >= rEnd) {
+        diffEntries.append(qMakePair(QString("del"), midLocal[lBegin]));
+        match = -1;
       }
+      for (int j = rBegin; j < rEnd; ++j)
+        diffEntries.append(qMakePair(QString(j == match ? "same" : "add"), midRemote[j]));
+    } else {
+      const int middle = lBegin + (lEnd - lBegin) / 2;
+      int split = 0;
+      {
+        const auto forward = lengths(lBegin, middle, rBegin, rEnd, false);
+        const auto backward = lengths(middle, lEnd, rBegin, rEnd, true);
+        const int width = rEnd - rBegin;
+        for (int j = 1; j <= width; ++j)
+          if (forward[j] + backward[width - j] > forward[split] + backward[width - split])
+            split = j;
+      }
+      align(lBegin, middle, rBegin, rBegin + split);
+      align(middle, lEnd, rBegin + split, rEnd);
     }
-  }
+  };
+  align(0, m, 0, n);
 
   // 将统一 diff 转换为左右并排格式
   // 策略：连续的 del 和 add 配对显示（类似 VS Code 的 side-by-side diff）
@@ -1345,11 +1360,11 @@ ProtocolSyncManager::buildLcsDiff(const QStringList &localLines,
   if (suffixLen > 0) {
     if (suffixLen <= contextLines * 2) {
       for (int i = totalLocal - suffixLen; i < totalLocal; ++i)
-        addRow("same", localLines[i], "same", remoteLines[i]);
+        addRow("same", localLines[i], "same", localLines[i]);
     } else {
       for (int i = totalLocal - suffixLen;
            i < totalLocal - suffixLen + contextLines; ++i)
-        addRow("same", localLines[i], "same", remoteLines[i]);
+        addRow("same", localLines[i], "same", localLines[i]);
       addRow(
           "fold",
           QString("... 省略 %1 行相同内容 ...").arg(suffixLen - contextLines),

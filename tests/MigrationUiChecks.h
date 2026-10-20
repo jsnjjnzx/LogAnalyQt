@@ -2,8 +2,10 @@
 
 #include "LogBackend.h"
 #include "LogMerger.h"
+#include "SshTerminal.h"
 #include "csg_upstream_test_support.h"
 #include <QFile>
+#include <QFileInfo>
 #include <QEventLoop>
 #include <QElapsedTimer>
 #include <QMouseEvent>
@@ -13,6 +15,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QTemporaryDir>
+#include <QTimeZone>
 #include <QUrl>
 #include <functional>
 
@@ -132,6 +135,56 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     clickParse();
     require(backend->resultModel()->rowCount() == 0 && uiItem("parseStatus")->property("text").toString() == backend->parseResult()
                 && backend->parseResult().contains(QString::fromUtf8("无法识别")), "truncated APDU must show a failure");
+    trace("live log selection and real protocol parsing");
+    navigate(5);
+    auto *livePage = window->findChild<QQuickItem *>("page-5");
+    auto *ssh = livePage ? livePage->findChild<SshTerminal *>("ssh-terminal-backend") : nullptr;
+    require(ssh, "live log backend is missing");
+    ssh->clearBuffer();
+    ssh->lineModel()->appendLines({"RX 68 04 07 00 00 00", "RX 05 01 02 40 00 02 00 00"});
+    ssh->lineCountChanged(); settle();
+    for (int row = 0; row < 2; ++row) {
+      auto *line = uiItem("ssh-log-line-" + QString::number(ssh->lineIdAt(row)));
+      click(line);
+      const auto hex = livePage->property("selectedHexText").toString().remove(' ');
+      require(hex == (row == 0 ? "680407000000" : "0501024000020000"), "live selection extracted the wrong frame");
+      const auto point = line->mapToScene(QPointF(line->width() / 2, line->height() / 2));
+      QMouseEvent press(QEvent::MouseButtonPress, point, window->mapToGlobal(point.toPoint()), Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+      QMouseEvent release(QEvent::MouseButtonRelease, point, window->mapToGlobal(point.toPoint()), Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release); settle();
+      click(uiItem("ssh-parse-auto"));
+      require(backend->popupResultModel()->rowCount() > 2 && livePage->property("parsePanelVisible").toBool(),
+              "live context menu did not produce real parsed fields");
+      if (row == 1) {
+        bool hasOad = false;
+        for (int field = 0; field < backend->popupResultModel()->rowCount(); ++field)
+          hasOad |= backend->popupResultModel()->data(backend->popupResultModel()->index(field), ParseResultModel::ValueRole)
+                        .toString().remove(' ').contains("40000200");
+        require(hasOad, "live 698 APDU selection lost the actual OAD field");
+        const auto screenshot = qEnvironmentVariable("LOGANALYQT_SSH_UI_SCREENSHOT");
+        if (!screenshot.isEmpty()) require(window->grabWindow().save(screenshot), "live log UI capture failed");
+      }
+    }
+    ssh->clearBuffer(); livePage->setProperty("parsePanelVisible", false);
+    trace("live log paused viewport across coalesced batches");
+    const int previousLimit = ssh->maxBufferLines();
+    ssh->setMaxBufferLines(100);
+    QStringList viewportRows;
+    for (int i = 0; i < 100; ++i) viewportRows.append(QString("Viewport row %1").arg(i));
+    ssh->lineModel()->appendLines(viewportRows); ssh->lineCountChanged(); settle();
+    livePage->setProperty("autoScroll", false);
+    auto *logView = uiItem("ssh-log-list");
+    require(logView && QMetaObject::invokeMethod(logView, "positionViewAtIndex", Q_ARG(int, 50), Q_ARG(int, 0)), "cannot position live history");
+    settle();
+    QMetaObject::invokeMethod(livePage, "captureLogViewport");
+    const auto anchor = livePage->property("viewAnchorId").toLongLong();
+    require(anchor >= 0, "paused history anchor missing");
+    for (int batch = 0; batch < 3; ++batch) {
+      ssh->linesAboutToChange(); ssh->lineModel()->appendLines({QString("Incoming %1").arg(batch)}); ssh->lineCountChanged();
+    }
+    settle(); QMetaObject::invokeMethod(livePage, "captureLogViewport");
+    require(livePage->property("viewAnchorId").toLongLong() == anchor, "coalesced updates moved the paused log record");
+    livePage->setProperty("autoScroll", true); ssh->clearBuffer(); ssh->setMaxBufferLines(previousLimit);
     std::function<void(QQuickItem *)> checkBrand = [&](QQuickItem *item) {
       if (!item->isVisible()) return;
       require(!item->property("text").toString().contains("LogAnalyQt"), "visible UI still contains the old brand");
@@ -152,7 +205,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     }
 
     const QSize originalSize = window->size();
-    for (const QSize size : {QSize(1440, 860), QSize(1200, 740)}) {
+    for (const QSize size : {QSize(1920, 1080), QSize(1440, 860), QSize(1200, 740)}) {
       window->resize(size);
       for (const int page : {1, 2, 3}) {
         navigate(page);
@@ -179,6 +232,22 @@ inline QString checkMigratedUi(QQuickWindow *window) {
                     "hidden presets leave unused input space");
           require(actions->mapToItem(input, QPointF(0, actions->height())).y() <= input->height() - 8,
                   "manual input actions overflow their card");
+          auto *actionParse = item("parse-button-");
+          require(actionParse, "input parse button missing");
+          require(actionParse->width() <= 140 && actionParse->height() <= 36,
+                  "parse action buttons must stay within their maximum size in wide windows");
+          int actionCount = 0;
+          for (auto *button : actions->childItems()) {
+            if (!button->property("text").isValid()) continue;
+            ++actionCount;
+            require(qAbs(button->width() - actionParse->width()) < 1 &&
+                        qAbs(button->height() - actionParse->height()) < 1,
+                    "parse, paste and column-fit buttons must have matching width and height");
+            auto *content = button->property("contentItem").value<QQuickItem *>();
+            require(content && content->width() + 1 >= content->implicitWidth(),
+                    "maximum button width must still leave room for its text and icon");
+          }
+          require(actionCount == 3, "input action group must contain three buttons");
           const auto resultTop = result->mapToItem(window->contentItem(), QPointF()).y();
           require((!preset->isVisible() || preset->mapToItem(window->contentItem(), QPointF(0, preset->height())).y() <= resultTop)
                       && input->mapToItem(window->contentItem(), QPointF(0, input->height())).y() <= resultTop,
@@ -276,10 +345,67 @@ inline QString checkMigratedUi(QQuickWindow *window) {
         + "10:24:18 [TX] " + preview698.toUtf8() + "\n";
     QFile file(path);
     require(file.open(QIODevice::WriteOnly) && file.write(log) == log.size(), "test log write failed");
+    const QDateTime modified(QDate(2026, 10, 18), QTime(9, 8, 7), QTimeZone::LocalTime);
+    require(file.flush() && file.setFileTime(modified, QFileDevice::FileModificationTime), "test log timestamp failed");
     file.close();
+    for (const QString &name : {QString("device10.log"), QString("device2.log")}) {
+      QFile other(files.filePath(name));
+      require(other.open(QIODevice::WriteOnly) && other.write(name.toUtf8()) > 0,
+              "additional log fixture failed");
+    }
     require(QMetaObject::invokeMethod(window, "openLogUrl", Q_ARG(QVariant, QUrl::fromLocalFile(path))), "log URL open failed");
     settle();
     require(backend->currentFileContent().toUtf8() == log, "local file URL or Unicode path was lost");
+    auto *fileCombo = uiItem("fileCombo");
+    require(fileCombo && backend->fileList().indexOf("device2.log") < backend->fileList().indexOf("device10.log"),
+            "log list lost numeric filename ordering");
+    require(fileCombo->property("currentText").toString() ==
+                QString::fromUtf8("设备 日志.log  |  修改：2026-10-18 09:08:07  |  大小：%1 bytes").arg(log.size()),
+            "log selector must display the filename, local modification time and file size");
+    require(fileCombo->property("model").toStringList() == backend->fileDisplayList(),
+            "log dropdown does not use timestamped labels");
+    for (const QString &name : {QString("device10.log"), QFileInfo(path).fileName()}) {
+      const int index = backend->fileList().indexOf(name);
+      fileCombo->setProperty("currentIndex", index);
+      require(QMetaObject::invokeMethod(fileCombo, "activated", Q_ARG(int, index)), "log selection failed");
+      require(backend->currentFileContent().toUtf8() == (name == "device10.log" ? name.toUtf8() : log),
+              "timestamped selection loaded the wrong file");
+      backend->applyFilter("no matching lines");
+      require(QMetaObject::invokeMethod(uiItem("encodingCombo"), "activated", Q_ARG(int, 0)), "encoding selection failed");
+      require(backend->currentFileContent().toUtf8() == (name == "device10.log" ? name.toUtf8() : log),
+              "changing encoding must reload the original filename without its timestamp");
+    }
+    require(file.open(QIODevice::ReadWrite) &&
+                file.setFileTime(modified.addDays(1), QFileDevice::FileModificationTime), "timestamp refresh fixture failed");
+    file.close();
+    for (const auto size : {qint64(0), qint64(1024), qint64(1024 * 1024)}) {
+      QFile sizedFile(files.filePath(QString("size%1.log").arg(size)));
+      require(sizedFile.open(QIODevice::WriteOnly) && sizedFile.resize(size), "file size fixture failed");
+    }
+    backend->openFolder(files.path());
+    settle();
+    require(backend->fileDisplayList().at(backend->fileList().indexOf(QFileInfo(path).fileName())).contains("2026-10-19 09:08:07"),
+            "refreshing the folder must update modification times");
+    for (const auto &entry : {qMakePair(QString("size0.log"), QString("0 bytes")),
+                              qMakePair(QString("size1024.log"), QString("1.0 KiB")),
+                              qMakePair(QString("size1048576.log"), QString("1.0 MiB"))}) {
+      require(backend->fileDisplayList().at(backend->fileList().indexOf(entry.first)).endsWith(entry.second),
+              "file sizes must use readable units, including empty files");
+    }
+    QFile resizedFile(files.filePath("size1024.log"));
+    require(resizedFile.open(QIODevice::ReadWrite) && resizedFile.resize(2048), "file size refresh fixture failed");
+    resizedFile.close();
+    backend->openFolder(files.path());
+    require(backend->fileDisplayList().at(backend->fileList().indexOf("size1024.log")).endsWith("2.0 KiB"),
+            "refreshing the folder must update file sizes");
+    QTemporaryDir emptyFolder;
+    require(emptyFolder.isValid(), "empty log directory failed");
+    backend->openFolder(emptyFolder.path());
+    settle();
+    require(backend->fileList().isEmpty() && backend->fileDisplayList().isEmpty() &&
+                fileCombo->property("count").toInt() == 0, "empty folder kept stale log labels");
+    require(QMetaObject::invokeMethod(window, "openLogUrl", Q_ARG(QVariant, QUrl::fromLocalFile(path))), "log URL reopen failed");
+    settle();
     backend->applyFilter("RX");
     require(!backend->currentFileContent().contains("[TX]"), "filter not applied");
     const QString filtered = backend->currentFileContent();
@@ -362,6 +488,25 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(frameSeparators == 1, "second 698 pane lost multi-frame separators");
     navigate(4);
     auto *framing = window->findChild<QObject *>("page-4");
+    trace("smart framing GET_NORMAL generation");
+    auto *oadSelector = uiItem("get-normal-oad");
+    require(oadSelector && oadSelector->isVisible(), "GET_NORMAL OAD selector is missing");
+    for (const QString &name : {QString(), QString::fromUtf8("总及费率电能量数组")}) {
+      const QVariant selection = QVariantMap{{"oi", "0010"}, {"attrId", 2}, {"index", 0}, {"name", name}};
+      require(QMetaObject::invokeMethod(oadSelector, "setValue", Q_ARG(QVariant, selection)), "OAD selection failed");
+      require(QMetaObject::invokeMethod(framing, "buildApdu"), "APDU generation invocation failed");
+      const auto apdu = QByteArray::fromHex(framing->property("apduHex").toString().toLatin1());
+      require(!framing->property("statusIsError").toBool() && apdu.size() == 8, "UI-generated OAD did not produce an APDU");
+      require(apdu.left(2) == QByteArray::fromHex("0501") && apdu.mid(3) == QByteArray::fromHex("0010020000"),
+              "UI-generated GET_NORMAL APDU bytes are incorrect");
+      require(QMetaObject::invokeMethod(framing, "buildFrame"), "full frame generation invocation failed");
+      require(!framing->property("statusIsError").toBool() && !framing->property("frameHex").toString().isEmpty(),
+              qPrintable("UI-generated APDU did not produce a full frame: " + framing->property("statusText").toString()));
+      require(QMetaObject::invokeMethod(framing, "verifyCurrent"), "generated frame verification invocation failed");
+      settle();
+      require(!framing->property("statusIsError").toBool() && !framing->property("verifyFields").toList().isEmpty(),
+              "UI-generated frame did not parse");
+    }
     framing->setProperty("frameHex", frame);
     require(QMetaObject::invokeMethod(framing, "verifyCurrent"), "verification popup invocation failed");
     settle();

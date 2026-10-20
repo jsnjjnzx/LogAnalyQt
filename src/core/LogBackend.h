@@ -124,6 +124,7 @@ private:
 class LogBackend : public QObject {
   Q_OBJECT
   Q_PROPERTY(QStringList fileList READ fileList NOTIFY fileListChanged)
+  Q_PROPERTY(QStringList fileDisplayList READ fileDisplayList NOTIFY fileListChanged)
   Q_PROPERTY(QString currentFileContent READ currentFileContent NOTIFY
                  currentFileContentChanged)
   Q_PROPERTY(QString currentFilePath READ currentFilePath WRITE
@@ -158,6 +159,7 @@ public:
   explicit LogBackend(QObject *parent = nullptr);
 
   QStringList fileList() const;
+  QStringList fileDisplayList() const;
   QString currentFileContent() const;
   QString currentFilePath() const;
   QString parseResult() const;
@@ -323,6 +325,7 @@ private:
                         int offsetAdjustment = 0);
 
   QStringList m_fileList;
+  QStringList m_fileDisplayList;
   QString m_currentFileContent;
   QString m_originalContent;
   QString m_currentFilePath;

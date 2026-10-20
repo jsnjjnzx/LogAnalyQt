@@ -13,13 +13,15 @@
 #include <memory>
 #include <atomic>
 #include "SecureCredentialStore.h"
+#include "SshLogStream.h"
+#include <deque>
 
 // TerminalLineModel：给 QML ListView 使用的终端行模型
-// 核心特性：固定行数上限（环形缓冲语义），内存永远有界
+// History is bounded by both rows and allocated text bytes; row identities survive eviction.
 class TerminalLineModel : public QAbstractListModel {
   Q_OBJECT
 public:
-  enum Roles { LineTextRole = Qt::UserRole + 1 };
+  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole };
 
   explicit TerminalLineModel(int maxLines, QObject *parent = nullptr);
 
@@ -28,23 +30,45 @@ public:
                 int role = Qt::DisplayRole) const override;
   QHash<int, QByteArray> roleNames() const override;
 
-  // 追加若干行，若超出上限则从头部移除旧行（O(1) amortized）
   void appendLines(const QStringList &lines);
+  void appendRecords(std::vector<SshLogLine> lines);
+  void setMaxLines(int maxLines);
   void clear();
   QString lineAt(int index) const;
   QStringList lines() const;
+  QString bufferText() const;
+  QString logicalLineAt(int index) const;
+  bool completeLineAt(int index) const;
+  int logicalStart(int index) const;
+  int logicalEnd(int index) const;
+  int segmentOffset(int index) const;
+  qint64 firstLineId() const { return m_firstLineId; }
+  qint64 lineId(int index) const;
+  int indexForId(qint64 id) const;
+  qsizetype byteSize() const { return m_bytes; }
   int maxLines() const { return m_maxLines; }
 
 private:
-  QStringList m_lines;
+  std::deque<SshLogLine> m_lines;
   int m_maxLines;
+  qsizetype m_bytes = 0;
+  qint64 m_firstLineId = 0;
+  qint64 m_nextLineId = 0;
+  quint64 m_syntheticId = ~quint64(0);
 };
 
 struct SshSharedBuffer {
   QMutex mutex;
-  QByteArray data;
+  std::deque<SshLogLine> lines;
+  qsizetype bytes = 0;
+  SshLogLine partial;
+  QByteArray tabData;
+  bool tabCapture = false;
+  bool tabOverflow = false;
+  bool notificationPending = false;
   std::atomic<quint64> activeGeneration{0};
   std::atomic<quint64> credentialRevision{0};
+  std::atomic<quint64> contentRevision{0};
 };
 class SshWorker; // 前向声明
 
@@ -80,6 +104,8 @@ class SshTerminal : public QObject {
   Q_PROPERTY(int maxBufferLines READ maxBufferLines WRITE setMaxBufferLines
                  NOTIFY maxBufferLinesChanged)
   Q_PROPERTY(int currentLineCount READ currentLineCount NOTIFY lineCountChanged)
+  Q_PROPERTY(qint64 firstLineId READ firstLineId NOTIFY lineCountChanged)
+  Q_PROPERTY(bool presentationActive READ presentationActive WRITE setPresentationActive NOTIFY presentationActiveChanged)
   // QML ListView 的数据模型，替代 TextArea 实现内存有界的虚拟化渲染
   Q_PROPERTY(TerminalLineModel *lineModel READ lineModel CONSTANT)
 
@@ -146,6 +172,9 @@ public:
 
   int currentLineCount() const;
   TerminalLineModel *lineModel() const;
+  qint64 firstLineId() const { return m_lineModel->firstLineId(); }
+  bool presentationActive() const { return m_presentationActive; }
+  void setPresentationActive(bool active);
 
   Q_INVOKABLE void connectToHost();
   Q_INVOKABLE void disconnectFromHost();
@@ -153,7 +182,7 @@ public:
   Q_INVOKABLE void sendRawBytes(const QString &text);
   // 发送 Tab 补全请求：截获响应并解析后通过 tabCompletionReady 信号通知 QML
   Q_INVOKABLE void sendTabCompletion(const QString &prefix);
-  Q_INVOKABLE QString getBufferText();
+  Q_INVOKABLE QString getBufferText() const;
   Q_INVOKABLE void clearBuffer();
   Q_INVOKABLE QVariantList findLineIndexes(const QString &keyword,
                                            bool caseSensitive = false) const;
@@ -162,6 +191,11 @@ public:
   findLineIndexesInRange(const QString &keyword, int fromLine, int toLine,
                          bool caseSensitive = false) const;
   Q_INVOKABLE QString lineAt(int index) const;
+  Q_INVOKABLE qint64 lineIdAt(int index) const { return m_lineModel->lineId(index); }
+  Q_INVOKABLE int indexForLineId(qint64 id) const { return m_lineModel->indexForId(id); }
+  Q_INVOKABLE bool lineIsComplete(int index) const { return m_lineModel->completeLineAt(index); }
+  Q_INVOKABLE int lineSegmentOffset(int index) const { return m_lineModel->segmentOffset(index); }
+  Q_INVOKABLE QVariantList findLineIds(const QString &keyword, qint64 fromId = -1) const;
   Q_INVOKABLE void copyLineToClipboard(int index) const;
   Q_INVOKABLE void copyBufferToClipboard() const;
   Q_INVOKABLE QString clipboardText() const;
@@ -187,6 +221,8 @@ signals:
   void reconnectAttemptChanged();
   void maxBufferLinesChanged();
   void lineCountChanged(); // currentLineCount 变化（用于自动滚动）
+  void linesAboutToChange();
+  void presentationActiveChanged();
   void connectionError(const QString &error);
   void sharedBufferOverflowed();
   // Tab 补全结果：completedText 非空表示有唯一补全，空表示无匹配；
@@ -196,7 +232,7 @@ signals:
 
   // 发送给工作线程的信号
   void sigStartConnect(quint64 generation, const QString &host, int port,
-                       const QString &user, const QString &pass);
+                       const QString &user, const QString &pass, const QString &encoding);
   void sigSendCommand(const QString &cmd, bool appendNewline, const QString &encoding);
   void sigDisconnect(quint64 generation);
 
@@ -209,6 +245,7 @@ private slots:
   void triggerReconnect();
 
 private:
+  friend struct SshTerminalTestAccess;
   JsonSettings settings() const;
   void refreshCredentials();
   void dispatchCredentialRefresh();
@@ -220,7 +257,10 @@ private:
   void setConnectionState(ConnectionState state);
   void setLastError(const QString &error);
   void scheduleReconnect(const QString &reason);
-  void enforceBufferLimit(); // 调用方需已持有 m_mutex
+  void resetPendingData(bool discardPartial);
+  void flushFinalPendingData();
+  void finishTabCapture();
+  void collectTabData();
 
   std::shared_ptr<SshSharedBuffer> m_buffer = std::make_shared<SshSharedBuffer>();
 
@@ -249,6 +289,7 @@ private:
   QString m_encoding = "UTF-8";
 
   bool m_connected;
+  bool m_presentationActive = true;
   ConnectionState m_connectionState;
   QString m_statusMessage;
   QString m_lastError;
@@ -260,14 +301,11 @@ private:
   bool m_manualDisconnectRequested = false;
   bool m_reconnectPending = false;
 
-  // 共享原始缓冲区：工作线程直接写入，主线程 flushTimer 读取，消除事件队列积压
-  QString m_partialLine; // 未完成的行尾
-
   QTimer *m_flushTimer;
+  QString m_committedPartial;
   QTimer *m_reconnectTimer = nullptr;
 
   // Tab 补全截获模式
-  bool m_tabMode = false; // 是否正在截获 SSH 数据流（整个序列期间不清除）
   bool m_tabBusy = false; // 防重入标志
   int m_tabPhase = 0; // 0=第一次Tab  1=第二次Tab候选收集  2=第二次Tab第二次等待
   QString m_tabPrefix;          // 按 Tab 时输入框的文本

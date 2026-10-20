@@ -1,0 +1,14 @@
+{
+  "merged_qml_tests_passed": 70,
+  "ssh_qml_tests_passed": 18,
+  "bundled_macho_files": 126,
+  "signature": "ad-hoc verified",
+  "runtime_mode": "offscreen; temporary matching Qt platform plugin in RAM",
+  "exit_code": 0,
+  "output": "PASS: platform data directories, prompt extraction and restart preservation\nPASS: packaged MQTT broker, loopback publish/subscribe, V2 layout, editor controls and helper cleanup\nPASS: migrated routes/parsers, 11 isolated tabs, close/add, restart restoration, empty workspace, corrupt-state backup and save-failure protection\n",
+  "foreground_tests_restarted": false,
+  "delivered_application": "/Users/zx/CodeHaven/LogAnalyQt/release_package/通联工坊-20261019-本地验证/通联工坊.app",
+  "rollback_application": "/private/tmp/loganalyqt-ssh-stage2/previous-local-通联工坊.app",
+  "delivered_runtime_sha256": "fc07416ae0c668968858283ef6cc1b3afe260af93088cdfa6ccc44f0e3cf0218",
+  "delivered_signature_verified": true
+}

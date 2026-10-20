@@ -1,0 +1,82 @@
+{
+  "status": "implemented_and_local_acceptance_complete_with_stated_limits",
+  "cpu_reduction_30_percent_met": false,
+  "standard_before": {
+    "cpu_percent_one_core": 7.8535582189670645,
+    "rss_peak_mib": 199.890625,
+    "sender_to_model": {
+      "max_ms": 520,
+      "p50_ms": 267,
+      "p95_ms": 487,
+      "p99_ms": 517,
+      "samples": 1228800
+    },
+    "model_resets": 1196
+  },
+  "standard_after": {
+    "cpu_percent_one_core": 8.114685547411247,
+    "rss_peak_mib": 193,
+    "sender_to_model": {
+      "max_ms": 292,
+      "p50_ms": 94,
+      "p95_ms": 158,
+      "p99_ms": 161,
+      "samples": 1230720
+    },
+    "model_resets": 0
+  },
+  "long_run": {
+    "elapsed_seconds": 3600.33,
+    "received_lines": 7372800,
+    "content_errors": 0,
+    "rss_peak_mib": 193.046875,
+    "rss_final_mib": 186.703125
+  },
+  "memory_windows": [
+    [
+      10,
+      20,
+      192.9453125,
+      188.265625,
+      193.046875
+    ],
+    [
+      20,
+      30,
+      186.421875,
+      186.234375,
+      188.515625
+    ],
+    [
+      30,
+      40,
+      186.421875,
+      186.3125,
+      186.5625
+    ],
+    [
+      40,
+      50,
+      186.5,
+      186.3125,
+      186.625
+    ],
+    [
+      50,
+      60,
+      186.609375,
+      186.46875,
+      186.75
+    ]
+  ],
+  "runtime_sha256": "8055b4b6cc7109121f7235370b9375d70961002bd83650d79a9d52b3c862ef5b",
+  "source_sha256": {
+    "src/core/SshTerminal.cpp": "7cdbe424f7de6bddef69881495f57c13aa9be42ab4ff654d8090a89412707b9b",
+    "src/core/SshTerminal.h": "c042f714e47e3c36da89b93126078fc1d122daf66c295c6c9505ed19338aecaa",
+    "src/core/SshLogStream.cpp": "0b58fc5ce393813a2adc2e94a492bda5445c9334c1f40ee1e6f31c319f346614",
+    "src/core/SshLogStream.h": "77d734cd590925d69c36be742d663ca0f551f78ce9252c1e0064a0e303149408",
+    "qml/Next/LiveLogDialog.qml": "fbf27169665ca9d07af7bdac0e1f7eb01cc4a47f54e6c4432c9cde9d0d3165ed"
+  },
+  "windows_validated": false,
+  "production_accepted": false
+}

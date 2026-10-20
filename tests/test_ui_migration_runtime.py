@@ -26,7 +26,7 @@ def main():
         else:
             executable = runtime / binary.name
             shutil.copy2(binary, executable)
-        environment = dict(os.environ, LOGANALYQT_TEST_HOME=str(runtime / "home"))
+        environment = dict(os.environ, LOGANALYQT_TEST_HOME=str(runtime / "home"), QML_DISABLE_DISK_CACHE="1")
         data_root = runtime / "home/Library/Application Support/LogAnalyQt" if sys.platform == "darwin" else runtime
         log_path = runtime / "home/Library/Logs/LogAnalyQt/log.txt" if sys.platform == "darwin" else runtime / "log/log.txt"
         data_root.mkdir(parents=True, exist_ok=True)

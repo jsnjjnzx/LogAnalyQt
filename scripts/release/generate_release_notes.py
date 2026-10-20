@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import re
 import subprocess
 from pathlib import Path
 from typing import List, Sequence, Tuple
@@ -54,6 +55,16 @@ def generate(root: Path, tag: str) -> str:
         raise ValueError(
             f"标签版本 {version} 与 CMakeLists.txt 项目版本 {configured_version} 不一致"
         )
+
+    changelog = root / "CHANGELOG.md"
+    if changelog.is_file():
+        section = re.search(
+            rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+            changelog.read_text(encoding="utf-8-sig"),
+            re.MULTILINE | re.DOTALL,
+        )
+        if section and section.group(1).strip():
+            return f"## 通联工坊 v{version}\n\n{section.group(1).strip()}\n"
 
     previous = _previous_tag(root, tag)
     revision_range = f"{previous}..{tag}" if previous else tag

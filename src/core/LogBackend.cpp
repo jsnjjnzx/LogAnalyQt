@@ -25,6 +25,8 @@
 #include <QDateTime>
 #include <QGuiApplication>
 #include <QDir>
+#include <QFileInfo>
+#include <QLocale>
 #include <QRegularExpression>
 #include <QTimer>
 #include "../common/AppSettings.h"
@@ -770,6 +772,7 @@ LogBackend::LogBackend(QObject *parent)
 }
 
 QStringList LogBackend::fileList() const { return m_fileList; }
+QStringList LogBackend::fileDisplayList() const { return m_fileDisplayList; }
 
 QString LogBackend::currentFileContent() const { return m_currentFileContent; }
 
@@ -1040,6 +1043,16 @@ void LogBackend::openFolder(const QString &path) {
             [&](const QString &s1, const QString &s2) {
               return collator.compare(s1, s2) < 0;
             });
+
+  m_fileDisplayList.clear();
+  for (const QString &fileName : m_fileList) {
+    const QFileInfo info(dir.filePath(fileName));
+    const QString modified = info.lastModified()
+                                 .toLocalTime().toString("yyyy-MM-dd HH:mm:ss");
+    m_fileDisplayList.append(fileName + QStringLiteral("  |  修改：") + modified
+                            + QStringLiteral("  |  大小：")
+                            + QLocale::c().formattedDataSize(info.size(), 1));
+  }
 
   emit fileListChanged();
 }

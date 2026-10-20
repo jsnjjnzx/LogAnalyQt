@@ -26,6 +26,7 @@ def main():
         (icon_directory / "logo.ico").symlink_to(source / "assets/logo.ico")
         environment = os.environ.copy()
         environment["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+        environment["QML_DISABLE_DISK_CACHE"] = "1"
         result = subprocess.run([runner, "-input", str(source / "tests/qml-stage10"), "-import", str(imports), "-platform", "offscreen"],
                                 cwd=source, env=environment, capture_output=True, text=True, timeout=90)
         output = result.stdout + result.stderr

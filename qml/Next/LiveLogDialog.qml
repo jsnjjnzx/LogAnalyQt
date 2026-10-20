@@ -111,8 +111,12 @@ GlassPage {
     // 否则 QML 属性系统检测不到变化，UI 绑定不会刷新。（#2）
     property var searchMatches: []
     property int searchCursor: -1
-    // #1 增量搜索：记录上次执行全量/增量搜索时的行号，避免 onLineCountChanged 中重复全量遍历
-    property int m_lastSearchedLineCount: 0
+    property real m_nextSearchLineId: -1
+    property real selectedLineId: -1
+    property real viewAnchorId: -1
+    property real viewAnchorOffset: 0
+    property bool viewUpdatePending: false
+    onAutoScrollChanged: if (autoScroll) viewAnchorId = -1
     property int selectedHexStart: -1
     property int selectedHexEnd: -1
     property string selectedHexText: ""
@@ -140,6 +144,9 @@ GlassPage {
         visible: false
         font.family: Next.PlatformFonts.monospaceFamily
         font.pixelSize: 13  // #10 与终端文本保持同一字体规格，确保 charWidth 计算准确
+        // Monospace logs need no optional ligatures; Qt still shapes scripts that require it.
+        font.kerning: false
+        font.preferShaping: false
         text: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     }
     readonly property real charWidth: charMeasurer.contentWidth / charMeasurer.text.length
@@ -169,19 +176,63 @@ GlassPage {
         if (searchKeyword === "") {
             searchMatches = [];
             searchCursor = -1;
-            m_lastSearchedLineCount = 0;
+            m_nextSearchLineId = -1;
             return;
         }
         // 注意：必须整体赋值新数组（不得用 push），否则不触发 QML 属性变更通知 (#2)
-        searchMatches = sshTerminal.findLineIndexes(searchKeyword, false);
-        // 记录本次全量搜索的行数基准，后续增量搜索从此处接续
-        m_lastSearchedLineCount = sshTerminal.currentLineCount;
+        searchMatches = sshTerminal.findLineIds(searchKeyword);
+        m_nextSearchLineId = sshTerminal.firstLineId + sshTerminal.currentLineCount;
         if (searchMatches.length === 0) {
             searchCursor = -1;
             return;
         }
         if (searchCursor < 0 || searchCursor >= searchMatches.length)
             searchCursor = 0;
+    }
+
+    function updateSearchResult() {
+        if (searchKeyword === "") return;
+        if (m_nextSearchLineId < 0) { refreshSearchResult(); return; }
+        const selectedMatch = searchCursor >= 0 ? searchMatches[searchCursor] : -1;
+        const firstId = sshTerminal.firstLineId;
+        let first = 0;
+        while (first < searchMatches.length && searchMatches[first] < firstId) first++;
+        const added = sshTerminal.findLineIds(searchKeyword, Math.max(firstId, m_nextSearchLineId));
+        if (first > 0 || added.length > 0) {
+            let matches = searchMatches.slice(first);
+            for (let i = 0; i < added.length; ++i)
+                if (matches.length === 0 || added[i] > matches[matches.length - 1]) matches.push(added[i]);
+            searchMatches = matches;
+            const cursor = matches.indexOf(selectedMatch);
+            searchCursor = matches.length === 0 ? -1 : Math.max(0, cursor);
+        }
+        m_nextSearchLineId = firstId + sshTerminal.currentLineCount;
+    }
+
+    function captureLogViewport() {
+        if (!logListView || !sshTerminal || viewUpdatePending) return;
+        viewUpdatePending = true;
+        if (autoScroll) { viewAnchorId = -1; return; }
+        const row = logListView.indexAt(1, logListView.contentY + 1);
+        const item = logListView.itemAtIndex(row);
+        viewAnchorId = sshTerminal.lineIdAt(row);
+        viewAnchorOffset = item ? item.y - logListView.contentY : 0;
+    }
+
+    function applyLogViewport() {
+        if (!logListView || !sshTerminal) return;
+        viewUpdatePending = false;
+        if (autoScroll) { logListView.positionViewAtEnd(); return; }
+        if (viewAnchorId < 0) return;
+        const row = sshTerminal.indexForLineId(viewAnchorId);
+        if (row < 0) {
+            logListView.positionViewAtBeginning();
+            statusHint.text = "回看的旧日志已超出缓存范围，已定位到最早保留内容";
+        } else {
+            logListView.positionViewAtIndex(row, ListView.Beginning);
+            const item = logListView.itemAtIndex(row);
+            if (item) logListView.contentY = item.y - viewAnchorOffset;
+        }
     }
 
     function jumpToSearch(forward) {
@@ -198,9 +249,10 @@ GlassPage {
         } else {
             searchCursor = (searchCursor - 1 + searchMatches.length) % searchMatches.length;
         }
-        var targetIndex = searchMatches[searchCursor];
+        var targetIndex = sshTerminal.indexForLineId(searchMatches[searchCursor]);
+        if (targetIndex < 0) return;
         logListView.positionViewAtIndex(targetIndex, ListView.Center);
-        selectedLineIndex = targetIndex;
+        selectLineAndExtractHex(targetIndex);
     }
 
     function prevWordStart(text, pos) {
@@ -259,7 +311,7 @@ GlassPage {
     }
 
     function applyHexSelectionOnCurrentLine() {
-        if (selectedLineIndex < 0)
+        if (!logListView || selectedLineIndex < 0)
             return;
         var item = logListView.itemAtIndex(selectedLineIndex);
         if (item && item["applyHexSelection"])
@@ -268,11 +320,17 @@ GlassPage {
 
     function selectLineAndExtractHex(lineIndex) {
         var oldIndex = selectedLineIndex;
-        selectedLineIndex = lineIndex;
         selectedHexStart = -1;
         selectedHexEnd = -1;
         selectedHexText = "";
+        selectedLineIndex = lineIndex;
+        selectedLineId = sshTerminal.lineIdAt(lineIndex);
 
+        if (!sshTerminal.lineIsComplete(lineIndex)) {
+            statusHint.text = "该条日志尚未完整或较早部分已淘汰，暂不作为完整报文解析";
+            applyHexSelectionOnCurrentLine();
+            return;
+        }
         var lineText = sshTerminal.lineAt(lineIndex);
         var extracted = extractHexSegmentFromLine(lineText);
         if (extracted) {
@@ -282,6 +340,7 @@ GlassPage {
         }
 
         Qt.callLater(function () {
+            if (!logListView) return;
             if (oldIndex >= 0 && oldIndex !== selectedLineIndex) {
                 var oldItem = logListView.itemAtIndex(oldIndex);
                 if (oldItem && oldItem["applyHexSelection"])
@@ -562,6 +621,7 @@ GlassPage {
     SshTerminal {
         id: sshTerminal
         objectName: "ssh-terminal-backend"
+        presentationActive: liveLogDialog.visible
         onCredentialStateChanged: liveLogDialog.continueSshAction()
         onPasswordOperationFinished: function(operationId, success, error) {
             if (operationId !== liveLogDialog.passwordOperationId) return
@@ -596,27 +656,17 @@ GlassPage {
             statusHint.text = "输出过快，已自动丢弃最早缓冲数据";
         }
 
+        onLinesAboutToChange: liveLogDialog.captureLogViewport()
+
         onLineCountChanged: {
-            if (autoScroll)
-                logListView.positionViewAtEnd();
-            if (searchKeyword !== "") {
-                var newCount = sshTerminal.currentLineCount;
-                if (m_lastSearchedLineCount <= 0 || m_lastSearchedLineCount >= newCount) {
-                    // 关键字初帶入或缓冲区被清除，必须全量刷新
-                    refreshSearchResult();
-                } else {
-                    // 增量搜索：只检查新增行，避免对全部缓冲行重复遍历 (#1)
-                    var newMatches = sshTerminal.findLineIndexesInRange(searchKeyword, m_lastSearchedLineCount, newCount - 1, false);
-                    if (newMatches.length > 0) {
-                        // 必须整体替换数组才能触发 QML 属性更新 (#2)
-                        var merged = searchMatches.slice();
-                        for (var i = 0; i < newMatches.length; i++)
-                            merged.push(newMatches[i]);
-                        searchMatches = merged;
-                    }
-                }
-                m_lastSearchedLineCount = newCount;
+            if (!sshTerminal) return;
+            updateSearchResult();
+            selectedLineIndex = sshTerminal.indexForLineId(selectedLineId);
+            if (selectedLineIndex < 0 || !sshTerminal.lineIsComplete(selectedLineIndex)) {
+                selectedLineId = -1;
+                selectedHexStart = -1; selectedHexEnd = -1; selectedHexText = "";
             }
+            Qt.callLater(applyLogViewport);
         }
     }
 
@@ -642,6 +692,7 @@ GlassPage {
         id: terminalContextMenu
 
         MenuItem {
+            objectName: "ssh-parse-auto"
             text: "自动检测解析"
             enabled: selectedHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.Auto)
@@ -942,7 +993,36 @@ GlassPage {
             ColumnLayout {
                 id: connectionRows
                 anchors.fill: parent; anchors.margins: 10; spacing: 8
-                RowLayout { Layout.fillWidth: true; spacing: 8
+                Flickable {
+                    id: connectionScroll
+                    objectName: "ssh-connection-scroll"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: connectionFields.implicitHeight + (connectionScrollBar.visible ? connectionScrollBar.height : 0)
+                    contentWidth: connectionFields.width
+                    contentHeight: connectionFields.height
+                    flickableDirection: Flickable.HorizontalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+                    clip: true
+                    ScrollBar.horizontal: ScrollBar {
+                        id: connectionScrollBar
+                        policy: ScrollBar.AsNeeded
+                        visible: connectionScroll.contentWidth > connectionScroll.width
+                    }
+                    Connections {
+                        target: liveLogDialog.Window.window
+                        function onActiveFocusItemChanged() {
+                            const field = target.activeFocusItem
+                            if (!field || field.parent !== connectionFields) return
+                            if (field.x < connectionScroll.contentX)
+                                connectionScroll.contentX = field.x
+                            else if (field.x + field.width > connectionScroll.contentX + connectionScroll.width)
+                                connectionScroll.contentX = field.x + field.width - connectionScroll.width
+                        }
+                    }
+                RowLayout {
+                    id: connectionFields
+                    width: Math.max(implicitWidth, connectionScroll.width)
+                    spacing: 8
                 Label {
                     text: "主机"
                     color: labelColor
@@ -1014,7 +1094,9 @@ GlassPage {
                 }
                 StyledComboBox {
                     id: encodingCombo
-                    Layout.preferredWidth: 84
+                    objectName: "ssh-encoding"
+                    Layout.minimumWidth: 112
+                    Layout.preferredWidth: 112
                     model: ["UTF-8", "GB2312"]
                     Component.onCompleted: {
                         currentIndex = (sshTerminal.encoding === "GB2312" || sshTerminal.encoding === "GBK") ? 1 : 0;
@@ -1024,9 +1106,6 @@ GlassPage {
                     }
                 }
 
-                    Item { Layout.fillWidth: true }
-                }
-                RowLayout { Layout.fillWidth: true; spacing: 8
                 Label {
                     text: "缓存行"
                     color: labelColor
@@ -1034,6 +1113,7 @@ GlassPage {
                 }
                 StyledTextField {
                     id: maxLinesInput
+                    objectName: "ssh-buffer-lines"
                     Layout.preferredWidth: 72
                     text: sshTerminal.maxBufferLines
                     // #4 连接中设为只读，防止用户修改后戟期不生效造成误解
@@ -1059,6 +1139,7 @@ GlassPage {
                     font.pixelSize: 12
                 }
                 Next.GlassSwitch {
+                    objectName: "ssh-auto-reconnect"
                     checked: sshTerminal.autoReconnectEnabled
                     onToggled: sshTerminal.autoReconnectEnabled = checked
                     palette.button: liveLogDialog.theme ? liveLogDialog.theme.controlBackground : "#ffffff"
@@ -1074,6 +1155,7 @@ GlassPage {
                 }
                 StyledTextField {
                     id: reconnectCountInput
+                    objectName: "ssh-reconnect-count"
                     Layout.preferredWidth: 46
                     text: sshTerminal.reconnectMaxAttempts
                     validator: IntValidator {
@@ -1093,6 +1175,7 @@ GlassPage {
                 }
                 StyledTextField {
                     id: reconnectIntervalInput
+                    objectName: "ssh-reconnect-interval"
                     Layout.preferredWidth: 68
                     text: sshTerminal.reconnectIntervalMs
                     validator: IntValidator {
@@ -1105,6 +1188,7 @@ GlassPage {
                 }
 
                     Item { Layout.fillWidth: true }
+                }
                 }
                 RowLayout { Layout.fillWidth: true; spacing: 8
                 StyledButton {
@@ -1300,6 +1384,7 @@ GlassPage {
 
                     ListView {
                         id: logListView
+                        objectName: "ssh-log-list"
                         anchors.fill: parent
                         model: sshTerminal.lineModel
                         clip: true
@@ -1310,33 +1395,65 @@ GlassPage {
 
                         delegate: Rectangle {
                             id: lineItem
+                            objectName: "ssh-log-line-" + stableId
+                            property real stableId: model && model.lineId !== undefined ? model.lineId : -1
+                            readonly property string displayText: model && model.lineText !== undefined ? model.lineText : ""
+                            property int rowIndex: index
+                            onStableIdChanged: applyHexSelection()
+                            onRowIndexChanged: applyHexSelection()
                             width: logListView.width
-                            height: lineText.implicitHeight + 4
-                            color: (searchKeyword !== "" && model.lineText.toLowerCase().indexOf(searchKeyword.toLowerCase()) >= 0) ? terminalMatchBg : "transparent"
+                            height: Math.max(charMeasurer.implicitHeight, lineText.implicitHeight, selectionLoader.item ? selectionLoader.item.implicitHeight : 0) + 4
+                            color: (searchKeyword !== "" && displayText.toLowerCase().indexOf(searchKeyword.toLowerCase()) >= 0) ? terminalMatchBg : "transparent"
 
-                            TextEdit {
+                            Text {
                                 id: lineText
                                 anchors.fill: parent
                                 anchors.leftMargin: 10
                                 anchors.rightMargin: 6
                                 verticalAlignment: Text.AlignVCenter
-                                text: model.lineText
-                                readOnly: true
-                                selectByMouse: false
-                                persistentSelection: true
-                                wrapMode: TextEdit.NoWrap
-                                font.family: Next.PlatformFonts.monospaceFamily
-                                font.pixelSize: 13
+                                text: selectionLoader.active ? "" : lineItem.displayText
+                                visible: !selectionLoader.active
+                                textFormat: Text.PlainText
+                                // Paint the visible row; selection and parsing keep the complete model text.
+                                wrapMode: Text.WrapAnywhere
+                                maximumLineCount: 1
+                                font: charMeasurer.font
+                                clip: true
                                 color: terminalText
-                                selectedTextColor: terminalText
-                                selectionColor: "#446688"
+                            }
+
+                            Loader {
+                                id: selectionLoader
+                                anchors.fill: parent
+                                anchors.leftMargin: 10; anchors.rightMargin: 6
+                                active: lineItem.stableId === selectedLineId && selectedHexStart >= 0 && selectedHexEnd > selectedHexStart
+                                onLoaded: lineItem.applyHexSelection()
+                                sourceComponent: TextEdit {
+                                    objectName: "ssh-selected-text"
+                                    text: lineItem.displayText
+                                    textFormat: TextEdit.PlainText
+                                    readOnly: true; selectByMouse: false; persistentSelection: true
+                                    verticalAlignment: Text.AlignVCenter; wrapMode: TextEdit.NoWrap
+                                    font: charMeasurer.font
+                                    color: terminalText; selectedTextColor: terminalText; selectionColor: "#446688"
+                                }
                             }
 
                             function applyHexSelection() {
-                                if (index === selectedLineIndex && selectedHexStart >= 0 && selectedHexEnd > selectedHexStart)
-                                    lineText.select(selectedHexStart, selectedHexEnd);
+                                if (!sshTerminal || !selectionLoader || !selectionLoader.item || index < 0) return;
+                                const offset = sshTerminal.lineSegmentOffset(index);
+                                const start = Math.max(0, selectedHexStart - offset);
+                                const end = Math.min(selectionLoader.item.length, selectedHexEnd - offset);
+                                if (stableId === selectedLineId && selectedHexStart >= 0 && end > start)
+                                    selectionLoader.item.select(start, end);
                                 else
-                                    lineText.deselect();
+                                    selectionLoader.item.deselect();
+                            }
+
+                            Text {
+                                visible: model && (model.continuation === true || model.continues === true)
+                                text: "↳"; color: "#9aa4b2"; font.pixelSize: 11
+                                anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                             }
 
                             MouseArea {

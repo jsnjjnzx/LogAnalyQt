@@ -29,6 +29,7 @@
 #include "../../tests/MigrationUiChecks.h"
 #include "../../tests/ParseWorkspaceChecks.h"
 #include "../../tests/MqttUiChecks.h"
+#include "../../tests/ssh-performance/SshPerformance.h"
 #endif
 
 Q_IMPORT_QML_PLUGIN(NextUiPlugin)
@@ -193,7 +194,16 @@ Button { text: "关闭"; onClicked: Qt.quit() }
       "AiFramingController", QStringLiteral("由 LogBackend 提供"));
   qmlRegisterType<LogMerger>("LogAnalyQt", 1, 2, "LogMerger");
   qmlRegisterType<UpdateChecker>("LogAnalyQt", 1, 2, "UpdateChecker");
-  qmlRegisterType<SshTerminal>("LogAnalyQt", 1, 2, "SshTerminal");
+#ifdef LOGANALYQT_UI_TESTING
+  const int sshBenchmarkIndex = app.arguments().indexOf(QStringLiteral("--ssh-performance"));
+  const bool sshBenchmark = uiSmokeMode && sshBenchmarkIndex >= 0;
+  const auto sshBenchmarkArgs = QStringList{app.arguments().first()} + app.arguments().mid(sshBenchmarkIndex + 1);
+  if (sshBenchmark) {
+    if (sshBenchmarkArgs.size() != 10) return 2;
+    registerSshPerformanceTerminal(sshBenchmarkArgs[3]);
+  } else
+#endif
+    qmlRegisterType<SshTerminal>("LogAnalyQt", 1, 2, "SshTerminal");
   qmlRegisterType<MqttController>("LogAnalyQt", 1, 2, "MqttController");
   qmlRegisterUncreatableType<MqttSession>("LogAnalyQt", 1, 2, "MqttSession", QStringLiteral("由 MqttController 提供"));
   qmlRegisterUncreatableType<MqttBroker>("LogAnalyQt", 1, 2, "MqttBroker", QStringLiteral("由 MqttController 提供"));
@@ -324,5 +334,8 @@ Button { text: "关闭"; onClicked: Qt.quit() }
   }
 #endif
 
+#ifdef LOGANALYQT_UI_TESTING
+  if (sshBenchmark) return runSshPerformance(app, sshBenchmarkArgs, &engine);
+#endif
   return app.exec();
 }

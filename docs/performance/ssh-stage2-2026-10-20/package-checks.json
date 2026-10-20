@@ -1,0 +1,11 @@
+{
+  "bundled_macho_files": 126,
+  "architecture": "arm64",
+  "external_non_system_dependencies": false,
+  "signature": "ad-hoc verified",
+  "startup": "offscreen; no foreground window",
+  "test_platform_plugin": "temporary RAM copy of Qt 6.11.1 offscreen plugin; not shipped",
+  "development_library_paths_removed": true,
+  "exit_code": 0,
+  "warnings": []
+}

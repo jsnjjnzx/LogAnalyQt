@@ -2,6 +2,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from release_metadata import (  # noqa: E402
     render_release_notes,
 )
 from gitee_release import GiteeReleaseClient, ReleaseError  # noqa: E402
+import generate_release_notes  # noqa: E402
 
 
 class _FakeGiteeHandler(BaseHTTPRequestHandler):
@@ -105,6 +107,31 @@ class _FakeGiteeHandler(BaseHTTPRequestHandler):
 
 
 class ReleaseMetadataTests(unittest.TestCase):
+    def test_release_uses_only_the_requested_changelog_section(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "CMakeLists.txt").write_text("project(LogAnalyQt VERSION 4.5.0 LANGUAGES CXX)\n", encoding="utf-8")
+            (root / "CHANGELOG.md").write_text(
+                "## [4.5.0] - 2026-10-20\n\n- 优化 SSH 实时监控。\n\n"
+                "## [4.4.0] - 2026-10-19\n\n- 旧版本说明。\n", encoding="utf-8")
+            with patch.object(generate_release_notes, "_git", return_value="tested-tag"), \
+                 patch.object(generate_release_notes, "_commits") as commits:
+                notes = generate_release_notes.generate(root, "v4.5.0")
+            self.assertEqual(notes, "## 通联工坊 v4.5.0\n\n- 优化 SSH 实时监控。\n")
+            commits.assert_not_called()
+
+    def test_release_falls_back_to_commits_without_current_changelog(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "CMakeLists.txt").write_text("project(LogAnalyQt VERSION 4.5.0 LANGUAGES CXX)\n", encoding="utf-8")
+            (root / "CHANGELOG.md").write_text("## [4.4.0]\n\n- 旧版本说明。\n", encoding="utf-8")
+            with patch.object(generate_release_notes, "_git", return_value="tested-tag"), \
+                 patch.object(generate_release_notes, "_previous_tag", return_value="v4.4.0"), \
+                 patch.object(generate_release_notes, "_commits", return_value=[("1234567", "fix: 修复同步", "")]):
+                notes = generate_release_notes.generate(root, "v4.5.0")
+            self.assertIn("修复同步", notes)
+            self.assertNotIn("旧版本说明", notes)
+
     def test_normalize_tag_accepts_semantic_release_tag(self):
         self.assertEqual(normalize_tag("v3.1.4"), "3.1.4")
 

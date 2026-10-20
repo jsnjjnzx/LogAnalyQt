@@ -1,0 +1,10 @@
+{
+  "ram_image": "ram://2097152",
+  "device": "/dev/disk12",
+  "mount": "/private/tmp/loganalyqt-ssh-stage1/ram",
+  "released": true,
+  "final_run_validated": true,
+  "swapouts_observed": 0,
+  "raw_payload_files_retained": false,
+  "other_builds_and_previous_app_retained": true
+}

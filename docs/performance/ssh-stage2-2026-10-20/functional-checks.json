@@ -1,0 +1,41 @@
+{
+  "recorded_at": "2026-10-20T02:41:24.969911+00:00",
+  "source_hash_manifest": "candidate-source-hashes.json",
+  "checks": [
+    {
+      "name": "SSH stream/model unit assertions",
+      "passed": 72,
+      "failed": 0
+    },
+    {
+      "name": "Encrypted stream, encoding, completion, clipboard and backpressure",
+      "passed": 43,
+      "failed": 0
+    },
+    {
+      "name": "Authenticated loopback, trust and reconnect",
+      "passed": 37,
+      "failed": 0,
+      "authenticated_sessions": 3,
+      "host": "127.0.0.1"
+    },
+    {
+      "name": "Production QML regressions",
+      "passed": 18,
+      "failed": 0
+    },
+    {
+      "name": "SSH security with isolated local sshd",
+      "result": "PASS: trust, target binding, cancellation, credential-read timeout and destruction"
+    },
+    {
+      "name": "Full Release app on Cocoa",
+      "result": "PASS: native window, real IEC104/698 parsing, paused viewport, migration/persistence, 11 tabs, packaged MQTT broker and cleanup"
+    }
+  ],
+  "boundaries": [
+    "Synthetic credentials; no native Keychain acceptance",
+    "Local macOS only; no Windows or real-device acceptance",
+    "Pressure payloads and test runtime logs remained in RAM"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "src/core/SshTerminal.cpp": "4faffc3d861e7ea733aef2e0ff6c4bdeabad8b32da92787734fe777320a87801",
+  "src/core/SshTerminal.h": "c042f714e47e3c36da89b93126078fc1d122daf66c295c6c9505ed19338aecaa",
+  "src/core/SshLogStream.cpp": "0b58fc5ce393813a2adc2e94a492bda5445c9334c1f40ee1e6f31c319f346614",
+  "src/core/SshLogStream.h": "77d734cd590925d69c36be742d663ca0f551f78ce9252c1e0064a0e303149408",
+  "qml/Next/LiveLogDialog.qml": "14feec62bd2e4b364c7105b2bf05f3946976e7fb213aae5df4c49e938e17f837",
+  "qml/Next/Main.qml": "513f8ca85200dbb4a42998eaf6194976125e4c6143d3dac0b5779a986929e4fa",
+  "src/core/LogBackend.cpp": "00506fe38e4b744aa3710ee8c5996b578fdb4e79dc78a8f42e9460951e12df3c",
+  "src/core/LogBackend.h": "283bea9fb439f6b2b324843e39602523fde3193feab4c99934b1a02396553ea9",
+  "src/core/main.cpp": "8a29ff8f757caee0b800305ca7ce718308863a2b06ea2b6156935c1cd01b5de5",
+  "tests/ssh-performance/ssh_performance.cpp": "4b193bd2b70678a717dc3eec211839cfebcdab40777e1e7d39fdab6221ee7f34",
+  "tests/run_ssh_performance.py": "3b3114b916ff5e209d6d46bcb673148188c8e33a734b114fa4c897d17856d6b0",
+  "tests/MigrationUiChecks.h": "93db73625988f46dcfe1f84c306c7b0498272cbabecf16f85e72cf3ed6fa2109",
+  "qml/Next/SmartFraming/FrameHeaderPanel.qml": "36c7355833ba0df502600ba427d7d2eeb2d6851cebf39cc0dbd857c1d1f8f65c",
+  "qml/Next/SmartFraming/OadSelector.qml": "e5ec07eff36f998dccf23289977a15942a11433743c00b18579c56ce10f9ac67",
+  "qml/Next/SmartFraming/ServiceTreeEditor.qml": "b71f1e2690f019e4be591e8ca0f425f66fe64d38e172186da67b692afe0f3902",
+  "tests/qml-next/tst_prot698_selector.qml": "9b761edc626a9040c63cda8315642690566a52670d37530f2cfdc1afa8735586"
+}
