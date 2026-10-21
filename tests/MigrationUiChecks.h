@@ -65,6 +65,8 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     if (!ok) throw QString::fromUtf8(message);
   };
   try {
+    if (auto *screen = window->screen())
+      window->setPosition(screen->availableGeometry().topLeft());
     require(QGuiApplication::applicationDisplayName() == QString::fromUtf8("通联工坊"), "application display name is incorrect");
     require(QCoreApplication::applicationName() == "LogAnalyQt", "renaming the display must preserve the storage identity");
     require(window->title().startsWith(QString::fromUtf8("通联工坊")), "main window title is incorrect");
@@ -425,8 +427,10 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       auto *ruleEditor = liveWorkspace->findChild<QQuickWindow *>("ssh-rule-window");
       require(ruleEditor && ruleEditor->isVisible(), "shared rule editor did not open");
       settle(ruleEditor);
-      QEventLoop validateRule;
-      QTimer::singleShot(160, &validateRule, &QEventLoop::quit); validateRule.exec();
+      QElapsedTimer validateRule;
+      validateRule.start();
+      while (!findItem(ruleEditor->contentItem(), "ssh-rule-save")->isEnabled() && validateRule.elapsed() < 5000)
+        settle(ruleEditor);
       auto *purple = findItem(ruleEditor->contentItem(), "ssh-rule-color-bb9cf5");
       click(purple);
       require(findItem(ruleEditor->contentItem(), "ssh-rule-save")->isEnabled(), "rule validation did not enable save");
