@@ -420,16 +420,16 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     }
     trace("shared monitor rules, colored matches, native editor and independent-window resume");
     {
-      auto addRule = [&](const QString &name, const QString &pattern, const QString &color, bool pause = true) {
+      auto addRule = [&](const QString &name, const QString &pattern, const QString &color, bool pause = true, bool wholeLine = true) {
         QVariant id;
         require(QMetaObject::invokeMethod(liveWorkspace, "saveMonitorRule", Q_RETURN_ARG(QVariant, id),
-                    Q_ARG(QVariant, -1), Q_ARG(QVariant, name), Q_ARG(QVariant, pattern), Q_ARG(QVariant, false), Q_ARG(QVariant, color), Q_ARG(QVariant, pause))
+                    Q_ARG(QVariant, -1), Q_ARG(QVariant, name), Q_ARG(QVariant, pattern), Q_ARG(QVariant, false), Q_ARG(QVariant, color), Q_ARG(QVariant, pause), Q_ARG(QVariant, wholeLine))
                     && id.toInt() > 0, "cannot save shared monitor rule");
         return id.toInt();
       };
       const int errorRule = addRule(QString::fromUtf8("严重错误"), "ERROR", "#f79a93");
       const int offlineRule = addRule(QString::fromUtf8("设备离线"), "OFFLINE", "#80b9ff");
-      const int markRule = addRule(QString::fromUtf8("普通提醒"), "NOTICE", "#7ed6a0", false);
+      const int markRule = addRule(QString::fromUtf8("普通提醒"), "NOTICE", "#7ed6a0", false, false);
       auto currentHit = [](QObject *page) {
         const auto value = page->property("monitorHit");
         return value.metaType() == QMetaType::fromType<QJSValue>() ? value.value<QJSValue>().toVariant().toMap() : value.toMap();
@@ -439,9 +439,12 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       livePage->setProperty("monitorRuleIds", QVariantList{errorRule, markRule}); livePage->setProperty("monitorEnabled", true); livePage->setProperty("autoScroll", true);
       secondPage->setProperty("monitorRuleIds", QVariantList{offlineRule}); secondPage->setProperty("monitorEnabled", true); secondPage->setProperty("autoScroll", true);
       SshTerminalTestAccess::MonitorInput firstInput, secondInput;
-      firstInput.feed(*ssh, "NOTICE mark without pausing\nNOTICE next reminder\n"); settle();
+      firstInput.feed(*ssh, "prefix NOTICE mark NOTICE tail\nNOTICE next reminder\n"); settle();
       require(livePage->property("autoScroll").toBool() && ssh->lineModel()->data(ssh->lineModel()->index(0), TerminalLineModel::MonitorColorRole).toString() == "#7ed6a0",
               "mark-only rule stopped following or failed to color the log history");
+      require(!ssh->lineModel()->data(ssh->lineModel()->index(0), TerminalLineModel::MonitorWholeLineRole).toBool()
+                  && ssh->lineModel()->data(ssh->lineModel()->index(0), TerminalLineModel::MonitorRangesRole).toList().size() == 2,
+              "match-only highlighting did not reach the actual terminal model");
       firstInput.feed(*ssh, "regular output\nERROR synthetic failure\nfollowing output\n"); settle();
       require(!livePage->property("autoScroll").toBool() && livePage->property("monitorHitColor").value<QColor>() == QColor("#f79a93")
                   && secondPage->property("autoScroll").toBool(), "a rule paused the wrong session or lost its configured color");

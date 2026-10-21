@@ -13,8 +13,8 @@ ApplicationWindow {
     property var library
     property var theme
     property int selectedRuleId: -1
-    property string savedDraft: '["","",false,"#e8b76a",true]'
-    readonly property bool dirty: JSON.stringify([nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked]) !== savedDraft
+    property string savedDraft: '["","",false,"#e8b76a",true,0]'
+    readonly property bool dirty: JSON.stringify([nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked, highlightScope.currentIndex]) !== savedDraft
     property var validation: ({valid: false, error: "请输入正则表达式", matches: []})
     property var testResult: null
     property var pendingAction: null
@@ -31,7 +31,8 @@ ApplicationWindow {
         ignoreCase.checked = rule ? rule.ignoreCase : false;
         colorInput.text = rule && rule.color ? rule.color : "#e8b76a";
         pauseOnMatch.checked = !rule || rule.pauseOnMatch !== false;
-        savedDraft = JSON.stringify([nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked]);
+        highlightScope.currentIndex = rule && rule.highlightWholeLine === false ? 1 : 0;
+        savedDraft = JSON.stringify([nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked, highlightScope.currentIndex]);
         if (library) library.monitorRuleError = "";
         testResult = null;
     }
@@ -41,7 +42,7 @@ ApplicationWindow {
     }
     function saveRule() {
         if (!library || !validation.valid) return;
-        const id = library.saveMonitorRule(selectedRuleId, nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked);
+        const id = library.saveMonitorRule(selectedRuleId, nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked, highlightScope.currentIndex === 0);
         if (id > 0) loadRule(id);
     }
     function runTest() {
@@ -126,13 +127,19 @@ ApplicationWindow {
                             onTextChanged: validationTimer.restart()
                         }
                     }
-                    RowLayout {
+                    Flow {
                         Layout.fillWidth: true
+                        spacing: 12
                         Next.GlassCheckBox { id: ignoreCase; objectName: "ssh-rule-ignore-case"; text: "忽略大小写"; onToggled: validationTimer.restart() }
                         Next.GlassCheckBox { id: pauseOnMatch; objectName: "ssh-rule-pause-on-match"; text: "命中后暂停跟随"; checked: true }
-                        Item { Layout.fillWidth: true }
-                        Label { text: validation.valid ? "✓ 表达式有效" : "表达式无效"; color: validation.valid ? "#7ed6a0" : "#f79a93"; font.pixelSize: 11 }
+                        Next.GlassComboBox {
+                            id: highlightScope; objectName: "ssh-rule-highlight-scope"
+                            model: ["整行着色", "仅正则匹配部分着色"]
+                            implicitWidth: 190
+                            Accessible.name: "着色范围"
+                        }
                     }
+                    Label { text: validation.valid ? "✓ 表达式有效" : "表达式无效"; color: validation.valid ? "#7ed6a0" : "#f79a93"; font.pixelSize: 11 }
                     Label { textFormat: Text.PlainText; Layout.fillWidth: true; visible: !validation.valid; text: validation.error || ""; color: "#f79a93"; wrapMode: Text.Wrap; font.pixelSize: 11 }
                     Label { text: "规则颜色"; color: textColor; Layout.topMargin: 5 }
                     RowLayout {

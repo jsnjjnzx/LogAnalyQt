@@ -232,6 +232,64 @@ static void monitorChecks() {
   model.appendRecords(markingLines);
   check(model.data(model.index(model.rowCount() - 2), TerminalLineModel::MonitorColorRole).toString() == "#7ed6a0",
         "mark-only row colors persist in history independently of the latest notification");
+
+  auto matchRule = rules[0].toMap();
+  matchRule["highlightWholeLine"] = false; matchRule["pauseOnMatch"] = false; matchRule["ignoreCase"] = true;
+  check(SshMonitorMatcher::validRules({matchRule}), "match-only highlighting is a valid optional rule setting");
+  auto invalidScope = matchRule; invalidScope["highlightWholeLine"] = "false";
+  check(!SshMonitorMatcher::validRules({invalidScope}), "non-boolean highlight scope is rejected");
+  SshMonitorMatcher spans;
+  spans.configure({matchRule}, 9, 0, {}, 0);
+  std::vector<SshLogLine> spanLines{{QString::fromUtf8("设备😀 error / ERROR end"), 1}};
+  SshLogLine spanPartial{"prefix ERROR tail ERROR", 2};
+  spans.feed(spanLines, spanPartial);
+  check(!spanLines[0].monitorWholeLine && spanLines[0].monitorRanges == QList<QPair<int, int>>{{5, 5}, {13, 5}},
+        "match-only coloring retains all matches with Unicode UTF-16 offsets");
+  check(spanPartial.monitorRanges == QList<QPair<int, int>>{{7, 5}, {18, 5}}
+            && !spans.hit().data.value("highlightWholeLine").toBool(), "unfinished output and hit notifications keep match-only scope");
+  TerminalLineModel spanModel(100); spanModel.appendRecords(spanLines);
+  check(!spanModel.data(spanModel.index(0), TerminalLineModel::MonitorWholeLineRole).toBool()
+            && spanModel.data(spanModel.index(0), TerminalLineModel::MonitorRangesRole).toList().size() == 2,
+        "history exposes match ranges without changing original text");
+  SshTerminalTestAccess::publish(terminal, {}, spanPartial);
+  check(!terminal.liveMonitorWholeLine() && terminal.liveMonitorRanges() == spanPartial.matchRanges(),
+        "live match ranges survive worker-to-GUI handoff");
+  terminal.clearBuffer();
+  check(terminal.liveMonitorWholeLine() && terminal.liveMonitorRanges().isEmpty(), "clear removes live match formatting");
+  matchRule["pattern"] = "(?=ERROR)";
+  spans.configure({matchRule}, 10, 0, {}, 0);
+  spanLines = {{"prefix ERROR", 1}}; spanPartial = {};
+  spans.feed(spanLines, spanPartial);
+  check(!spanLines[0].monitorWholeLine && spanLines[0].monitorRanges.isEmpty(),
+        "zero-width matches trigger rules without coloring unrelated characters");
+  matchRule["pattern"] = "ERROR";
+  spans.configure({matchRule}, 11, 0, {}, 0);
+  spanLines = {{QString(8190, 'x') + "ER", 1, false, true}, {"ROR tail", 1, true, false}};
+  spans.feed(spanLines, spanPartial);
+  check(spanLines[1].matchRanges() == QVariantList{QVariantMap{{"start", 0}, {"length", 3}}}, "cross-segment matches use local display offsets");
+  TerminalLineModel segmented(100);
+  QAbstractItemModelTester segmentedTester(&segmented, QAbstractItemModelTester::FailureReportingMode::Fatal);
+  segmented.appendRecords(spanLines);
+  check(segmented.data(segmented.index(0), TerminalLineModel::MonitorRangesRole).toList()
+            == QVariantList{QVariantMap{{"start", 8190}, {"length", 2}}}, "a cross-segment match colors its earlier display segment too");
+  terminal.clearBuffer();
+  SshTerminalTestAccess::publish(terminal, {spanLines[0]}, {});
+  SshTerminalTestAccess::publish(terminal, {}, spanLines[1]);
+  check(terminal.lineModel()->data(terminal.lineModel()->index(0), TerminalLineModel::MonitorRangesRole).toList()
+            == QVariantList{QVariantMap{{"start", 8190}, {"length", 2}}} && terminal.liveMonitorRanges().size() == 1,
+        "a live match updates an earlier segment delivered in a previous GUI batch");
+  terminal.clearBuffer();
+  std::vector<SshLogLine> history;
+  for (int i = 0; i < 100; ++i) history.push_back({QString(8192, 'x'), 99, i > 0, true});
+  SshTerminalTestAccess::publish(terminal, std::move(history), {});
+  SshLogLine densePartial{"tail", 99, true, true};
+  densePartial.monitorColor = "#7ed6a0"; densePartial.monitorWholeLine = false; densePartial.monitorOffset = 100 * 8192;
+  densePartial.monitorRanges.reserve(65536);
+  for (int i = 0; i < 65536; ++i) densePartial.monitorRanges.append({2 * i, 1});
+  QSignalSpy countChanges(&terminal, &SshTerminal::lineCountChanged);
+  SshTerminalTestAccess::publish(terminal, {}, densePartial);
+  check(terminal.lineModel()->byteSize() <= SshLogStream::HistoryBytes && terminal.currentLineCount() < 100 && countChanges.size() == 1,
+        "retroactive match metadata respects the history byte budget and notifies partial-only eviction");
 }
 
 void SshTerminalTestAccess::inputSchedulingChecks() {

@@ -37,11 +37,13 @@ QtObject {
     property bool presentationActive: true
     property string liveLine: ""
     property string liveMonitorColor: ""
+    property bool liveMonitorWholeLine: true
+    property var liveMonitorRanges: []
     property int cursorColumn: 0
     property int cursorPosition: liveLine.length
     property int cursorPadding: 0
     property bool persistSettings: true
-    property ListModel receiveModel: ListModel {}
+    property ListModel receiveModel: ListModel { dynamicRoles: true }
     readonly property var lineModel: receiveModel
     property bool initialized: false
     property int connectCalls: 0
@@ -140,18 +142,29 @@ QtObject {
         if (receptionPaused) { pendingPeerLines = pendingPeerLines.concat(lines); return }
         linesAboutToChange()
         const nextId = receivedFirstLineId + receiveModel.count
-        for (const text of lines) receiveModel.append({lineText:text,lineId:receivedFirstLineId+receiveModel.count,continuation:false,continues:false,monitorColor:"",monitorRuleName:""})
+        for (const text of lines) receiveModel.append({lineText:text,lineId:receivedFirstLineId+receiveModel.count,continuation:false,continues:false,monitorColor:"",monitorRuleName:"",monitorWholeLine:true,monitorRanges:[]})
         while (receiveModel.count > limit) { receiveModel.remove(0); receivedFirstLineId++ }
         for (let i = 0; i < lines.length && monitorArmed; ++i) {
             const found = monitorRules.filter(rule => new RegExp(rule.pattern, rule.ignoreCase ? "i" : "").test(lines[i]))
             const rule = found.find(value => value.pauseOnMatch !== false) || found[0]
             if (!rule) continue
+            const ranges = []
+            if (rule.highlightWholeLine === false) {
+                const regex = new RegExp(rule.pattern, rule.ignoreCase ? "gi" : "g"); let match
+                while ((match = regex.exec(lines[i])) !== null) {
+                    if (match[0].length) ranges.push({start:match.index,length:match[0].length})
+                    else regex.lastIndex++
+                }
+            }
             const row = nextId + i - receivedFirstLineId
             if (row >= 0 && row < receiveModel.count) {
                 receiveModel.setProperty(row, "monitorColor", rule.color || "#e8b76a")
                 receiveModel.setProperty(row, "monitorRuleName", rule.name)
+                receiveModel.setProperty(row, "monitorWholeLine", rule.highlightWholeLine !== false)
+                receiveModel.setProperty(row, "monitorRanges", ranges)
             }
             monitorMatched({ruleId:rule.id,ruleName:rule.name,color:rule.color || "#e8b76a",pauseOnMatch:rule.pauseOnMatch !== false,
+                highlightWholeLine:rule.highlightWholeLine !== false,ranges:ranges,
                 text:lines[i],lineId:nextId+i,receivedLineId:receivedFirstLineId+receiveModel.count,time:"12:00:00"})
         }
         lineCountChanged()

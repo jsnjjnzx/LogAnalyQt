@@ -28,11 +28,12 @@ GlassPage {
             && typeof rule.pattern === "string" && rule.pattern.length > 0 && rule.pattern.length <= 4096
             && (rule.color === undefined || typeof rule.color === "string" && /^#[0-9a-fA-F]{6}$/.test(rule.color))
             && (rule.pauseOnMatch === undefined || typeof rule.pauseOnMatch === "boolean")
+            && (rule.highlightWholeLine === undefined || typeof rule.highlightWholeLine === "boolean")
             && typeof rule.ignoreCase === "boolean" && backend.testMonitorExpression(rule.pattern, rule.ignoreCase, "").valid;
     }
-    function saveMonitorRule(id, name, pattern, ignoreCase, color, pauseOnMatch) {
+    function saveMonitorRule(id, name, pattern, ignoreCase, color, pauseOnMatch, highlightWholeLine) {
         const rule = {id: id > 0 ? id : nextMonitorRuleId, name: name.trim(), pattern: pattern, ignoreCase: ignoreCase,
-            color: color || "#e8b76a", pauseOnMatch: pauseOnMatch !== false};
+            color: color || "#e8b76a", pauseOnMatch: pauseOnMatch !== false, highlightWholeLine: highlightWholeLine !== false};
         if (!validMonitorRule(rule)) { monitorRuleError = "请填写名称及有效的正则表达式（最多 4096 字符）。"; return 0; }
         if (id < 1 && monitorRules.length >= 256) { monitorRuleError = "最多保存 256 条规则。"; return 0; }
         const before = monitorRules, next = nextMonitorRuleId;

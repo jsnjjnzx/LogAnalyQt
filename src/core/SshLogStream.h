@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QString>
 #include <QStringDecoder>
+#include <QVariantList>
 #include <vector>
 #ifndef Q_OS_WIN
 #include <iconv.h>
@@ -15,8 +16,21 @@ struct SshLogLine {
   bool continues = false;
   QString monitorColor;
   QString monitorRuleName;
+  bool monitorWholeLine = true;
+  qsizetype monitorOffset = 0;
+  QList<QPair<int, int>> monitorRanges;
 
-  qsizetype storageBytes() const { return sizeof(SshLogLine) + (text.capacity() + monitorColor.capacity() + monitorRuleName.capacity()) * qsizetype(sizeof(QChar)); }
+  QVariantList matchRanges() const {
+    QVariantList result;
+    for (const auto &range : monitorRanges) {
+      const auto start = qMax(monitorOffset, qsizetype(range.first));
+      const auto end = qMin(monitorOffset + text.size(), qsizetype(range.first) + range.second);
+      if (end > start) result.append(QVariantMap{{"start", start - monitorOffset}, {"length", end - start}});
+    }
+    return result;
+  }
+  qsizetype storageBytes() const { return sizeof(SshLogLine) + (text.capacity() + monitorColor.capacity() + monitorRuleName.capacity()) * qsizetype(sizeof(QChar))
+      + monitorRanges.capacity() * qsizetype(sizeof(QPair<int, int>)); }
 };
 
 // Worker-owned stream state; a socket read is not a character, escape sequence or line boundary.

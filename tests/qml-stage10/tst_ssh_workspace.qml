@@ -181,11 +181,12 @@ Item {
         function test_monitorRuleChangesPersistenceDeletionAndSaveFailures() {
             make()
             const id = page.saveMonitorRule(-1, "错误", "ERROR", false, "#bb9cf5")
+            verify(page.monitorRules[0].highlightWholeLine)
             const a = page.activeSession
             a.monitorRuleIds = [id]; a.monitorEnabled = true
             a.terminal.appendTestLines(["ERROR"], 100); wait(20)
             verify(a.monitorHit !== null)
-            compare(page.saveMonitorRule(id, "错误更新", "FATAL", true, "#7ed6a0", false), id)
+            compare(page.saveMonitorRule(id, "错误更新", "FATAL", true, "#7ed6a0", false, false), id)
             verify(!a.autoScroll); compare(a.selectedMonitorRules[0].pattern, "FATAL")
             testBackend.failSave = true
             compare(page.saveMonitorRule(id, "失败修改", "changed", false, "#80b9ff"), 0)
@@ -196,12 +197,14 @@ Item {
             page.destroy(); page = null; wait(30); make()
             compare(page.monitorRules[0].color, "#7ed6a0")
             verify(page.monitorRules[0].pauseOnMatch === false)
+            verify(page.monitorRules[0].highlightWholeLine === false)
             compare(page.activeSession.monitorRuleIds[0], id); verify(page.activeSession.monitorEnabled)
             verify(page.activeSession.autoScroll && page.activeSession.monitorHit === null)
             verify(page.removeMonitorRule(id)); compare(page.activeSession.monitorRuleIds.length, 0)
             compare(page.monitorRules.length, 0)
             verify(page.saveMonitorRule(-1, "bad", "(", false, "#80b9ff") === 0)
             verify(page.saveMonitorRule(-1, "bad color", "ERROR", false, "red") === 0)
+            verify(!page.validMonitorRule({id:1,name:"bad scope",pattern:"ERROR",ignoreCase:false,highlightWholeLine:"false"}))
         }
         function test_monitorRuleEditorAndPicker() {
             make()
@@ -214,6 +217,10 @@ Item {
             item(editor, "ssh-rule-pattern").text = "设备.*超时"
             verify(item(editor, "ssh-rule-pause-on-match").checked)
             mouseClick(item(editor, "ssh-rule-pause-on-match"))
+            const scope = item(editor, "ssh-rule-highlight-scope")
+            compare(scope.currentIndex, 0)
+            compare(scope.model[1], "仅正则匹配部分着色")
+            scope.currentIndex = 1
             const swatch = visualItem(editor.contentItem, "ssh-rule-color-80b9ff")
             verify(swatch !== null); mouseClick(swatch)
             tryCompare(item(editor, "ssh-rule-save"), "enabled", true)
@@ -223,6 +230,11 @@ Item {
             mouseClick(item(editor, "ssh-rule-save")); wait(20)
             compare(page.monitorRules.length, 1); compare(page.monitorRules[0].color, "#80b9ff")
             verify(page.monitorRules[0].pauseOnMatch === false)
+            verify(page.monitorRules[0].highlightWholeLine === false)
+            verify(!editor.dirty)
+            scope.currentIndex = 0; verify(editor.dirty)
+            editor.loadRule(page.monitorRules[0].id)
+            compare(scope.currentIndex, 1); verify(!editor.dirty)
             editor.close(); wait(20)
             const a = page.activeSession
             compare(item(page, "ssh-monitor-rules").text, "规则库 (1)")
@@ -271,6 +283,41 @@ Item {
                            || Math.abs(reconnect.y + reconnect.height / 2 - field.y - field.height / 2) < 1 && reconnect.x > field.x,
                            "automatic reconnect must follow retry count and interval")
             }
+        }
+        function test_matchOnlyHighlightsKeepOtherTextPlainAndSupportLiveOutput() {
+            make()
+            const a = page.activeSession; connected(a)
+            a.connectionConfigExpanded = false
+            const id = page.saveMonitorRule(-1, "匹配部分", "ERROR", true, "#7ed6a0", false, false)
+            a.monitorRuleIds = [id]; a.monitorEnabled = true
+            const text = "设备😀 <tag> error  &  ERROR tail"
+            a.terminal.appendTestLines([text], 100); wait(40)
+            const view = item(a, "ssh-log-list")
+            view.forceLayout()
+            const row = view.itemAtIndex(0); verify(row !== null)
+            compare(row.wholeLine, false)
+            compare(row.ruleColor.toString(), "#7ed6a0")
+            compare(row.color.toString(), "#00000000")
+            const highlights = item(row, "ssh-log-match-highlights")
+            const spans = highlights.children.filter(child => child.objectName === "ssh-match-span")
+            compare(spans.length, 2)
+            verify(spans[0].x > 0 && spans[0].width > 0 && spans[1].x > spans[0].x + spans[0].width)
+            compare(spans[0].color.toString(), "#4d7ed6a0")
+            a.textSelectionAnchor = {id:0,position:0}; a.textSelectionFocus = {id:0,position:text.length}
+            wait(20); a.copyTextSelection(); compare(clipboard(), text)
+            a.terminal.liveLine = "prefix ERROR tail"
+            a.terminal.liveMonitorColor = "#7ed6a0"; a.terminal.liveMonitorWholeLine = false
+            a.terminal.liveMonitorRanges = [{start:7,length:5}]; wait(20)
+            verify(!item(a, "ssh-monitor-live-hit").visible)
+            const live = item(a, "ssh-live-match-highlights")
+            compare(live.ranges.length, 1)
+            verify(live.children.find(child => child.objectName === "ssh-match-span").width > 0)
+            a.terminal.monitorMatched({ruleId:id,ruleName:"匹配部分",color:"#7ed6a0",highlightWholeLine:false,
+                ranges:[{start:7,length:5}],text:a.terminal.liveLine,lineId:a.liveSelectionId,receivedLineId:a.liveSelectionId,time:"12:00:01"})
+            wait(20); verify(!a.autoScroll)
+            a.terminal.liveMonitorColor = ""; a.terminal.liveMonitorRanges = []; wait(20)
+            verify(!item(a, "ssh-monitor-live-hit").visible)
+            compare(live.ranges.length, 1)
         }
         function test_pauseRulesTakePrecedenceOverMarkOnlyRules() {
             make()

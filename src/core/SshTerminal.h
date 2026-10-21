@@ -23,7 +23,7 @@
 class TerminalLineModel : public QAbstractListModel {
   Q_OBJECT
 public:
-  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole, MonitorColorRole, MonitorRuleNameRole };
+  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole, MonitorColorRole, MonitorRuleNameRole, MonitorWholeLineRole, MonitorRangesRole };
 
   explicit TerminalLineModel(int maxLines, QObject *parent = nullptr);
 
@@ -34,6 +34,7 @@ public:
 
   void appendLines(const QStringList &lines);
   void appendRecords(std::vector<SshLogLine> lines);
+  void applyMonitorMark(const SshLogLine &source, int before = -1);
   void setMaxLines(int maxLines);
   void clear();
   QString lineAt(int index) const;
@@ -123,6 +124,8 @@ class SshTerminal : public QObject {
   Q_PROPERTY(bool persistSettings MEMBER m_persistSettings)
   Q_PROPERTY(QString liveLine READ liveLine NOTIFY liveLineChanged)
   Q_PROPERTY(QString liveMonitorColor READ liveMonitorColor NOTIFY liveLineChanged)
+  Q_PROPERTY(bool liveMonitorWholeLine READ liveMonitorWholeLine NOTIFY liveLineChanged)
+  Q_PROPERTY(QVariantList liveMonitorRanges READ liveMonitorRanges NOTIFY liveLineChanged)
   Q_PROPERTY(int cursorColumn READ cursorColumn NOTIFY liveLineChanged)
   Q_PROPERTY(int cursorPosition READ cursorPosition NOTIFY liveLineChanged)
   Q_PROPERTY(int cursorPadding READ cursorPadding NOTIFY liveLineChanged)
@@ -200,6 +203,8 @@ public:
   void setReceptionPaused(bool paused);
   QString liveLine() const { return m_committedPartial; }
   QString liveMonitorColor() const { return m_committedMonitorColor; }
+  bool liveMonitorWholeLine() const { return m_committedMonitorWholeLine; }
+  QVariantList liveMonitorRanges() const { return m_committedMonitorRanges; }
   int cursorColumn() const { return m_cursorColumn; }
   int cursorPosition() const { return m_cursorPosition; }
   int cursorPadding() const { return m_cursorPadding; }
@@ -345,6 +350,8 @@ private:
   QTimer *m_flushTimer;
   QString m_committedPartial;
   QString m_committedMonitorColor;
+  bool m_committedMonitorWholeLine = true;
+  QVariantList m_committedMonitorRanges;
   int m_cursorColumn = 0;
   int m_cursorPosition = 0, m_cursorPadding = 0;
   QElapsedTimer m_lastInput;

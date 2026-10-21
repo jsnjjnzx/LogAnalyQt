@@ -57,6 +57,7 @@ public:
           || rule.value("name").metaType().id() != QMetaType::QString || rule.value("pattern").metaType().id() != QMetaType::QString
           || rule.value("ignoreCase").metaType().id() != QMetaType::Bool
           || (rule.contains("pauseOnMatch") && rule.value("pauseOnMatch").metaType().id() != QMetaType::Bool)
+          || (rule.contains("highlightWholeLine") && rule.value("highlightWholeLine").metaType().id() != QMetaType::Bool)
           || rule.value("name").toString().trimmed().isEmpty() || rule.value("name").toString().size() > 100
           || (rule.contains("color") && !QRegularExpression(QStringLiteral("^#[0-9a-fA-F]{6}$")).match(rule.value("color").toString()).hasMatch())
           || !expression(rule.value("pattern").toString(), rule.value("ignoreCase").toBool()).isValid()) return false;
@@ -70,7 +71,8 @@ public:
     for (const auto &entry : rules) {
       const auto rule = entry.toMap();
       m_rules.push_back({rule.value("id").toInt(), rule.value("name").toString(), rule.value("color", QStringLiteral("#e8b76a")).toString(),
-          expression(rule.value("pattern").toString(), rule.value("ignoreCase").toBool()), rule.value("pauseOnMatch", true).toBool()});
+          expression(rule.value("pattern").toString(), rule.value("ignoreCase").toBool()), rule.value("pauseOnMatch", true).toBool(),
+          rule.value("highlightWholeLine", true).toBool()});
     }
     m_revision = revision; m_logicalId = logicalId; m_baseline = partial.isEmpty() ? -1 : partial.size();
     m_segmentOffset = segmentOffset; m_prefix.clear(); m_hit = {}; m_latched = m_rules.empty();
@@ -86,20 +88,42 @@ public:
         fail(QStringLiteral("当前日志行超过检测缓存上限，匹配已停止")); return;
       }
       if (!line.continues) {
-        mark(line, match(m_prefix));
+        mark(line, match(m_prefix), m_prefix, m_prefix.size() - line.text.size());
         if (m_latched) return;
       }
     }
     advanceLine(partial.logicalId);
-    if (!partial.text.isEmpty()) mark(partial, match(m_prefix + partial.text));
+    if (!partial.text.isEmpty()) {
+      const auto text = m_prefix + partial.text;
+      mark(partial, match(text), text, m_prefix.size());
+    }
   }
   const SshMonitorHit &hit() const { return m_hit; }
   SshMonitorHit takeHit() { return std::exchange(m_hit, {}); }
 
 private:
-  struct Rule { int id; QString name; QString color; QRegularExpression re; bool pause; };
-  static void mark(SshLogLine &line, const Rule *rule) {
-    if (rule) { line.monitorColor = rule->color; line.monitorRuleName = rule->name; }
+  struct Rule { int id; QString name; QString color; QRegularExpression re; bool pause; bool wholeLine; };
+  void mark(SshLogLine &line, const Rule *rule, const QString &text, qsizetype offset) {
+    if (!rule) return;
+    line.monitorColor = rule->color; line.monitorRuleName = rule->name;
+    line.monitorWholeLine = rule->wholeLine;
+    line.monitorOffset = m_segmentOffset + offset;
+    line.monitorRanges.clear();
+    if (!rule->wholeLine) {
+      auto iterator = rule->re.globalMatch(text);
+      while (iterator.hasNext()) {
+        const auto match = iterator.next();
+        if (match.capturedStart() < m_baseline || match.capturedEnd() <= m_baseline) continue;
+        const auto start = m_segmentOffset + match.capturedStart();
+        const auto length = match.capturedLength();
+        if (length > 0) {
+          if (!line.monitorRanges.isEmpty() && line.monitorRanges.last().first + line.monitorRanges.last().second == start)
+            line.monitorRanges.last().second += int(length);
+          else line.monitorRanges.append({int(start), int(length)});
+        }
+      }
+    }
+    if (!m_hit.data.isEmpty()) m_hit.data["ranges"] = line.matchRanges();
   }
   void advanceLine(quint64 logicalId) {
     if (logicalId == m_logicalId) return;
@@ -128,6 +152,7 @@ private:
     const auto start = qMax(qsizetype(0), selectedMatch.capturedStart() - 1024);
     m_hit = {m_revision, m_logicalId, m_segmentOffset + selectedMatch.capturedStart(),
         {{"ruleId", selected->id}, {"ruleName", selected->name}, {"color", selected->color}, {"pauseOnMatch", selected->pause},
+         {"highlightWholeLine", selected->wholeLine},
          {"text", text.mid(start, 4096)}, {"matchStart", selectedMatch.capturedStart() - start}, {"matchLength", selectedMatch.capturedLength()},
          {"truncated", start > 0 || text.size() > start + 4096}}};
     m_latched = selected->pause;

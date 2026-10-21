@@ -258,6 +258,27 @@ GlassPage {
     }
     readonly property real charWidth: charMeasurer.contentWidth / charMeasurer.text.length
 
+    component MatchHighlights: Item {
+        property string sourceText
+        property var ranges: []
+        property color markColor: "transparent"
+        clip: true
+        Repeater {
+            model: parent.ranges
+            Rectangle {
+                id: highlight
+                objectName: "ssh-match-span"
+                required property var modelData
+                x: prefixMetrics.advanceWidth
+                width: endMetrics.advanceWidth - x
+                height: parent.height
+                color: Qt.rgba(parent.markColor.r, parent.markColor.g, parent.markColor.b, 0.3)
+                TextMetrics { id: prefixMetrics; font: charMeasurer.font; text: highlight.parent.sourceText.slice(0, highlight.modelData.start) }
+                TextMetrics { id: endMetrics; font: charMeasurer.font; text: highlight.parent.sourceText.slice(0, highlight.modelData.start + highlight.modelData.length) }
+            }
+        }
+    }
+
     function beginWindowMove() {
         relocatingWindow = true;
         captureLogViewport();
@@ -2004,18 +2025,28 @@ GlassPage {
                             property real stableId: model && model.lineId !== undefined ? model.lineId : -1
                             readonly property string displayText: model && model.lineText !== undefined ? model.lineText : ""
                             readonly property color ruleColor: model && model.monitorColor ? model.monitorColor : "transparent"
+                            readonly property var pausedHit: liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === stableId ? liveLogDialog.monitorHit : null
+                            readonly property bool wholeLine: pausedHit ? pausedHit.highlightWholeLine !== false : !model || model.monitorWholeLine !== false
                             property int rowIndex: index
                             onStableIdChanged: applyHexSelection()
                             onRowIndexChanged: applyHexSelection()
                             width: logListView.width
                             height: Math.max(charMeasurer.implicitHeight, lineText.implicitHeight, selectionLoader.item ? selectionLoader.item.implicitHeight : 0) + 4
-                            color: liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === stableId
+                            color: wholeLine && pausedHit
                                 ? Qt.rgba(monitorHitColor.r, monitorHitColor.g, monitorHitColor.b, 0.3)
-                                : ruleColor.a > 0 ? Qt.rgba(ruleColor.r, ruleColor.g, ruleColor.b, 0.25)
+                                : wholeLine && ruleColor.a > 0 ? Qt.rgba(ruleColor.r, ruleColor.g, ruleColor.b, 0.25)
                                 : (searchKeyword !== "" && displayText.toLowerCase().indexOf(searchKeyword.toLowerCase()) >= 0) ? terminalMatchBg : "transparent"
                             Rectangle {
                                 width: 3; height: parent.height; color: lineItem.ruleColor.a > 0 ? lineItem.ruleColor : monitorHitColor
                                 visible: lineItem.ruleColor.a > 0 || liveLogDialog.monitorHit !== null && liveLogDialog.monitorHit.lineId === lineItem.stableId
+                            }
+
+                            MatchHighlights {
+                                objectName: "ssh-log-match-highlights"
+                                anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 6
+                                sourceText: lineItem.displayText
+                                ranges: lineItem.wholeLine ? [] : lineItem.ruleColor.a > 0 ? model.monitorRanges || [] : lineItem.pausedHit ? lineItem.pausedHit.ranges || [] : []
+                                markColor: lineItem.pausedHit ? monitorHitColor : lineItem.ruleColor
                             }
 
                             Text {
@@ -2088,13 +2119,22 @@ GlassPage {
                             property real cursorX: liveCursorMetrics.advanceWidth + sshTerminal.cursorPadding * liveLogDialog.charWidth
                             property real offsetX: Math.max(0, cursorX - width + 24)
                             property real caretX: 10 + cursorX - offsetX
+                            readonly property var pausedHit: liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === liveSelectionId ? liveLogDialog.monitorHit : null
+                            readonly property bool wholeLine: pausedHit ? pausedHit.highlightWholeLine !== false : sshTerminal.liveMonitorWholeLine
+                            readonly property color markColor: sshTerminal.liveMonitorColor || (pausedHit ? monitorHitColor : "transparent")
                             Rectangle {
                                 objectName: "ssh-monitor-live-hit"
                                 anchors.fill: parent
-                                readonly property color markColor: sshTerminal.liveMonitorColor || (liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === liveSelectionId ? monitorHitColor : "transparent")
-                                visible: markColor.a > 0
-                                color: Qt.rgba(markColor.r, markColor.g, markColor.b, 0.3)
-                                Rectangle { width: 3; height: parent.height; color: parent.markColor }
+                                visible: parent.wholeLine && parent.markColor.a > 0
+                                color: Qt.rgba(parent.markColor.r, parent.markColor.g, parent.markColor.b, 0.3)
+                            }
+                            Rectangle { width: 3; height: parent.height; color: parent.markColor; visible: parent.markColor.a > 0 }
+                            MatchHighlights {
+                                objectName: "ssh-live-match-highlights"
+                                x: 10 - parent.offsetX; width: parent.width; height: parent.height
+                                sourceText: sshTerminal.liveLine
+                                ranges: parent.wholeLine ? [] : parent.pausedHit ? parent.pausedHit.ranges || [] : sshTerminal.liveMonitorRanges
+                                markColor: parent.markColor
                             }
                             TextMetrics {
                                 id: liveCursorMetrics
