@@ -7,6 +7,7 @@ Rectangle {
     id: bar
     property var targetWindow
     property string title: ""
+    property int titlePixelSize: 21
     property color titleBarColor: "#263344"
     property color titleTextColor: "#e8eef8"
     property color buttonHoverColor: "#40536d"
@@ -25,7 +26,7 @@ Rectangle {
         onPressed: if (bar.targetWindow) bar.targetWindow.startSystemMove()
         onDoubleClicked: if (bar.targetWindow) { if (bar.targetWindow.visibility === Window.Maximized) bar.targetWindow.showNormal(); else bar.targetWindow.showMaximized(); }
     }
-    Label { anchors.left: parent.left; anchors.leftMargin: 22; anchors.verticalCenter: parent.verticalCenter; width: parent.width - buttons.width - 55; elide: Text.ElideRight; text: bar.title; color: bar.titleTextColor; font.pixelSize: 21; font.weight: Font.DemiBold }
+    Label { anchors.left: parent.left; anchors.leftMargin: 22; anchors.verticalCenter: parent.verticalCenter; width: parent.width - buttons.width - 55; elide: Text.ElideRight; text: bar.title; color: bar.titleTextColor; font.pixelSize: bar.titlePixelSize; font.weight: Font.DemiBold }
     Row {
         id: buttons; anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter; spacing: 2
         Repeater {

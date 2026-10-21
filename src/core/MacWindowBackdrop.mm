@@ -15,6 +15,8 @@ MacWindowBackdrop::MacWindowBackdrop(QQuickWindow *window, QObject *theme)
   if (!window || !theme || QGuiApplication::platformName() != "cocoa") return;
   NSView *qtView = reinterpret_cast<NSView *>(window->winId());
   if (!qtView.window || !qtView.superview) return;
+  if (window->flags().testFlag(Qt::ExpandedClientAreaHint))
+    qtView.window.titleVisibility = NSWindowTitleHidden;
   auto *effect = [[LogAnalyBackdropView alloc] initWithFrame:qtView.frame];
   effect.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   effect.material = NSVisualEffectMaterialSidebar;
@@ -24,6 +26,7 @@ MacWindowBackdrop::MacWindowBackdrop(QQuickWindow *window, QObject *theme)
   [qtView.superview addSubview:effect positioned:NSWindowBelow relativeTo:qtView];
   qtView.window.opaque = NO;
   qtView.window.backgroundColor = NSColor.clearColor;
+  qtView.window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
   m_effect = effect;
   theme->setProperty("nativeBackdropAvailable", true);
   connect(theme, SIGNAL(reducedTransparencyChanged()), this, SLOT(refresh()));
@@ -59,7 +62,8 @@ void MacWindowBackdrop::refresh() {
   effect.hidden = systemReduced || m_theme->property("reducedTransparency").toBool();
   effect.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
   const auto visibility = m_window->visibility();
-  if (visibility == QWindow::Maximized || visibility == QWindow::FullScreen) {
+  if (!m_window->flags().testFlag(Qt::FramelessWindowHint) ||
+      visibility == QWindow::Maximized || visibility == QWindow::FullScreen) {
     effect.maskImage = nil;
   } else if (!effect.maskImage) {
     // AppKit's mask preserves behind-window sampling while clipping the corners.

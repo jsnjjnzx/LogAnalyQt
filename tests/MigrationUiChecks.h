@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 #include <QMimeData>
 #include <QImage>
+#include <QIcon>
 #include <QKeyEvent>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -70,6 +71,12 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(QGuiApplication::applicationDisplayName() == QString::fromUtf8("通联工坊"), "application display name is incorrect");
     require(QCoreApplication::applicationName() == "LogAnalyQt", "renaming the display must preserve the storage identity");
     require(window->title().startsWith(QString::fromUtf8("通联工坊")), "main window title is incorrect");
+    const QIcon appIcon(QStringLiteral(":/qt/qml/LogAnalyQt/assets/logo.ico"));
+    for (const int size : {16, 32, 48, 256})
+      require(!appIcon.pixmap(size, size).isNull(), "embedded application icon cannot be decoded");
+#ifdef Q_OS_WIN
+    require(window->icon().pixmap(32, 32).toImage() == appIcon.pixmap(32, 32).toImage(), "Windows taskbar icon does not match logo.ico");
+#endif
     require(!QFile::exists(":/qt/qml/LogAnalyQt/qml/Main.qml"), "legacy UI is still embedded in the app");
     for (auto *model : QList<QAbstractItemModel *>{new ParseResultModel, new GlobalPreviewModel}) {
       bool reset = false;
@@ -126,9 +133,28 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     settle();
     const QImage windowImage = window->grabWindow();
     require(!windowImage.isNull(), "window frame capture failed");
-    for (const QPoint corner : {QPoint(0, 0), QPoint(windowImage.width() - 1, 0),
+    if (window->flags().testFlag(Qt::FramelessWindowHint))
+      for (const QPoint corner : {QPoint(0, 0), QPoint(windowImage.width() - 1, 0),
                                 QPoint(0, windowImage.height() - 1), QPoint(windowImage.width() - 1, windowImage.height() - 1)})
-      require(windowImage.pixelColor(corner).alpha() < 32, "window corner is not transparent");
+        require(windowImage.pixelColor(corner).alpha() < 32, "window corner is not transparent");
+    auto *titleBar = uiItem("main-title-bar");
+    auto *pageDeck = uiItem("page-deck");
+    require(titleBar && pageDeck, "window chrome or page deck missing");
+#ifdef Q_OS_MACOS
+    require(!window->flags().testFlag(Qt::FramelessWindowHint) && !titleBar->isVisible() && titleBar->height() == 0,
+            "macOS must use native window controls without a custom title bar");
+    require(window->flags().testFlag(Qt::ExpandedClientAreaHint) && window->flags().testFlag(Qt::NoTitleBarBackgroundHint),
+            "macOS content must extend under the native title bar");
+    require(window->property("topPadding").toReal() == 0 && pageDeck->mapToScene(QPointF()).y() == 18,
+            "macOS content still reserves a full-width title bar");
+    require(uiItem("nav-section-0") && !uiItem("nav-section-0")->isVisible(),
+            "sidebar heading overlaps native window controls");
+    require(uiItem("nav-window-drag") && uiItem("nav-window-drag")->height() == 46,
+            "sidebar must retain a drag area around native controls");
+#else
+    require(titleBar->isVisible() && titleBar->height() == 36 && titleBar->width() == window->width(),
+            "custom window title bar must be compact and span the whole window");
+#endif
     auto *theme = window->property("uiTheme").value<QObject *>();
     require(theme, "window theme missing");
     require(theme->metaObject()->indexOfProperty("isDark") == -1 &&
@@ -515,8 +541,10 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(!item->property("text").toString().contains("LogAnalyQt"), "visible UI still contains the old brand");
       for (auto *child : item->childItems()) checkBrand(child);
     };
-    for (int page = 0; page < 15; ++page) {
+    for (int page = 0; page < 16; ++page) {
       navigate(page);
+      require(qAbs(pageDeck->y() - titleBar->height() - (page == 15 ? 12 : 18)) < 1,
+              "page content still reserves space for the removed page heading");
       checkBrand(window->contentItem());
       if (page == 10) {
         require(uiItem("help-app-name") && uiItem("help-app-name")->property("text").toString() == QString::fromUtf8("通联工坊"), "help app name is incorrect");

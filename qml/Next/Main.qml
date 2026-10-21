@@ -23,7 +23,6 @@ ApplicationWindow {
         popupWindow.show();
         popupPane.autoFitCols();
     }
-    readonly property var pageTitles: ["日志解析", "手动解析", "差异对比", "多窗口解析", "智能组帧", "实时监控", "日志合并", "预置报文", "协议同步", "系统设置", "帮助与更新", "功能说明", "升级日志", "检查更新", "AI 助手", "MQTT 调试"]
     function navigate(page) {
         currentPage = page;
         if (page < 3) {
@@ -111,8 +110,12 @@ ApplicationWindow {
     font.pixelSize: 14
     title: "通联工坊 v" + backend.appVersion
     color: "transparent"
-    flags: Qt.Window | Qt.FramelessWindowHint
-    readonly property real windowCornerRadius: visibility === Window.Maximized || visibility === Window.FullScreen ? 0 : 18
+    readonly property bool nativeTitleBar: Qt.platform.os === "osx"
+    flags: nativeTitleBar ? Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint
+                         : Qt.Window | Qt.FramelessWindowHint
+    // Only the sidebar needs space for native controls; fullscreen keeps the system safe area.
+    topPadding: nativeTitleBar && visibility !== Window.FullScreen ? 0 : SafeArea.margins.top
+    readonly property real windowCornerRadius: nativeTitleBar || visibility === Window.Maximized || visibility === Window.FullScreen ? 0 : 18
     background: Rectangle { color: theme.nativeGlass ? "transparent" : theme.background; radius: mainWindow.windowCornerRadius }
     contentItem.layer.enabled: windowCornerRadius > 0
     contentItem.layer.effect: MultiEffect {
@@ -164,9 +167,6 @@ ApplicationWindow {
         readonly property string contentCopy: String.fromCodePoint(0xF018F)
         readonly property string contentPaste: String.fromCodePoint(0xF0192)
     }
-
-    // 标题栏高度常量
-    readonly property int titleBarHeight: 42
 
     // 设置窗口调色板，使标题栏跟随主题颜色
     palette.window: theme.background
@@ -1427,6 +1427,7 @@ ApplicationWindow {
     GlassSurface { anchors.fill: parent; theme: mainWindow.uiTheme }
     Rectangle {
         anchors.fill: parent; z: 1000
+        visible: !mainWindow.nativeTitleBar
         radius: mainWindow.windowCornerRadius; color: "transparent"
         border.color: theme.groupBorder; antialiasing: true
     }
@@ -1434,20 +1435,25 @@ ApplicationWindow {
         id: navigation
         targetWindow: mainWindow
         width: mainWindow.currentPage === 15 ? 190 : mainWindow.width < 1340 ? 226 : 244
-        anchors.top: parent.top; anchors.bottom: parent.bottom
+        anchors.top: customTitleBar.bottom; anchors.bottom: parent.bottom
         theme: mainWindow.uiTheme; currentPage: mainWindow.currentPage; version: mainWindow.appVersion
         onNavigate: page => mainWindow.navigate(page)
     }
     Next.TitleBar {
         id: customTitleBar
-        anchors.top: parent.top; anchors.left: navigation.right; anchors.right: parent.right
+        objectName: "main-title-bar"
+        anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+        height: mainWindow.nativeTitleBar ? 0 : 36
+        visible: !mainWindow.nativeTitleBar
+        titlePixelSize: 14
         targetWindow: mainWindow
-        title: mainWindow.pageTitles[mainWindow.currentPage]
+        title: mainWindow.title
         titleBarColor: theme.sidebar; titleTextColor: theme.text
         buttonHoverColor: theme.buttonHover
     }
     Item {
         id: pageDeck
+        objectName: "page-deck"
         anchors.top: customTitleBar.bottom; anchors.left: navigation.right
         anchors.right: parent.right; anchors.bottom: parent.bottom
         anchors.margins: mainWindow.currentPage === 15 ? 12 : 18
@@ -1459,29 +1465,6 @@ ApplicationWindow {
         parent: pageDeck; anchors.fill: parent
         visible: mainWindow.currentPage === 15
         theme: mainWindow.uiTheme
-    }
-    Rectangle {
-        parent: customTitleBar
-        visible: mainWindow.currentPage === 14
-        x: 140; anchors.verticalCenter: parent.verticalCenter
-        width: 76; height: 28; radius: 6
-        color: theme.tableHighlight; border.color: theme.accent
-        Label { anchors.centerIn: parent; text: "DL/T 698"; color: theme.accent; font.pixelSize: 12 }
-    }
-    Label {
-        parent: customTitleBar
-        visible: mainWindow.currentPage === 14
-        anchors.right: parent.right; anchors.rightMargin: 166
-        anchors.verticalCenter: parent.verticalCenter
-        text: {
-            switch (backend.aiFraming.credentialStatus) {
-            case "checking": return "DeepSeek · 核验凭据中"
-            case "waiting": return "DeepSeek · 等待系统凭据"
-            case "failed": return "DeepSeek · 凭据状态未知"
-            default: return backend.aiFraming.hasApiKey ? "DeepSeek · 已配置" : "DeepSeek · 未配置"
-            }
-        }
-        color: theme.subText; font.pixelSize: 14
     }
     Next.AiAssistantPage {
         objectName: "page-14"
@@ -1499,9 +1482,9 @@ ApplicationWindow {
             performParse(hexStr, 1)
         }
     }
-    MouseArea { width: 5; anchors.left: parent.left; height: parent.height; cursorShape: Qt.SizeHorCursor; onPressed: mainWindow.startSystemResize(Qt.LeftEdge) }
-    MouseArea { width: 5; anchors.right: parent.right; height: parent.height; cursorShape: Qt.SizeHorCursor; onPressed: mainWindow.startSystemResize(Qt.RightEdge) }
-    MouseArea { height: 5; anchors.bottom: parent.bottom; width: parent.width; cursorShape: Qt.SizeVerCursor; onPressed: mainWindow.startSystemResize(Qt.BottomEdge) }
+    MouseArea { enabled: !mainWindow.nativeTitleBar; width: 5; anchors.left: parent.left; height: parent.height; cursorShape: Qt.SizeHorCursor; onPressed: mainWindow.startSystemResize(Qt.LeftEdge) }
+    MouseArea { enabled: !mainWindow.nativeTitleBar; width: 5; anchors.right: parent.right; height: parent.height; cursorShape: Qt.SizeHorCursor; onPressed: mainWindow.startSystemResize(Qt.RightEdge) }
+    MouseArea { enabled: !mainWindow.nativeTitleBar; height: 5; anchors.bottom: parent.bottom; width: parent.width; cursorShape: Qt.SizeVerCursor; onPressed: mainWindow.startSystemResize(Qt.BottomEdge) }
 
     ColumnLayout {
         id: mainContentLayout

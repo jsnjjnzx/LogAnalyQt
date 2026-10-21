@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QMutex>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -103,6 +104,9 @@ int main(int argc, char *argv[]) {
   // Keep the storage and credential identity stable across the display-name change.
   QCoreApplication::setApplicationName(QStringLiteral("LogAnalyQt"));
   QGuiApplication::setApplicationDisplayName(QStringLiteral("通联工坊"));
+#ifdef Q_OS_WIN
+  QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/LogAnalyQt/assets/logo.ico")));
+#endif
 #ifdef LOGANALYQT_UI_TESTING
   const bool updateTest = app.arguments().contains(QStringLiteral("--update-test")) ||
                           app.arguments().contains(QStringLiteral("--update-probe"));

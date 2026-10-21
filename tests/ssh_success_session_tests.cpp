@@ -54,9 +54,9 @@ int authCount(const QString &path) {
   QFile file(path); check(file.open(QIODevice::ReadOnly), "read isolated server counters");
   return QJsonDocument::fromJson(file.readAll()).object()["authAttempts"].toInt();
 }
-void configure(SshTerminal &terminal, int port) {
+void configure(SshTerminal &terminal, int port, const QString &host = "127.0.0.1") {
   terminal.setUseSystemCredentials(true);
-  terminal.setHost("127.0.0.1"); terminal.setPort(port); terminal.setUsername("loganalyqt-test");
+  terminal.setHost(host); terminal.setPort(port); terminal.setUsername("loganalyqt-test");
   terminal.setEncoding("UTF-8"); terminal.setAutoReconnectEnabled(false);
   check(waitFor([&]{return !terminal.credentialBusy();}), "isolated credential refresh completes");
   check(terminal.credentialError().isEmpty(), "isolated credential state: " + terminal.credentialError());
@@ -158,6 +158,19 @@ int main(int argc,char **argv) {
       stalled.connectToHost(); settle(50); QElapsedTimer cancelTime;cancelTime.start();stalled.disconnectFromHost();
       check(cancelTime.elapsed()<100, "cancel returns to main loop without waiting for remote SSH banner");settle(400);
       check(!stalled.isConnected() && !stalled.hostKeyPending(), "cancelled stalled handshake cannot later connect");
+    }
+    {
+      QTemporaryDir hostRoot; SshTerminal named(credentials, hostRoot.path()); configure(named, port, "localhost");
+      QObject::connect(&named, &SshTerminal::hostKeyConfirmationRequested,
+        [&](const QString &host, int targetPort, const QString &, const QString &value, const QString &id) {
+          check(host == "localhost" && targetPort == port && value == fingerprint, "hostname lookup preserves the requested trust identity");
+          named.confirmHostKey(id, value, true);
+        });
+      named.connectToHost();
+      check(waitFor([&] { return named.isConnected(); }), "hostnames still resolve and establish an authenticated session: " + named.statusMessage());
+      echo(named, "HOSTNAME_RESOLVED");
+      named.disconnectFromHost();
+      check(authCount(stats) == 4, "IP and hostname paths authenticate only their intended sessions");
     }
     QFile config(directory.filePath("settings.json"));
     if(config.open(QIODevice::ReadOnly))check(!config.readAll().contains("synthetic-loopback-password"), "synthetic password not written to portable INI");

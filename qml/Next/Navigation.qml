@@ -9,6 +9,7 @@ Rectangle {
     property int currentPage: 0
     property string version: ""
     property var targetWindow: null
+    readonly property bool nativeWindowControls: !!(targetWindow && targetWindow.nativeTitleBar)
     signal navigate(int page)
     color: theme.sidebar
     readonly property var items: [
@@ -31,7 +32,9 @@ Rectangle {
     FontLoader { id: mdi; source: "qrc:/qt/qml/LogAnalyQt/assets/materialdesignicons-webfont.ttf" }
     Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: nav.theme.groupBorder }
     MouseArea {
-        width: parent.width; height: 18
+        objectName: "nav-window-drag"
+        z: 1
+        width: parent.width; height: nav.nativeWindowControls ? 46 : 18
         onPressed: if (nav.targetWindow) nav.targetWindow.startSystemMove()
     }
     Flickable {
@@ -50,7 +53,7 @@ Rectangle {
                     required property int index
                     width: menu.width
                     height: modelData.section ? (index === 0 ? 24 : (nav.height < 800 ? 36 : 43)) : (nav.height < 800 ? 38 : 43)
-                    Text { visible: !!modelData.section; x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; text: modelData.section || ""; font.pixelSize: 12; font.weight: Font.DemiBold; color: nav.theme.subText }
+                    Text { objectName: "nav-section-" + index; visible: !!modelData.section && !(index === 0 && nav.nativeWindowControls); x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; text: modelData.section || ""; font.pixelSize: 12; font.weight: Font.DemiBold; color: nav.theme.subText }
                     Next.GlassButton {
                         objectName: modelData.section ? "" : "nav-" + modelData.page
                         anchors.fill: parent; visible: !modelData.section

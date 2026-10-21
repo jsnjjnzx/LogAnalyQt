@@ -136,6 +136,13 @@ public slots:
     m_timer->setSingleShot(false);
     m_timer->setInterval(10);
     m_timer->start();
+    QHostAddress address;
+    if (address.setAddress(host)) {
+      // lookupHost performs reverse DNS for IP literals; connecting does not need their host name.
+      m_addresses = {address};
+      tryNextAddress();
+      return;
+    }
     m_lookupId = QHostInfo::lookupHost(host, this,
         [this, generation](const QHostInfo &info) {
           if (generation != m_generation || m_phase != Resolving) return;

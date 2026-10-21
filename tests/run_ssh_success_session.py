@@ -25,10 +25,10 @@ def main():
                 return completed.returncode
             with server.lock:
                 stats = json.loads(json.dumps(server.stats))
-            expected = {"LOOPBACK_FIRST", "中文回显", "LOOPBACK_SECOND", "AUTO_RECONNECTED"}
+            expected = {"LOOPBACK_FIRST", "中文回显", "LOOPBACK_SECOND", "AUTO_RECONNECTED", "HOSTNAME_RESOLVED"}
             assert expected <= set(stats["echoes"]), stats
-            assert stats["authAccepted"] == 3 and stats["authAttempts"] == 3, stats
-            assert stats["pty"] >= 3 and stats["shell"] >= 3 and stats["drops"] == 2, stats
+            assert stats["authAccepted"] == 4 and stats["authAttempts"] == 4, stats
+            assert stats["pty"] >= 4 and stats["shell"] >= 4 and stats["drops"] == 2, stats
             print("PASS: independent Paramiko", paramiko.__version__, "server observed", json.dumps(stats, ensure_ascii=False))
             print("Scope: loopback/synthetic credentials/temporary pin file only; no native Keychain or real device acceptance")
             return 0
