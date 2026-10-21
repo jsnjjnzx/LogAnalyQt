@@ -265,6 +265,23 @@ Item {
             page.autoScroll = true; page.applyLogViewport(); wait(30)
             verify(view.atYEnd)
         }
+        function test_sshCaretBlinksWithoutIntermediateOpacity() {
+            make(nextSsh)
+            page.terminal.connected = true
+            page.terminalInput.forceActiveFocus()
+            const caret = item("ssh-terminal-caret")
+            tryVerify(function() { return caret.visible })
+            let shown = false, hidden = false
+            for (let i = 0; i < 14; ++i) {
+                verify(caret.opacity === 0 || caret.opacity === 1, "caret must not animate intermediate opacity")
+                shown = shown || caret.opacity === 1
+                hidden = hidden || caret.opacity === 0
+                wait(100)
+            }
+            verify(shown && hidden, "caret still blinks")
+            page.terminal.connected = false
+            tryVerify(function() { return !caret.visible })
+        }
         function test_sshBlankLineKeepsItsHeight() {
             make(nextSsh)
             const ssh = item("ssh-terminal-backend")

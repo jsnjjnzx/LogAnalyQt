@@ -33,6 +33,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -266,6 +267,11 @@ private:
       setsockopt(m_sock, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
 #endif
 #endif
+      const int noDelay = 1;
+      if (setsockopt(m_sock, IPPROTO_TCP, TCP_NODELAY,
+                     reinterpret_cast<const char *>(&noDelay), sizeof(noDelay)) != 0) {
+        qWarning() << "SSH TCP_NODELAY unavailable; retaining default TCP buffering";
+      }
       const int result = ::connect(m_sock, reinterpret_cast<sockaddr *>(&storage), length);
 #ifdef Q_OS_WIN
       const bool pending = WSAGetLastError() == WSAEWOULDBLOCK;
@@ -860,7 +866,7 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
   connect(m_worker, &SshWorker::dataReady, this, [this](quint64 generation, quint64 revision) {
     if (generation != m_generation || revision != m_buffer->contentRevision.load()) return;
     if (m_buffer->receptionPauseRequested.load()) return;
-    const int delay = m_presentationActive ? (m_lastInput.isValid() && m_lastInput.elapsed() < 1000 ? 16 : 180) : 500;
+    const int delay = m_presentationActive ? (m_lastInput.isValid() && m_lastInput.elapsed() < 1000 ? 16 : 33) : 500;
     if (!m_flushTimer->isActive() || m_flushTimer->remainingTime() > delay) m_flushTimer->start(delay);
   });
   connect(m_worker, &SshWorker::receptionStateApplied, this, [this](quint64 revision, bool paused) {
@@ -913,7 +919,7 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
   m_workerThread->start();
   refreshCredentials();
 
-  m_flushTimer->setInterval(180);
+  m_flushTimer->setInterval(33);
   m_flushTimer->setTimerType(Qt::PreciseTimer);
   m_flushTimer->setSingleShot(true);
   connect(m_flushTimer, &QTimer::timeout, this, &SshTerminal::flushPendingData);
@@ -1267,6 +1273,7 @@ void SshTerminal::disconnectFromHost() {
 
 void SshTerminal::sendCommand(const QString &cmd) {
   if (m_connected && !m_buffer->receptionPauseRequested.load()) {
+    prioritizeInput();
     // 先清空远端当前输入行，避免 Tab
     // 补全阶段残留内容（候选/前缀）与最终命令拼接 Ctrl+U: Unix shell
     // 行编辑“清空到行首”
@@ -1276,9 +1283,16 @@ void SshTerminal::sendCommand(const QString &cmd) {
 
 void SshTerminal::sendRawBytes(const QString &text) {
   if (m_connected && !m_buffer->receptionPauseRequested.load()) {
-    m_lastInput.start();
+    prioritizeInput();
     emit sigSendCommand(text, false, m_encoding);
   }
+}
+
+void SshTerminal::prioritizeInput() {
+  m_lastInput.start();
+  // A pending notification suppresses new dataReady signals, so advance its existing deadline here.
+  if (m_presentationActive && m_flushTimer->isActive() && m_flushTimer->remainingTime() > 16)
+    m_flushTimer->start(16);
 }
 
 void SshTerminal::sendTabCompletion(const QString &prefix) {

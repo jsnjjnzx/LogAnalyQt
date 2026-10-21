@@ -8,6 +8,7 @@
 #include <QSignalSpy>
 
 struct SshTerminalTestAccess {
+  static void inputSchedulingChecks();
   static void publish(SshTerminal &terminal, std::vector<SshLogLine> lines, const SshLogLine &partial, SshMonitorHit hit = {}) {
     {
       QMutexLocker lock(&terminal.m_buffer->mutex);
@@ -233,6 +234,50 @@ static void monitorChecks() {
         "mark-only row colors persist in history independently of the latest notification");
 }
 
+void SshTerminalTestAccess::inputSchedulingChecks() {
+  QTemporaryDir temporary;
+  SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
+  terminal.setUseSystemCredentials(false);
+  auto *timer = terminal.m_flushTimer;
+  check(timer->interval() == 33, "normal foreground batches use a 33 ms interval");
+  terminal.m_connected = true;
+  QSignalSpy sent(&terminal, &SshTerminal::sigSendCommand);
+  for (bool command : {false, true}) {
+    const QString echo = command ? "command echo" : "return echo";
+    {
+      QMutexLocker lock(&terminal.m_buffer->mutex);
+      terminal.m_buffer->partial = {echo, 1, false, true};
+      terminal.m_buffer->notificationPending = true;
+    }
+    timer->start(180);
+    QSignalSpy shown(&terminal, &SshTerminal::liveLineChanged);
+    if (command) terminal.sendCommand("echo test");
+    else terminal.sendRawBytes("\r");
+    check(timer->interval() == 16 && terminal.m_lastInput.isValid(), "raw Return and quick commands advance an already pending batch");
+    check(shown.wait(1000) && terminal.liveLine() == echo, "pending echo is committed without another worker notification");
+  }
+  check(sent.size() == 2 && sent[0][0].toString() == "\r" && !sent[0][1].toBool()
+        && sent[1][0].toString() == QString(QChar(0x15)) + "echo test" && sent[1][1].toBool(),
+        "input scheduling preserves raw Return and command clearing/newline semantics");
+  timer->start(1); terminal.sendRawBytes("x");
+  check(timer->interval() == 1, "input never postpones an earlier backlog deadline");
+  terminal.setPresentationActive(false);
+  terminal.sendCommand("background");
+  check(timer->interval() == 500, "background commands retain the low-frequency display budget");
+  terminal.setPresentationActive(true); timer->stop();
+  terminal.sendRawBytes("x");
+  check(!timer->isActive(), "idle input waits for actual data rather than manufacturing local echo");
+  timer->start(33);
+  const auto count = sent.size();
+  terminal.m_buffer->receptionPauseRequested.store(true);
+  terminal.sendRawBytes("\r"); terminal.sendCommand("blocked");
+  check(sent.size() == count && timer->interval() == 33, "stopped reception neither sends nor accelerates input");
+  terminal.m_buffer->receptionPauseRequested.store(false); terminal.m_connected = false;
+  terminal.sendRawBytes("\r"); terminal.sendCommand("blocked");
+  check(sent.size() == count && timer->interval() == 33, "disconnected input neither sends nor accelerates display");
+  timer->stop();
+}
+
 static void receptionPauseChecks() {
   QTemporaryDir temporary;
   SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
@@ -259,7 +304,7 @@ static void receptionPauseChecks() {
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks();
+    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); SshTerminalTestAccess::inputSchedulingChecks();
     QTextStream(stdout) << "PASS: " << checks << " SSH stream/model assertions; synthetic payloads stayed in RAM\n";
     return 0;
   } catch (const std::exception &error) {

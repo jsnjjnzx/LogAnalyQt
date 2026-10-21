@@ -555,7 +555,7 @@ GlassPage {
 
     function sendTerminalText(text) {
         if (!sshTerminal.connected || sshTerminal.receptionPaused || text === "") return;
-        if (!monitorHit) { autoScroll = true; logListView.positionViewAtEnd(); }
+        if (!monitorHit) { autoScroll = true; Qt.callLater(applyLogViewport); }
         sshTerminal.sendRawBytes(text);
     }
     function pasteTerminal() {
@@ -602,7 +602,7 @@ GlassPage {
         if (!monitorHit) autoScroll = true;
         sshTerminal.sendCommand(command);
         terminalCapture.forceActiveFocus();
-        if (autoScroll) logListView.positionViewAtEnd();
+        if (autoScroll) Qt.callLater(applyLogViewport);
     }
 
     function addCustomCommand(name, command) {
@@ -789,7 +789,7 @@ GlassPage {
             statusHint.text = "已命中「" + hit.ruleName + "」，暂停跟随；后台继续接收。点击状态栏可查看命中原文。";
             Qt.callLater(liveLogDialog.positionMonitorHit);
         }
-        onLiveLineChanged: if (liveLogDialog.autoScroll) Qt.callLater(function() { if (liveLogDialog.autoScroll) logListView.positionViewAtEnd(); })
+        onLiveLineChanged: if (liveLogDialog.autoScroll) Qt.callLater(liveLogDialog.applyLogViewport)
         onLineCountChanged: {
             if (!sshTerminal) return;
             if (sshTerminal.currentLineCount === 0) viewAnchorId = -1;
@@ -2136,14 +2136,17 @@ GlassPage {
                                 color: terminalText
                             }
                             Rectangle {
+                                objectName: "ssh-terminal-caret"
                                 x: parent.caretX; width: 2; height: charMeasurer.implicitHeight
                                 color: terminalText
                                 visible: sshTerminal.connected && terminalCapture.activeFocus && liveLogDialog.visible
                                 SequentialAnimation on opacity {
                                     running: sshTerminal.connected && terminalCapture.activeFocus && liveLogDialog.visible
                                     loops: Animation.Infinite
-                                    NumberAnimation { to: 0; duration: 600 }
-                                    NumberAnimation { to: 1; duration: 600 }
+                                    PropertyAction { value: 1 }
+                                    PauseAnimation { duration: 600 }
+                                    PropertyAction { value: 0 }
+                                    PauseAnimation { duration: 600 }
                                 }
                             }
                         }

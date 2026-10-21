@@ -288,6 +288,7 @@ private:
   void identityChanged();
   void clearHostKeyRequest();
   void startConnection();
+  void prioritizeInput();
   void setStatusMessage(const QString &msg);
   void setConnected(bool connected);
   void setConnectionState(ConnectionState state);
