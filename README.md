@@ -284,6 +284,7 @@ macOS 更新包内必须只包含一个 `通联工坊.app`。应用会按当前�
 - macOS：`macos-15` arm64，Qt 6.11.1，生成 DMG、更新 ZIP 和各自的 SHA256。
 - 两个平台分别执行 Release 构建、自动测试、打包及产物检查；Windows 检查 PE 架构为 x64，macOS 检查包内程序和库包含 arm64 且不引用构建机上的外部库。
 - 打包后再执行隔离启动回归；Windows 会临时隐藏构建机的 Qt 安装目录，确认单文件 EXE 不依赖开发环境。
+- macOS 窗口恢复检查使用与更新器一致的 LaunchServices 启动路径，连续验证隐藏和最小化恢复，保留渲染、可见、焦点与应用退出结果断言。
 - Windows 静态 Qt 首次从 Qt 官方 GitHub 源码构建并缓存；缓存丢失时自动重建，首次运行较慢。
 - 构建包在 Actions 对应运行记录的 Artifacts 下载，保留 7 天。普通构建无需配置额外 Secrets。
 - macOS 构建包目前采用 ad-hoc 签名，未完成 Developer ID 签名与 Apple 公证，不视为正式分发验收。

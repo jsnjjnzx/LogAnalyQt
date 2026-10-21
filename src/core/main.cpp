@@ -24,6 +24,8 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <memory>
+#include <cstdio>
+#include <cstdlib>
 #ifdef Q_OS_MACOS
 #include "MacWindowBackdrop.h"
 #endif
@@ -32,6 +34,7 @@
 #include "../../tests/ParseWorkspaceChecks.h"
 #include "../../tests/MqttUiChecks.h"
 #include "../../tests/ssh-performance/SshPerformance.h"
+static int smokeExitCode = -1;
 #endif
 
 Q_IMPORT_QML_PLUGIN(NextUiPlugin)
@@ -113,6 +116,15 @@ int main(int argc, char *argv[]) {
                           app.arguments().contains(QStringLiteral("--update-probe"));
   const bool updateRestart = qEnvironmentVariableIsSet("LOGANALYQT_UPDATE_TEST_RESULT") && !updateTest;
   const bool uiSmokeMode = app.arguments().contains(QStringLiteral("--ui-smoke")) || updateRestart;
+  if (uiSmokeMode && qEnvironmentVariableIsSet("LOGANALYQT_TEST_EXIT_RESULT")) {
+    // LaunchServices does not forward the app's exit code; report only after normal C++ cleanup.
+    std::atexit([] {
+      if (auto *file = std::fopen(std::getenv("LOGANALYQT_TEST_EXIT_RESULT"), "w")) {
+        std::fprintf(file, "{\"exitCode\":%d}\n", smokeExitCode);
+        std::fclose(file);
+      }
+    });
+  }
 #ifdef Q_OS_MACOS
   std::unique_ptr<QTemporaryDir> isolatedHome;
   if (uiSmokeMode) {
@@ -259,7 +271,9 @@ Button { text: "关闭"; onClicked: Qt.quit() }
     const bool nativeMac = app.platformName() == QStringLiteral("cocoa");
     const auto state = [window, rendered, elapsed] {
       return QJsonObject{{"rendered", *rendered}, {"visible", window->isVisible()},
-          {"active", window->isActive()}, {"visibility", int(window->visibility())}, {"elapsedMs", elapsed->elapsed()}};
+          {"active", window->isActive()}, {"applicationState", int(QGuiApplication::applicationState())},
+          {"focusWindowMatches", QGuiApplication::focusWindow() == window},
+          {"visibility", int(window->visibility())}, {"elapsedMs", elapsed->elapsed()}};
     };
     const auto recordRestart = [window, rendered, ready, elapsed, delay, timeout, nativeMac] {
       if (*ready || elapsed->elapsed() < delay || elapsed->elapsed() >= timeout
@@ -370,5 +384,9 @@ Button { text: "关闭"; onClicked: Qt.quit() }
 #ifdef LOGANALYQT_UI_TESTING
   if (sshBenchmark) return runSshPerformance(app, sshBenchmarkArgs, &engine);
 #endif
-  return app.exec();
+  const int exitCode = app.exec();
+#ifdef LOGANALYQT_UI_TESTING
+  smokeExitCode = exitCode;
+#endif
+  return exitCode;
 }
