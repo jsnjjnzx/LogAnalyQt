@@ -189,39 +189,13 @@ void ProtocolSyncManager::connectToShare() {
   }
   saveCredentials();
   if (!m_lastError.isEmpty()) { emit connectionFinished(false, m_lastError); return; }
-  if (!m_dependencies.openShare(target.url)) {
-    error = QStringLiteral("无法请求 macOS 打开 SMB 连接");
-    setLastError(error); emit connectionFinished(false, error); return;
-  }
-  m_connecting = true; m_connectionProbeRunning = true; emit connectingChanged();
-  const auto cancelled = m_connectionCancelled = std::make_shared<std::atomic_bool>(false);
-  const auto mounts = m_dependencies.mounts;
-  struct ProbeResult { QString path; QString error; };
-  const auto result = std::make_shared<ProbeResult>();
-  auto *thread = QThread::create([target, mounts, cancelled, result] {
-    while (!cancelled->load()) {
-      SmbShare::Resolution resolution;
-      result->path = SmbShare::resolve(target, mounts(), &result->error, &resolution);
-      if (resolution != SmbShare::Resolution::Unavailable) break;
-      QThread::msleep(250);
-    }
-  });
-  connect(thread, &QThread::finished, this, [this, cancelled, result] {
-    m_connectionProbeRunning = false;
-    if (cancelled->load() || m_connectionCancelled != cancelled) return;
-    if (m_connectTimer) m_connectTimer->stop();
-    m_resolvedSharePath = result->path;
-    m_connecting = false; emit connectingChanged();
-    const bool success = !result->path.isEmpty();
-    if (!success) setLastError(result->error);
-    emit connectionFinished(success, success ? QStringLiteral("系统共享已挂载且目录可访问") : result->error);
-  });
-  connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+  m_connecting = true; emit connectingChanged();
+  m_connectionCancelled = std::make_shared<std::atomic_bool>(false);
   m_connectTimer = new QTimer(this);
   m_connectTimer->setSingleShot(true);
   connect(m_connectTimer, &QTimer::timeout, this, &ProtocolSyncManager::onConnectTimeout);
   m_connectTimer->start(m_dependencies.connectionTimeoutMs);
-  thread->start();
+  startConnectionProbe(target, true);
   return;
 #endif
 
@@ -263,6 +237,44 @@ void ProtocolSyncManager::connectToShare() {
   m_connectProcess->start("net", args);
   m_connectTimer->start(3000);
 }
+
+#ifdef Q_OS_MACOS
+void ProtocolSyncManager::startConnectionProbe(const SmbShare::Target &target, bool openIfUnavailable) {
+  const auto cancelled = m_connectionCancelled;
+  const auto mounts = m_dependencies.mounts;
+  struct ProbeResult { QString path; QString error; SmbShare::Resolution resolution = SmbShare::Resolution::Unavailable; };
+  const auto result = std::make_shared<ProbeResult>();
+  m_connectionProbeRunning = true;
+  auto *thread = QThread::create([target, mounts, cancelled, result, openIfUnavailable] {
+    while (!cancelled->load()) {
+      result->path = SmbShare::resolve(target, mounts(), &result->error, &result->resolution);
+      if (result->resolution != SmbShare::Resolution::Unavailable || openIfUnavailable) break;
+      QThread::msleep(250);
+    }
+  });
+  connect(thread, &QThread::finished, this, [this, target, openIfUnavailable, cancelled, result] {
+    m_connectionProbeRunning = false;
+    if (cancelled->load() || m_connectionCancelled != cancelled) return;
+    if (openIfUnavailable && result->resolution == SmbShare::Resolution::Unavailable) {
+      const bool requested = m_dependencies.openShare(target.url);
+      if (cancelled->load() || m_connectionCancelled != cancelled) return;
+      if (requested) {
+        startConnectionProbe(target, false);
+        return;
+      }
+      result->error = QStringLiteral("无法请求 macOS 打开 SMB 连接");
+    }
+    if (m_connectTimer) m_connectTimer->stop();
+    m_resolvedSharePath = result->path;
+    m_connecting = false; emit connectingChanged();
+    const bool success = !result->path.isEmpty();
+    if (!success) setLastError(result->error);
+    emit connectionFinished(success, success ? QStringLiteral("系统共享已挂载且目录可访问") : result->error);
+  });
+  connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+  thread->start();
+}
+#endif
 
 void ProtocolSyncManager::onConnectProcessFinished(
     int exitCode, QProcess::ExitStatus exitStatus) {
@@ -1185,7 +1197,10 @@ QVariantList ProtocolSyncManager::getXmlDiffNow(const QString &fileName, QString
       return false;
     }
     QTextStream input(&file);
-    while (!input.atEnd()) lines->append(input.readLine());
+    while (!input.atEnd()) {
+      if (m_operationCancelled && m_operationCancelled->load()) return false;
+      lines->append(input.readLine());
+    }
     if (file.error() != QFile::NoError || input.status() != QTextStream::Ok) {
       if (error) *error = side + QStringLiteral("协议文件读取失败：") + fileName;
       return false;
@@ -1273,56 +1288,86 @@ ProtocolSyncManager::buildLcsDiff(const QStringList &localLines,
   // 先构建统一 diff 列表，再转为左右配对
   QList<QPair<QString, QString>> diffEntries; // <type, text>
 
-  // Hirschberg LCS keeps exact alignment with linear workspace, including large XML files.
-  const auto lengths = [&](int lBegin, int lEnd, int rBegin, int rEnd, bool reverse) {
-    const int width = rEnd - rBegin;
-    QVector<int> scores(width + 1, 0);
-    for (int i = 0; i < lEnd - lBegin; ++i) {
-      int diagonal = 0;
-      const auto &line = midLocal[reverse ? lEnd - 1 - i : lBegin + i];
-      for (int j = 1; j <= width; ++j) {
-        const int previous = scores[j];
-        if (line == midRemote[reverse ? rEnd - j : rBegin + j - 1])
-          scores[j] = diagonal + 1;
-        else
-          scores[j] = qMax(scores[j], scores[j - 1]);
-        diagonal = previous;
-      }
-    }
-    return scores;
-  };
+  const auto cancelled = [&] { return m_operationCancelled && m_operationCancelled->load(); };
   std::function<void(int, int, int, int)> align;
   align = [&](int lBegin, int lEnd, int rBegin, int rEnd) {
-    if (lBegin == lEnd) {
-      for (int j = rBegin; j < rEnd; ++j)
-        diffEntries.append(qMakePair(QString("add"), midRemote[j]));
-    } else if (rBegin == rEnd) {
-      for (int i = lBegin; i < lEnd; ++i)
-        diffEntries.append(qMakePair(QString("del"), midLocal[i]));
-    } else if (lEnd - lBegin == 1) {
-      int match = midRemote.indexOf(midLocal[lBegin], rBegin);
-      if (match < 0 || match >= rEnd) {
-        diffEntries.append(qMakePair(QString("del"), midLocal[lBegin]));
-        match = -1;
-      }
-      for (int j = rBegin; j < rEnd; ++j)
-        diffEntries.append(qMakePair(QString(j == match ? "same" : "add"), midRemote[j]));
-    } else {
-      const int middle = lBegin + (lEnd - lBegin) / 2;
-      int split = 0;
-      {
-        const auto forward = lengths(lBegin, middle, rBegin, rEnd, false);
-        const auto backward = lengths(middle, lEnd, rBegin, rEnd, true);
-        const int width = rEnd - rBegin;
-        for (int j = 1; j <= width; ++j)
-          if (forward[j] + backward[width - j] > forward[split] + backward[width - split])
-            split = j;
-      }
-      align(lBegin, middle, rBegin, rBegin + split);
-      align(middle, lEnd, rBegin + split, rEnd);
+    if (cancelled()) return;
+    while (lBegin < lEnd && rBegin < rEnd && midLocal.at(lBegin) == midRemote.at(rBegin)) {
+      diffEntries.append({"same", midLocal.at(lBegin++)}); ++rBegin;
     }
+    int suffix = 0;
+    while (lBegin < lEnd && rBegin < rEnd && midLocal.at(lEnd - 1) == midRemote.at(rEnd - 1)) {
+      --lEnd; --rEnd; ++suffix;
+    }
+    if (lBegin == lEnd) {
+      for (int j = rBegin; j < rEnd; ++j) diffEntries.append({"add", midRemote.at(j)});
+    } else if (rBegin == rEnd) {
+      for (int i = lBegin; i < lEnd; ++i) diffEntries.append({"del", midLocal.at(i)});
+    } else if (lEnd - lBegin == 1) {
+      int match = midRemote.indexOf(midLocal.at(lBegin), rBegin);
+      if (match < 0 || match >= rEnd) {
+        diffEntries.append({"del", midLocal.at(lBegin)}); match = -1;
+      }
+      for (int j = rBegin; j < rEnd; ++j)
+        diffEntries.append({j == match ? "same" : "add", midRemote.at(j)});
+    } else {
+      // Bidirectional Myers finds an exact middle split with linear workspace.
+      const auto split = [&]() -> QPair<int, int> {
+        const int leftSize = lEnd - lBegin, rightSize = rEnd - rBegin;
+        const int maxDepth = (leftSize + rightSize + 1) / 2;
+        const int offset = maxDepth + 1;
+        QVector<int> forward(2 * maxDepth + 3, -1), backward(forward);
+        forward[offset + 1] = backward[offset + 1] = 0;
+        const int delta = leftSize - rightSize;
+        const bool odd = delta % 2 != 0;
+        int forwardStart = 0, forwardEnd = 0, backwardStart = 0, backwardEnd = 0;
+        for (int depth = 0; depth < maxDepth && !cancelled(); ++depth) {
+          for (int k = -depth + forwardStart; k <= depth - forwardEnd; k += 2) {
+            const int at = offset + k;
+            int x = k == -depth || (k != depth && forward.at(at - 1) < forward.at(at + 1))
+                        ? forward.at(at + 1) : forward.at(at - 1) + 1;
+            int y = x - k;
+            while (x < leftSize && y < rightSize && midLocal.at(lBegin + x) == midRemote.at(rBegin + y)) { ++x; ++y; }
+            forward[at] = x;
+            if (x > leftSize) forwardEnd += 2;
+            else if (y > rightSize) forwardStart += 2;
+            else if (odd) {
+              const int other = offset + delta - k;
+              if (other >= 0 && other < backward.size() && backward.at(other) >= 0 && x >= leftSize - backward.at(other)) return {x, y};
+            }
+          }
+          for (int k = -depth + backwardStart; k <= depth - backwardEnd; k += 2) {
+            const int at = offset + k;
+            int x = k == -depth || (k != depth && backward.at(at - 1) < backward.at(at + 1))
+                        ? backward.at(at + 1) : backward.at(at - 1) + 1;
+            int y = x - k;
+            while (x < leftSize && y < rightSize && midLocal.at(lEnd - x - 1) == midRemote.at(rEnd - y - 1)) { ++x; ++y; }
+            backward[at] = x;
+            if (x > leftSize) backwardEnd += 2;
+            else if (y > rightSize) backwardStart += 2;
+            else if (!odd) {
+              const int other = offset + delta - k;
+              if (other >= 0 && other < forward.size() && forward.at(other) >= 0 && forward.at(other) >= leftSize - x)
+                return {forward.at(other), forward.at(other) - delta + k};
+            }
+          }
+        }
+        return {-1, -1};
+      }();
+      if (cancelled()) return;
+      if (split.first >= 0 && split.second >= 0 &&
+          (split.first || split.second) && (split.first < lEnd - lBegin || split.second < rEnd - rBegin)) {
+        align(lBegin, lBegin + split.first, rBegin, rBegin + split.second);
+        align(lBegin + split.first, lEnd, rBegin + split.second, rEnd);
+      } else {
+        for (int i = lBegin; i < lEnd; ++i) diffEntries.append({"del", midLocal.at(i)});
+        for (int j = rBegin; j < rEnd; ++j) diffEntries.append({"add", midRemote.at(j)});
+      }
+    }
+    for (int i = 0; i < suffix; ++i) diffEntries.append({"same", midLocal.at(lEnd + i)});
   };
   align(0, m, 0, n);
+  if (cancelled()) return {};
 
   // 将统一 diff 转换为左右并排格式
   // 策略：连续的 del 和 add 配对显示（类似 VS Code 的 side-by-side diff）

@@ -28,6 +28,7 @@
 #include <QFileInfo>
 #include <QLocale>
 #include <QRegularExpression>
+#include "SshMonitorMatcher.h"
 #include <QTimer>
 #include "../common/AppSettings.h"
 #include "LogTextHighlighter.h"
@@ -1805,6 +1806,10 @@ int LogBackend::findPrevDiff(int currentIndex) {
     }
   }
   return -1;
+}
+
+QVariantMap LogBackend::testMonitorExpression(const QString &pattern, bool ignoreCase, const QString &sample) const {
+  return SshMonitorMatcher::test(pattern, ignoreCase, sample);
 }
 
 void LogBackend::handleLink(const QString &link, int modelId) {

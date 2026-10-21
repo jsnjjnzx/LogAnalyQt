@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QInputMethodEvent>
 #include <QMouseEvent>
 #include <QPointer>
 #include <QWheelEvent>
@@ -114,10 +115,13 @@ struct InputEvent : QEvent {
   std::chrono::steady_clock::time_point queued;
 };
 
-// Optional acceptance probe: include GUI-queue waiting AND the real command field's key handling.
+// Include GUI-queue waiting and actual terminal-key dispatch to the isolated SSH peer.
 class InputProbe : public QObject {
 public:
-  explicit InputProbe(QObject *target) : m_target(target), m_type(QEvent::Type(QEvent::registerEventType())) {
+  InputProbe(QObject *target, SshTerminal *terminal) : m_target(target), m_type(QEvent::Type(QEvent::registerEventType())) {
+    connect(terminal, &SshTerminal::sigSendCommand, this, [this](const QString &text, bool newline, const QString &) {
+      if (text == m_expected && !newline) ++m_rawKeys;
+    });
     target->installEventFilter(this);
     connect(target, &QObject::destroyed, this, [this] { stop(); m_target = nullptr; });
     m_thread = std::thread([this, target] {
@@ -128,19 +132,29 @@ public:
     });
   }
   ~InputProbe() override { stop(); if (m_target) m_target->removeEventFilter(this); }
-  QJsonObject report() const { auto result = m_latency.json(); result["failed_keystrokes"] = m_errors; return result; }
+  QJsonObject report() const {
+    auto result = m_latency.json(); result["failed_keystrokes"] = m_errors;
+    result["ascii_samples"] = m_asciiSamples; result["ime_samples"] = m_imeSamples;
+    return result;
+  }
 protected:
   bool eventFilter(QObject *target, QEvent *event) override {
     if (event->type() != m_type) return false;
-    const auto before = target->property("text").toString();
-    QKeyEvent press(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, "x");
-    QKeyEvent release(QEvent::KeyRelease, Qt::Key_X, Qt::NoModifier, "x");
-    QCoreApplication::sendEvent(target, &press); QCoreApplication::sendEvent(target, &release);
-    const auto after = target->property("text").toString();
-    if (after.size() != before.size() + 1) ++m_errors;
+    const auto before = m_rawKeys;
+    const bool ime = m_asciiSamples > m_imeSamples;
+    m_expected = ime ? QString::fromUtf8("中文") : QString("x");
+    if (ime) {
+      QInputMethodEvent commit; commit.setCommitString(m_expected);
+      QCoreApplication::sendEvent(target, &commit); ++m_imeSamples;
+    } else {
+      QKeyEvent press(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, "x");
+      QKeyEvent release(QEvent::KeyRelease, Qt::Key_X, Qt::NoModifier, "x");
+      QCoreApplication::sendEvent(target, &press); QCoreApplication::sendEvent(target, &release); ++m_asciiSamples;
+    }
+    if (m_rawKeys != before + 1 || !target->property("text").toString().isEmpty()) ++m_errors;
+    m_expected.clear();
     m_latency.add(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - static_cast<InputEvent *>(event)->queued).count());
-    target->setProperty("text", before);
     return true;
   }
 private:
@@ -151,6 +165,9 @@ private:
   std::thread m_thread;
   Histogram m_latency;
   int m_errors = 0;
+  int m_rawKeys = 0;
+  int m_asciiSamples = 0, m_imeSamples = 0;
+  QString m_expected;
 };
 
 #ifdef LOGANALYQT_FULL_APP_BENCHMARK
@@ -160,6 +177,9 @@ public:
   InteractionProbe(QQuickWindow *window, QObject *page, SshTerminal *terminal)
       : m_window(window), m_page(page), m_terminal(terminal),
         m_type(QEvent::Type(QEvent::registerEventType())) {
+    connect(terminal, &SshTerminal::sigSendCommand, this, [this](const QString &text, bool newline, const QString &) {
+      if (text == "x" && !newline) ++m_rawKeys;
+    });
     m_list = find(window->contentItem(), [](QQuickItem *i) { return i->objectName() == "ssh-log-list"; });
     m_pause = find(window->contentItem(), [](QQuickItem *i) { return i->property("text").toString() == QString::fromUtf8("⏸ 暂停"); });
     m_search = find(window->contentItem(), [](QQuickItem *i) { return i->property("placeholderText").toString() == QString::fromUtf8("输入关键字…"); });
@@ -205,13 +225,13 @@ protected:
     m_pending = true; ++m_token; m_verify = [] { return false; };
     switch (m_action) {
     case 0: {
-      auto *input = m_page->property("cmdInput").value<QObject *>();
-      if (!input) input = m_page->property("cmdInput").value<QJSValue>().toQObject();
+      auto *input = m_page->property("terminalInput").value<QObject *>();
+      if (!input) input = m_page->property("terminalInput").value<QJSValue>().toQObject();
       if (input) {
-        input->setProperty("text", "");
+        const auto expected = m_rawKeys + 1;
         QKeyEvent key(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, "x");
         QCoreApplication::sendEvent(input, &key);
-        m_verify = [input] { return input->property("text") == "x"; };
+        m_verify = [this, input, expected] { return m_rawKeys >= expected && input->property("text").toString().isEmpty(); };
       }
       break;
     }
@@ -251,16 +271,17 @@ protected:
       QMetaObject::invokeMethod(m_page, "parseSelectedHexWithProtocol", Q_ARG(QVariant, 0));
       m_verify = [this] {
         auto *backend = m_window->findChild<LogBackend *>("analysisBackend");
-        if (!backend || !m_page->property("parsePanelVisible").toBool()) return false;
-        auto *model = backend->popupResultModel();
+        if (!backend || !m_page->property("parseWindowVisible").toBool()) return false;
+        auto *model = backend->parseModel(m_page->property("parseSessionId").toInt());
+        if (!model) return false;
         for (int row = 0; row < model->rowCount(); ++row)
           if (model->data(model->index(row), ParseResultModel::ValueRole).toString().remove(' ').contains("40000200")) return true;
         return false;
       };
       break;
     }
-    case 10: m_page->setProperty("parsePanelVisible", false);
-      m_verify = [this] { return !m_page->property("parsePanelVisible").toBool(); }; break;
+    case 10: m_page->setProperty("parseWindowVisible", false);
+      m_verify = [this] { return !m_page->property("parseWindowVisible").toBool(); }; break;
     }
     m_frames->submitted.store(m_token); m_window->update();
     return true;
@@ -299,6 +320,7 @@ private:
   quint64 m_token = 0;
   bool m_pending = false;
   int m_action = -1, m_failures = 0;
+  int m_rawKeys = 0;
   QString m_failedAction;
 };
 #endif
@@ -332,6 +354,8 @@ int runSshPerformance(QGuiApplication &app, const QStringList &args, QQmlApplica
   engine.addImportPath(args[3] + "/imports");
   QQuickWindow *window = nullptr;
   QObject *page = nullptr;
+  QObject *monitorWorkspace = nullptr;
+  std::vector<QObject *> monitorPages;
   std::vector<Session> sessions(static_cast<size_t>(count));
   if (!headless) {
     if (!fullApplication) engine.load(QUrl::fromLocalFile(args[4]));
@@ -342,8 +366,15 @@ int runSshPerformance(QGuiApplication &app, const QStringList &args, QQmlApplica
       QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, 5));
     }
     page = window->findChild<QObject *>(fullApplication ? "page-5" : "benchmark-page");
+    if (page && fullApplication) {
+      monitorWorkspace = page;
+      const auto active = page->property("activeSession");
+      page = active.value<QObject *>();
+      if (!page) page = active.value<QJSValue>().toQObject();
+    }
     sessions[0].terminal = page ? page->findChild<SshTerminal *>("ssh-terminal-backend") : nullptr;
     if (!page || !sessions[0].terminal) return 4;
+    if (fullApplication) monitorPages.push_back(page);
     if (search) {
       page->setProperty("searchKeyword", "监控");
       QMetaObject::invokeMethod(page, "refreshSearchResult");
@@ -351,10 +382,23 @@ int runSshPerformance(QGuiApplication &app, const QStringList &args, QQmlApplica
   }
   std::vector<std::unique_ptr<SshTerminal>> owned;
   for (int i = headless ? 0 : 1; i < count; ++i) {
-    const auto directory = dataRoot + QString::number(i); QDir().mkpath(directory);
-    owned.push_back(std::make_unique<SshTerminal>(std::make_shared<MemoryCredentials>(), directory));
-    sessions[size_t(i)].terminal = owned.back().get();
+    if (monitorWorkspace) {
+      if (!QMetaObject::invokeMethod(monitorWorkspace, "addSession", Q_ARG(QVariant, QVariant()),
+                                    Q_ARG(QVariant, monitorWorkspace->property("nextSessionId")))) return 4;
+      const auto active = monitorWorkspace->property("activeSession");
+      auto *sessionPage = active.value<QObject *>();
+      if (!sessionPage) sessionPage = active.value<QJSValue>().toQObject();
+      if (!sessionPage) return 4;
+      monitorPages.push_back(sessionPage);
+      sessions[size_t(i)].terminal = sessionPage->findChild<SshTerminal *>("ssh-terminal-backend");
+      if (!sessions[size_t(i)].terminal) return 4;
+    } else {
+      const auto directory = dataRoot + QString::number(i); QDir().mkpath(directory);
+      owned.push_back(std::make_unique<SshTerminal>(std::make_shared<MemoryCredentials>(), directory));
+      sessions[size_t(i)].terminal = owned.back().get();
+    }
   }
+  if (monitorWorkspace) monitorWorkspace->setProperty("currentIndex", 0);
 
   auto lineLatency = std::make_unique<Histogram>();
   auto frameLatency = std::make_unique<Histogram>();
@@ -365,6 +409,7 @@ int runSshPerformance(QGuiApplication &app, const QStringList &args, QQmlApplica
   qint64 errors = 0, overflows = 0, modelResets = 0, modelCommits = 0;
   qint64 rssInitial = 0, rssPeak = 0;
   qint64 windowSamples = 0, activeSamples = 0, exposedSamples = 0;
+  int tabSwitchChecks = 0, tabSwitchErrors = 0;
   QJsonArray rssSamples;
   QJsonObject firstTenMinutes;
   const auto progressPath = qEnvironmentVariable("LOGANALYQT_SSH_PERF_PROGRESS");
@@ -410,6 +455,7 @@ int runSshPerformance(QGuiApplication &app, const QStringList &args, QQmlApplica
       {"content_errors", errors}, {"overflow_signals", overflows}, {"model_resets", modelResets},
       {"model_commits", modelCommits},
       {"full_application", fullApplication != nullptr},
+      {"ui_session_count", int(monitorPages.size())}, {"tab_switch_checks", tabSwitchChecks}, {"tab_switch_errors", tabSwitchErrors},
       {"view_state", viewState},
       {"window_samples", windowSamples}, {"window_active_samples", activeSamples},
       {"window_exposed_samples", exposedSamples},
@@ -483,6 +529,11 @@ int runSshPerformance(QGuiApplication &app, const QStringList &args, QQmlApplica
 
   for (int i = 0; i < count; ++i) {
     auto *terminal = sessions[size_t(i)].terminal;
+    if (monitorWorkspace) {
+      for (const auto &field : QList<QPair<QString, QString>>{{"ssh-host", "localhost"}, {"ssh-port", QString::number(port)},
+              {"ssh-username", "loganalyqt-test"}, {"ssh-password-draft", "synthetic-loopback-password"}})
+        monitorPages[size_t(i)]->findChild<QObject *>(field.first)->setProperty("text", field.second);
+    }
     terminal->setHost("localhost"); terminal->setPort(port); terminal->setUsername("loganalyqt-test");
     terminal->setPassword("synthetic-loopback-password"); terminal->setAutoReconnectEnabled(false);
     terminal->setMaxBufferLines(5000);
@@ -512,6 +563,18 @@ int runSshPerformance(QGuiApplication &app, const QStringList &args, QQmlApplica
     if (!started) return;
     const auto rss = residentBytes(); rssPeak = qMax(rssPeak, rss);
     if (window) { ++windowSamples; activeSamples += window->isActive(); exposedSamples += window->isExposed(); }
+    if (monitorPages.size() > 1) {
+      const int selected = (monitorWorkspace->property("currentIndex").toInt() + 1) % count;
+      monitorWorkspace->setProperty("currentIndex", selected);
+      ++tabSwitchChecks;
+      const auto active = monitorWorkspace->property("activeSession");
+      auto *selectedPage = active.value<QObject *>();
+      if (!selectedPage) selectedPage = active.value<QJSValue>().toQObject();
+      if (selectedPage != monitorPages[size_t(selected)]) ++tabSwitchErrors;
+      for (int i = 0; i < count; ++i)
+        if (!sessions[size_t(i)].terminal->isConnected()
+            || monitorPages[size_t(i)]->findChild<SshTerminal *>("ssh-terminal-backend") != sessions[size_t(i)].terminal) ++tabSwitchErrors;
+    }
     // One number each second, rather than a copy of any log data.
     rssSamples.append(QJsonArray{elapsed.elapsed() / 1000, rss / 1048576.0});
     if (seconds > 600 && elapsed.elapsed() >= 600000 && firstTenMinutes.isEmpty()) firstTenMinutes = metrics();
@@ -548,11 +611,11 @@ int runSshPerformance(QGuiApplication &app, const QStringList &args, QQmlApplica
       sessions[size_t(i)].terminal->sendCommand(QString("BENCH %1 %2 %3").arg(i).arg(rate).arg(seconds));
     if (page && qEnvironmentVariableIsSet("LOGANALYQT_SSH_PERF_INPUT_PROBE")) {
       QTimer::singleShot(1000, &app, [&] {
-        const auto field = page->property("cmdInput");
+        const auto field = page->property("terminalInput");
         auto *target = field.value<QObject *>();
         if (!target) target = field.value<QJSValue>().toQObject();
-        if (!target) { QTextStream(stderr) << "command field unavailable for input probe\n"; app.exit(8); return; }
-        inputProbe = std::make_unique<InputProbe>(target);
+        if (!target) { QTextStream(stderr) << "terminal input unavailable for input probe\n"; app.exit(8); return; }
+        inputProbe = std::make_unique<InputProbe>(target, sessions[0].terminal);
       });
     }
 #ifdef LOGANALYQT_FULL_APP_BENCHMARK

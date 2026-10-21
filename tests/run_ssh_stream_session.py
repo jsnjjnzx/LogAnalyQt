@@ -15,6 +15,8 @@ class StreamPeer(LoopbackSshServer):
         line = bytearray()
         encoding = "utf-8"
         tabs = 0
+        terminal_mode = False
+        escape = bytearray()
         while transport.is_active() and not self.stop.is_set():
             try:
                 received = channel.recv(16384)
@@ -23,6 +25,26 @@ class StreamPeer(LoopbackSshServer):
             if not received:
                 return
             for byte in received:
+                if terminal_mode:
+                    if escape:
+                        escape.append(byte)
+                        if escape == b"\x1b[A":
+                            channel.sendall(b"\rtest$ history\x1b[K"); escape.clear()
+                        elif len(escape) > 8:
+                            escape.clear()
+                    elif byte == 27:
+                        escape.append(byte)
+                    elif byte == 127:
+                        channel.sendall(b"\b \b")
+                    elif byte == 9:
+                        channel.sendall(b"-completed")
+                    elif byte == 3:
+                        channel.sendall(b"^C\r\ntest$ ")
+                    elif byte == 13:
+                        channel.sendall(b"\r\nRAW_DONE\n"); terminal_mode = False
+                    else:
+                        channel.sendall(bytes([byte]))
+                    continue
                 if byte == 0x15:
                     line.clear(); tabs = 0
                 elif byte == 9:
@@ -45,7 +67,9 @@ class StreamPeer(LoopbackSshServer):
                         channel.sendall(b"\x07")
                 elif byte == 10:
                     command = line.decode(encoding, errors="replace"); line.clear(); tabs = 0
-                    if command == "SPLIT":
+                    if command == "TERMINAL":
+                        terminal_mode = True; channel.sendall(b"test$ ")
+                    elif command == "SPLIT":
                         payload = "分块中文😀\r\n\x1b[31mRED\x1b[0m\r\n\x1b]0;title\x1b\\END\n".encode()
                         for value in payload:
                             channel.sendall(bytes([value])); time.sleep(0.003)
@@ -59,6 +83,11 @@ class StreamPeer(LoopbackSshServer):
                         channel.settimeout(10)
                         channel.sendall(b"x" * 40000 + b" 68 04 07 00 00 00\nLONG_END\n")
                         channel.settimeout(0.2)
+                    elif command == "PAUSE_STREAM":
+                        channel.sendall(b"PAUSE_STREAM_READY\n")
+                        time.sleep(0.8)
+                        channel.sendall(b"PAUSED_STDOUT\n")
+                        channel.send_stderr(b"PAUSED_STDERR\n")
                     elif command == "PARTIAL":
                         channel.sendall(b"OLD_PARTIAL")
                     elif command == "AFTER_CLEAR":

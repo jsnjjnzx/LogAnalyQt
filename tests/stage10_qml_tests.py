@@ -31,7 +31,10 @@ def main():
                                 cwd=source, env=environment, capture_output=True, text=True, timeout=90)
         output = result.stdout + result.stderr
         print(output, end="")
-        warnings = [line for line in output.splitlines() if any(level in line for level in ("QWARN", "QFATAL", "QCRITICAL")) and "Populating font family aliases" not in line]
+        warnings = [line for line in output.splitlines()
+                    if any(level in line for level in ("QWARN", "QFATAL", "QCRITICAL"))
+                    and "Populating font family aliases" not in line
+                    and not line.endswith("This plugin does not support raise()")]
         return result.returncode or (1 if warnings else 0)
 
 

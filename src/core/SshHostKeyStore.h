@@ -36,7 +36,8 @@ public:
   bool trust(const QString &host, int port, const QByteArray &key,
              QString *error = nullptr) {
     QLockFile lock(m_path + QStringLiteral(".lock"));
-    if (!lock.tryLock(0)) {
+    // Independent SSH workers may confirm hosts together; serialize their atomic writes.
+    if (!lock.tryLock(1000)) {
       if (error) *error = lock.error() == QLockFile::LockFailedError
           ? QStringLiteral("SSH 信任记录正被使用，请重试")
           : QStringLiteral("无法创建 SSH 信任记录锁，请检查便携目录路径和写入权限：") + m_path;

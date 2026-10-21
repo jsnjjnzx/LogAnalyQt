@@ -186,6 +186,7 @@ public:
                             const QString &encoding = "auto");
   Q_INVOKABLE void loadRawText(const QString &text);
   Q_INVOKABLE void applyFilter(const QString &regex);
+  Q_INVOKABLE QVariantMap testMonitorExpression(const QString &pattern, bool ignoreCase, const QString &sample) const;
   Q_INVOKABLE void parseHex(const QString &text, const QString &encoding,
                             int targetModel = 1, int protocolOverride = -1);
   Q_INVOKABLE int createParseSession();

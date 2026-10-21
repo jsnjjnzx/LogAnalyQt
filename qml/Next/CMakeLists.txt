@@ -12,7 +12,7 @@ qt_add_qml_module(nextUi
         ControlSurface.qml GlassButton.qml GlassTextField.qml GlassComboBox.qml GlassCheckBox.qml GlassSwitch.qml
         GlassMenu.qml GlassDialog.qml
         TitleBar.qml Icons.qml PlatformFonts.qml
-        LiveLogDialog.qml LogMergeDialog.qml ProtocolSyncDialog.qml SmartFramingDialog.qml
+        LiveLogDialog.qml SshMonitorPage.qml SshMonitorRuleWindow.qml LogMergeDialog.qml ProtocolSyncDialog.qml SmartFramingDialog.qml
         SmartFraming/ProtocolSelector.qml SmartFraming/HexPreview.qml
         SmartFraming/FrameHeaderPanel.qml SmartFraming/AppMsgHeaderPanel.qml
         SmartFraming/AppMsgFramingPage.qml SmartFraming/OadPicker.qml

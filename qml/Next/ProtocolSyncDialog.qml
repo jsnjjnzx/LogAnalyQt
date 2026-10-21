@@ -33,7 +33,7 @@ GlassPage {
     readonly property bool remoteBusy: pendingAction.length > 0 || !!(activeManager && (activeManager.busy || activeManager.connecting || activeManager.credentialBusy))
     function startConnection() {
         if (!activeManager || remoteBusy) return
-        remoteReady = false; ownsConnection = true; statusText = systemSmb ? "等待 Finder 连接共享并确认目录可达…" : "连接中…"; statusIsError = false
+        remoteReady = false; ownsConnection = true; statusText = systemSmb ? "正在检查已有共享连接，未连接时将请求系统连接…" : "连接中…"; statusIsError = false
         activeManager.sharePath = pathField.text.trim()
         if (!systemSmb) activeManager.saveCredentials()
         activeManager.connectToShare()
@@ -80,11 +80,18 @@ GlassPage {
         if (!canSync) return
         pendingAction = "diff"; pendingDiffFile = fileName; diffData = []
         statusText = "正在读取差异，尚未确认结果…"; statusIsError = false
+        diffDialog.diffFileName = fileName; diffDialog.show()
         const directDiff = activeManager.getXmlDiff(fileName)
         if (!systemSmb) {
             pendingAction = ""; pendingDiffFile = ""; diffData = directDiff
             diffDialog.diffFileName = fileName; diffDialog.show()
         }
+    }
+    function cancelDiff() {
+        if (pendingAction !== "diff") return
+        pendingAction = ""; pendingDiffFile = ""
+        if (activeManager) activeManager.cancelPendingOperations()
+        statusText = "已取消差异比较。"; statusIsError = false
     }
     onClosing: cancelOwnedWork()
     Component.onDestruction: cancelOwnedWork()
@@ -624,6 +631,35 @@ GlassPage {
         property int resizeMargin: 6
 
         property string diffFileName: ""
+        readonly property bool loading: syncDialog.pendingAction === "diff"
+        property int currentBlock: -1
+        readonly property var changeBlocks: {
+            const blocks = [];
+            for (let i = 0; i < syncDialog.diffData.length; ++i) {
+                const row = syncDialog.diffData[i];
+                const deleted = row.leftType === "del";
+                const added = row.rightType === "add";
+                if (!deleted && !added) continue;
+                const last = blocks.length ? blocks[blocks.length - 1] : null;
+                if (last && last.end === i - 1) {
+                    last.end = i; last.deleted = last.deleted || deleted; last.added = last.added || added;
+                } else blocks.push({start: i, end: i, deleted: deleted, added: added});
+            }
+            return blocks;
+        }
+        function jumpBlock(index) {
+            if (index < 0 || index >= changeBlocks.length) return;
+            currentBlock = index;
+            diffListView.positionViewAtIndex(changeBlocks[index].start, ListView.Beginning);
+            diffListView.currentIndex = changeBlocks[index].start;
+        }
+        function resetPosition() {
+            currentBlock = -1;
+            diffListView.currentIndex = -1;
+            diffListView.positionViewAtBeginning();
+            if (visible) jumpBlock(0);
+        }
+        onChangeBlocksChanged: Qt.callLater(resetPosition)
 
         color: theme ? theme.background : "#ffffff"
 
@@ -632,10 +668,12 @@ GlassPage {
                 // 居中于父窗口
                 diffDialog.x = ownerWindow.x + (ownerWindow.width - diffDialog.width) / 2;
                 diffDialog.y = ownerWindow.y + (ownerWindow.height - diffDialog.height) / 2;
+                Qt.callLater(resetPosition);
             }
         }
 
         onClosing: {
+            syncDialog.cancelDiff();
             // 关闭时清理差异数据，避免残留状态
             syncDialog.diffData = [];
         }
@@ -842,6 +880,39 @@ GlassPage {
             anchors.margins: 12
             spacing: 8
 
+            RowLayout {
+                Layout.fillWidth: true
+                BusyIndicator {
+                    objectName: "protocol-diff-loading"
+                    Layout.preferredWidth: 26
+                    Layout.preferredHeight: 26
+                    visible: diffDialog.loading
+                    running: visible
+                }
+                Label {
+                    objectName: "protocol-diff-summary"
+                    Layout.fillWidth: true
+                    text: diffDialog.loading ? "正在比较文件，请稍候…（可取消）" : syncDialog.statusIsError ? syncDialog.statusText : diffDialog.changeBlocks.length ? "差异 " + (diffDialog.currentBlock + 1) + " / " + diffDialog.changeBlocks.length + " 处 · 红：本地独有  绿：远程新增" : "文件内容一致，无差异"
+                    color: theme ? theme.subText : "#666666"
+                    font.pixelSize: 12
+                    elide: Text.ElideRight
+                }
+                StyledButton {
+                    objectName: "protocol-diff-prev"
+                    text: "上一处"
+                    Layout.preferredHeight: 30
+                    enabled: !diffDialog.loading && diffDialog.currentBlock > 0
+                    onClicked: diffDialog.jumpBlock(diffDialog.currentBlock - 1)
+                }
+                StyledButton {
+                    objectName: "protocol-diff-next"
+                    text: "下一处"
+                    Layout.preferredHeight: 30
+                    enabled: !diffDialog.loading && diffDialog.currentBlock + 1 < diffDialog.changeBlocks.length
+                    onClicked: diffDialog.jumpBlock(diffDialog.currentBlock + 1)
+                }
+            }
+
             // 左右列标题
             Row {
                 Layout.fillWidth: true
@@ -885,8 +956,13 @@ GlassPage {
             }
 
             // 左右并排差异内容
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: 6
             ListView {
                 id: diffListView
+                objectName: "protocol-diff-list"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
@@ -897,6 +973,12 @@ GlassPage {
                     height: Math.max(leftText.implicitHeight, rightText.implicitHeight) + 6
 
                     color: "transparent"
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: diffDialog.currentBlock >= 0 && diffDialog.currentBlock < diffDialog.changeBlocks.length && index >= diffDialog.changeBlocks[diffDialog.currentBlock].start && index <= diffDialog.changeBlocks[diffDialog.currentBlock].end
+                        color: theme ? theme.accent : "#1976D2"
+                        opacity: 0.12
+                    }
 
                     Row {
                         anchors.fill: parent
@@ -1051,10 +1133,68 @@ GlassPage {
                 ScrollBar.vertical: ScrollBar {}
                 ScrollBar.horizontal: ScrollBar {}
             }
+            Rectangle {
+                id: diffOverview
+                objectName: "protocol-diff-overview"
+                Layout.preferredWidth: 18
+                Layout.fillHeight: true
+                color: theme ? theme.controlBackground : "#eeeeee"
+                radius: 3
+                clip: true
+                activeFocusOnTab: true
+                Accessible.role: Accessible.Button
+                Accessible.name: "本地与远程差异位置概览"
+                Accessible.description: "红色为本地独有，绿色为远程新增；点击跳转，上下键切换差异块"
+                Accessible.onPressAction: jumpAt(height / 2)
+                Keys.onDownPressed: diffDialog.jumpBlock(diffDialog.currentBlock + 1)
+                Keys.onUpPressed: diffDialog.jumpBlock(diffDialog.currentBlock - 1)
+                function jumpAt(y) {
+                    if (!diffDialog.changeBlocks.length || height <= 0) return;
+                    const target = Math.max(0, Math.min(1, y / height)) * diffListView.count;
+                    let nearest = 0;
+                    let distance = Infinity;
+                    for (let i = 0; i < diffDialog.changeBlocks.length; ++i) {
+                        const block = diffDialog.changeBlocks[i];
+                        const gap = Math.max(block.start - target, target - block.end - 1, 0);
+                        if (gap < distance) { distance = gap; nearest = i; }
+                    }
+                    diffDialog.jumpBlock(nearest);
+                }
+                Repeater {
+                    model: diffDialog.changeBlocks
+                    delegate: Item {
+                        required property var modelData
+                        width: diffOverview.width
+                        height: Math.min(diffOverview.height, Math.max(3, (modelData.end - modelData.start + 1) / Math.max(1, diffListView.count) * diffOverview.height))
+                        y: Math.min(diffOverview.height - height, modelData.start / Math.max(1, diffListView.count) * diffOverview.height)
+                        Rectangle { x: 2; width: 6; height: parent.height; color: theme ? theme.error : "#F44336"; visible: modelData.deleted }
+                        Rectangle { x: 10; width: 6; height: parent.height; color: theme ? theme.success : "#4CAF50"; visible: modelData.added }
+                    }
+                }
+                Rectangle {
+                    objectName: "protocol-diff-viewport"
+                    width: parent.width
+                    height: Math.min(parent.height, Math.max(8, diffListView.visibleArea.heightRatio * parent.height))
+                    y: Math.max(0, Math.min(parent.height - height, diffListView.visibleArea.yPosition * parent.height))
+                    color: theme ? theme.text : "#333333"
+                    opacity: 0.2
+                    radius: 2
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: diffDialog.changeBlocks.length ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: mouse => { diffOverview.forceActiveFocus(); diffOverview.jumpAt(mouse.y); }
+                    ToolTip.visible: containsMouse
+                    ToolTip.text: "红：本地独有 · 绿：远程新增\n点击跳转到附近的差异"
+                }
+            }
+            }
 
             // 关闭按钮
             StyledButton {
-                text: "关闭"
+                objectName: "protocol-diff-close"
+                text: diffDialog.loading ? "取消" : "关闭"
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: 100
                 Layout.preferredHeight: 30

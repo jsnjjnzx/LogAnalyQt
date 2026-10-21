@@ -8,12 +8,14 @@
 #include <QStringList>
 #include <QThread>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QVariantList>
 #include "../common/JsonSettings.h"
 #include <memory>
 #include <atomic>
 #include "SecureCredentialStore.h"
 #include "SshLogStream.h"
+#include "SshMonitorMatcher.h"
 #include <deque>
 
 // TerminalLineModel：给 QML ListView 使用的终端行模型
@@ -21,7 +23,7 @@
 class TerminalLineModel : public QAbstractListModel {
   Q_OBJECT
 public:
-  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole };
+  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole, MonitorColorRole, MonitorRuleNameRole };
 
   explicit TerminalLineModel(int maxLines, QObject *parent = nullptr);
 
@@ -37,11 +39,14 @@ public:
   QString lineAt(int index) const;
   QStringList lines() const;
   QString bufferText() const;
+  QString textRange(qint64 firstId, int firstOffset, qint64 lastId, int lastOffset,
+                    const QString &tail = {}) const;
   QString logicalLineAt(int index) const;
   bool completeLineAt(int index) const;
   int logicalStart(int index) const;
   int logicalEnd(int index) const;
   int segmentOffset(int index) const;
+  qint64 idForLogicalOffset(quint64 logicalId, qsizetype offset) const;
   qint64 firstLineId() const { return m_firstLineId; }
   qint64 lineId(int index) const;
   int indexForId(qint64 id) const;
@@ -62,10 +67,17 @@ struct SshSharedBuffer {
   std::deque<SshLogLine> lines;
   qsizetype bytes = 0;
   SshLogLine partial;
+  int cursorColumn = 0;
+  int cursorPosition = 0;
+  int cursorPadding = 0;
   QByteArray tabData;
   bool tabCapture = false;
   bool tabOverflow = false;
   bool notificationPending = false;
+  QVariantList monitorRules;
+  quint64 monitorRevision = 0;
+  SshMonitorHit monitorHit;
+  std::atomic<bool> receptionPauseRequested{false};
   std::atomic<quint64> activeGeneration{0};
   std::atomic<quint64> credentialRevision{0};
   std::atomic<quint64> contentRevision{0};
@@ -80,7 +92,8 @@ class SshTerminal : public QObject {
       QString username READ username WRITE setUsername NOTIFY usernameChanged)
   Q_PROPERTY(
       QString password READ password WRITE setPassword NOTIFY passwordChanged)
-  Q_PROPERTY(bool usesSecureCredentials READ usesSecureCredentials CONSTANT)
+  Q_PROPERTY(bool usesSecureCredentials READ usesSecureCredentials NOTIFY credentialStateChanged)
+  Q_PROPERTY(bool useSystemCredentials READ useSystemCredentials WRITE setUseSystemCredentials NOTIFY credentialStateChanged)
   Q_PROPERTY(
       QString encoding READ encoding WRITE setEncoding NOTIFY encodingChanged)
   Q_PROPERTY(bool hasSavedPassword READ hasSavedPassword NOTIFY credentialStateChanged)
@@ -106,6 +119,13 @@ class SshTerminal : public QObject {
   Q_PROPERTY(int currentLineCount READ currentLineCount NOTIFY lineCountChanged)
   Q_PROPERTY(qint64 firstLineId READ firstLineId NOTIFY lineCountChanged)
   Q_PROPERTY(bool presentationActive READ presentationActive WRITE setPresentationActive NOTIFY presentationActiveChanged)
+  Q_PROPERTY(bool receptionPaused READ receptionPaused WRITE setReceptionPaused NOTIFY receptionPausedChanged)
+  Q_PROPERTY(bool persistSettings MEMBER m_persistSettings)
+  Q_PROPERTY(QString liveLine READ liveLine NOTIFY liveLineChanged)
+  Q_PROPERTY(QString liveMonitorColor READ liveMonitorColor NOTIFY liveLineChanged)
+  Q_PROPERTY(int cursorColumn READ cursorColumn NOTIFY liveLineChanged)
+  Q_PROPERTY(int cursorPosition READ cursorPosition NOTIFY liveLineChanged)
+  Q_PROPERTY(int cursorPadding READ cursorPadding NOTIFY liveLineChanged)
   // QML ListView 的数据模型，替代 TextArea 实现内存有界的虚拟化渲染
   Q_PROPERTY(TerminalLineModel *lineModel READ lineModel CONSTANT)
 
@@ -137,11 +157,13 @@ public:
   QString password() const;
   bool usesSecureCredentials() const {
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-    return true;
+    return m_useSystemCredentials;
 #else
     return false;
 #endif
   }
+  bool useSystemCredentials() const { return m_useSystemCredentials; }
+  void setUseSystemCredentials(bool enabled);
   void setPassword(const QString &password);
 
   bool hasSavedPassword() const { return m_hasSavedPassword; }
@@ -172,8 +194,15 @@ public:
 
   int currentLineCount() const;
   TerminalLineModel *lineModel() const;
-  qint64 firstLineId() const { return m_lineModel->firstLineId(); }
+  qint64 firstLineId() const { return lineModel()->firstLineId(); }
   bool presentationActive() const { return m_presentationActive; }
+  bool receptionPaused() const { return m_receptionPaused; }
+  void setReceptionPaused(bool paused);
+  QString liveLine() const { return m_committedPartial; }
+  QString liveMonitorColor() const { return m_committedMonitorColor; }
+  int cursorColumn() const { return m_cursorColumn; }
+  int cursorPosition() const { return m_cursorPosition; }
+  int cursorPadding() const { return m_cursorPadding; }
   void setPresentationActive(bool active);
 
   Q_INVOKABLE void connectToHost();
@@ -183,6 +212,9 @@ public:
   // 发送 Tab 补全请求：截获响应并解析后通过 tabCompletionReady 信号通知 QML
   Q_INVOKABLE void sendTabCompletion(const QString &prefix);
   Q_INVOKABLE QString getBufferText() const;
+  Q_INVOKABLE QString selectedText(qint64 firstId, int firstOffset, qint64 lastId, int lastOffset) const {
+    return lineModel()->textRange(firstId, firstOffset, lastId, lastOffset, liveLine());
+  }
   Q_INVOKABLE void clearBuffer();
   Q_INVOKABLE QVariantList findLineIndexes(const QString &keyword,
                                            bool caseSensitive = false) const;
@@ -191,14 +223,15 @@ public:
   findLineIndexesInRange(const QString &keyword, int fromLine, int toLine,
                          bool caseSensitive = false) const;
   Q_INVOKABLE QString lineAt(int index) const;
-  Q_INVOKABLE qint64 lineIdAt(int index) const { return m_lineModel->lineId(index); }
-  Q_INVOKABLE int indexForLineId(qint64 id) const { return m_lineModel->indexForId(id); }
-  Q_INVOKABLE bool lineIsComplete(int index) const { return m_lineModel->completeLineAt(index); }
-  Q_INVOKABLE int lineSegmentOffset(int index) const { return m_lineModel->segmentOffset(index); }
+  Q_INVOKABLE qint64 lineIdAt(int index) const { return lineModel()->lineId(index); }
+  Q_INVOKABLE int indexForLineId(qint64 id) const { return lineModel()->indexForId(id); }
+  Q_INVOKABLE bool lineIsComplete(int index) const { return lineModel()->completeLineAt(index); }
+  Q_INVOKABLE int lineSegmentOffset(int index) const { return lineModel()->segmentOffset(index); }
   Q_INVOKABLE QVariantList findLineIds(const QString &keyword, qint64 fromId = -1) const;
   Q_INVOKABLE void copyLineToClipboard(int index) const;
   Q_INVOKABLE void copyBufferToClipboard() const;
   Q_INVOKABLE QString clipboardText() const;
+  Q_INVOKABLE bool setMonitorRules(const QVariantList &rules, bool armed);
 
 signals:
   void credentialStateChanged();
@@ -223,6 +256,9 @@ signals:
   void lineCountChanged(); // currentLineCount 变化（用于自动滚动）
   void linesAboutToChange();
   void presentationActiveChanged();
+  void receptionPausedChanged();
+  void liveLineChanged();
+  void monitorMatched(const QVariantMap &hit);
   void connectionError(const QString &error);
   void sharedBufferOverflowed();
   // Tab 补全结果：completedText 非空表示有唯一补全，空表示无匹配；
@@ -232,7 +268,7 @@ signals:
 
   // 发送给工作线程的信号
   void sigStartConnect(quint64 generation, const QString &host, int port,
-                       const QString &user, const QString &pass, const QString &encoding);
+                       const QString &user, const QString &pass, const QString &encoding, bool useSystemCredentials);
   void sigSendCommand(const QString &cmd, bool appendNewline, const QString &encoding);
   void sigDisconnect(quint64 generation);
 
@@ -269,6 +305,8 @@ private:
   TerminalLineModel *m_lineModel;
 
   QString m_dataRoot;
+  bool m_persistSettings = true;
+  bool m_useSystemCredentials = false;
   bool m_hasSavedPassword = false;
   bool m_credentialBusy = false;
   bool m_authCredentialBusy = false;
@@ -290,6 +328,8 @@ private:
 
   bool m_connected;
   bool m_presentationActive = true;
+  bool m_receptionPaused = false;
+  quint64 m_receptionRevision = 0;
   ConnectionState m_connectionState;
   QString m_statusMessage;
   QString m_lastError;
@@ -303,6 +343,10 @@ private:
 
   QTimer *m_flushTimer;
   QString m_committedPartial;
+  QString m_committedMonitorColor;
+  int m_cursorColumn = 0;
+  int m_cursorPosition = 0, m_cursorPadding = 0;
+  QElapsedTimer m_lastInput;
   QTimer *m_reconnectTimer = nullptr;
 
   // Tab 补全截获模式

@@ -1,5 +1,6 @@
 #include "SshTerminal.h"
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonDocument>
@@ -54,6 +55,7 @@ int authCount(const QString &path) {
   return QJsonDocument::fromJson(file.readAll()).object()["authAttempts"].toInt();
 }
 void configure(SshTerminal &terminal, int port) {
+  terminal.setUseSystemCredentials(true);
   terminal.setHost("127.0.0.1"); terminal.setPort(port); terminal.setUsername("loganalyqt-test");
   terminal.setEncoding("UTF-8"); terminal.setAutoReconnectEnabled(false);
   check(waitFor([&]{return !terminal.credentialBusy();}), "isolated credential refresh completes");
@@ -65,6 +67,28 @@ void echo(SshTerminal &terminal, const QString &text) {
   check(waitFor([&]{return terminal.getBufferText().contains("TEST_ECHO:" + text);}),
         "encrypted PTY/shell echo returned: " + text + " / " + terminal.statusMessage());
 }
+void reconnectNoticeChecks() {
+  QTemporaryDir directory;
+  SshTerminal terminal(std::make_shared<MemoryCredentials>(), directory.path());
+  check(QMetaObject::invokeMethod(&terminal, "onWorkerConnected"), "initial connection callback");
+  check(terminal.getBufferText().isEmpty(), "initial success does not add a reconnection notice");
+  const QString failure = QStringLiteral("连接 SSH 服务器失败，请检查网络和端口");
+  check(QMetaObject::invokeMethod(&terminal, "onWorkerError", Q_ARG(QString, failure)), "failed attempt callback");
+  check(terminal.reconnectAttempt() > 0 && terminal.getBufferText() == failure,
+        "failed attempt retains its error without prematurely reporting success");
+  const auto before = QDateTime::currentDateTime().addSecs(-1);
+  check(QMetaObject::invokeMethod(&terminal, "onWorkerConnected"), "reconnection success callback");
+  const auto lines = terminal.lineModel()->lines();
+  check(lines.size() == 2 && lines.first() == failure && lines.last().endsWith(
+            QStringLiteral("] SSH 已重新连接成功")), "recovery notice is appended after the retained failure");
+  const auto timestamp = QDateTime::fromString(lines.last().mid(1, 19), "yyyy-MM-dd HH:mm:ss");
+  check(timestamp.isValid() && timestamp >= before && timestamp <= QDateTime::currentDateTime(),
+        "recovery notice contains the current local date and time");
+  check(terminal.isConnected() && terminal.lastError().isEmpty() && terminal.reconnectAttempt() == 0,
+        "recovery retains normal connected state and clears the current error");
+  check(QMetaObject::invokeMethod(&terminal, "onWorkerConnected") && terminal.currentLineCount() == 2,
+        "a repeated success callback does not duplicate the recovery notice");
+}
 }
 int main(int argc,char **argv) {
   QCoreApplication app(argc,argv);
@@ -75,6 +99,7 @@ int main(int argc,char **argv) {
     const QString fingerprint = QString::fromLocal8Bit(argv[3]);
     const QString stats = QString::fromLocal8Bit(argv[4]);
     check(port > 0 && port <= 65535 && stallPort > 0 && stallPort <= 65535, "loopback random ports");
+    reconnectNoticeChecks();
     QTemporaryDir directory; check(directory.isValid(), "isolated application data root");
     auto credentials = std::make_shared<MemoryCredentials>();
     SshTerminal terminal(credentials, directory.path());
@@ -109,6 +134,9 @@ int main(int argc,char **argv) {
     terminal.sendCommand("__DROP_TEST_SESSION__");
     check(waitFor([&]{return connectedCount>=3 && terminal.isConnected();}), "automatic reconnect after isolated peer closes");
     echo(terminal,"AUTO_RECONNECTED"); check(confirmations==1, "automatic reconnect retains original pin");
+    check(terminal.getBufferText().count(QStringLiteral("] SSH 已重新连接成功")) == 1
+              && terminal.getBufferText().contains("TEST_ECHO:LOOPBACK_FIRST"),
+          "real automatic reconnect adds one recovery notice and preserves earlier history");
     terminal.sendCommand("__DROP_TEST_SESSION__");
     check(waitFor([&]{return terminal.connectionState()==SshTerminal::Reconnecting;}), "reconnect timer entered");
     terminal.disconnectFromHost(); settle(1000);

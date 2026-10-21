@@ -145,6 +145,9 @@ private slots:
 private:
   // 清理连接相关资源
   void cleanupConnectProcess();
+#ifdef Q_OS_MACOS
+  void startConnectionProbe(const SmbShare::Target &target, bool openIfUnavailable);
+#endif
 
   QString localDir() const;
   QString normalizePath(const QString &path) const;

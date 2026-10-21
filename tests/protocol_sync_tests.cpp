@@ -205,7 +205,7 @@ void TestConnectionLifecycle() {
   QObject::connect(&manager, &ProtocolSyncManager::connectionFinished, &manager,
     [&](bool ok, const QString &) { ++completions; success = ok; });
   manager.connectToShare();
-  Expect(opens == 1 && completions == 0 && manager.connecting(), "系统open成功仅代表已请求，不代表连接成功");
+  Expect(Wait([&] { return opens == 1; }) && completions == 0 && manager.connecting(), "后台确认未挂载后才请求系统，open成功不代表连接成功");
   Expect(Wait([&] { return completions == 1; }), "系统挂载等待应超时");
   Expect(!success && !manager.connecting(), "超时不能伪报成功");
   manager.connectToShare(); manager.cancelConnection();
@@ -232,6 +232,67 @@ void TestConnectionLifecycle() {
     [&](bool ok, const QString &message) { ambiguityReported = !ok && message.contains("多个"); });
   ambiguous.connectToShare();
   Expect(Wait([&] { return ambiguityReported; }, 1000), "已确认多挂载歧义应立即明报，不能吞成普通超时");
+  Expect(opens == 1, "多挂载歧义不能再次打开Finder");
+}
+
+void TestMountedShareReuse() {
+  QTemporaryDir mounted, other;
+  QDir(mounted.path()).mkdir("protocols");
+  ProtocolSyncManager::Dependencies dependencies;
+  dependencies.settingsFile = mounted.filePath("settings.json");
+  int opens = 0, completions = 0;
+  bool available = true, success = false;
+  dependencies.mounts = [&] {
+    QList<SmbShare::Mount> mounts{{"//unrelated.invalid/share", other.path()}};
+    if (available) mounts.append({"//test.invalid/share", mounted.path()});
+    return mounts;
+  };
+  dependencies.openShare = [&](const QUrl &) { ++opens; available = true; return true; };
+  ProtocolSyncManager manager(dependencies);
+  manager.setSharePath("smb://test.invalid/share/protocols");
+  QObject::connect(&manager, &ProtocolSyncManager::connectionFinished, &manager,
+      [&](bool ok, const QString &) { ++completions; success = ok; });
+  for (int attempt = 1; attempt <= 2; ++attempt) {
+    manager.connectToShare();
+    Expect(Wait([&] { return completions == attempt; }) && success && opens == 0,
+           "已挂载且可访问的共享应直接复用，重复连接也不打开Finder");
+  }
+  available = false;
+  manager.connectToShare();
+  Expect(Wait([&] { return completions == 3; }) && success && opens == 1,
+         "仅有无关挂载时应请求一次系统连接，挂载出现后确认成功");
+  manager.connectToShare();
+  Expect(Wait([&] { return completions == 4; }) && success && opens == 1,
+         "新建立的共享再次连接时直接复用");
+
+  dependencies.settingsFile = mounted.filePath("rejected.json");
+  dependencies.mounts = [] { return QList<SmbShare::Mount>{}; };
+  dependencies.openShare = [](const QUrl &) { return false; };
+  ProtocolSyncManager rejected(dependencies);
+  rejected.setSharePath("smb://test.invalid/share");
+  bool failed = false;
+  QObject::connect(&rejected, &ProtocolSyncManager::connectionFinished, &rejected,
+      [&](bool ok, const QString &message) { failed = !ok && message.contains("无法请求"); });
+  rejected.connectToShare();
+  Expect(Wait([&] { return failed; }) && !rejected.connecting(), "系统连接请求失败应及时结束并报告");
+
+  const auto mountedUrl = qEnvironmentVariable("LOGANALYQT_TEST_MOUNTED_SMB");
+  if (!mountedUrl.isEmpty()) {
+    dependencies.settingsFile = mounted.filePath("real-mount.json");
+    dependencies.mounts = SmbShare::mountedShares;
+    int realOpens = 0, realCompletions = 0; bool realSuccess = false;
+    dependencies.openShare = [&](const QUrl &) { ++realOpens; return false; };
+    ProtocolSyncManager existing(dependencies);
+    existing.setSharePath(mountedUrl);
+    QObject::connect(&existing, &ProtocolSyncManager::connectionFinished, &existing,
+        [&](bool ok, const QString &) { ++realCompletions; realSuccess = ok; });
+    for (int attempt = 1; attempt <= 3; ++attempt) {
+      existing.connectToShare();
+      Expect(Wait([&] { return realCompletions == attempt; }, 5000) && realSuccess && realOpens == 0,
+             "实际已挂载网盘应连续三次复用成功，且没有系统打开请求");
+    }
+    QTextStream(stdout) << "Existing mounted SMB: " << realCompletions << " completions, " << realOpens << " system open requests\n";
+  }
 }
 
 void TestAsyncLifetime() {
@@ -254,7 +315,7 @@ void TestAsyncLifetime() {
   Expect(Wait([&] { return entered->load(); }), "后台mount检查已开始");
   manager->cancelConnection();
   for (int i = 0; i < 20; ++i) manager->connectToShare();
-  Expect(openCount == 1, "阻塞probe未结束时连续重试不会积压线程或再次打开Finder");
+  Expect(openCount == 0, "首次后台probe阻塞或被取消时，不打开Finder或积压线程");
   QElapsedTimer timer; timer.start(); manager.reset();
   Expect(timer.elapsed() < 100, "析构不得等待阻塞的远端I/O");
   *release = true;
@@ -393,9 +454,9 @@ void TestDiffAlignment(const QStringList &samplePaths) {
   checkRows(compare("a\nb\nc\nd\ne\n", "a\ninsert\nb\nc\nd\ne\n"), 0, 1);
 
   QRandomGenerator random(20261020);
-  for (int test = 0; test < 100; ++test) {
+  for (int test = 0; test < 500; ++test) {
     QStringList left, right;
-    const int m = random.bounded(7), n = random.bounded(7);
+    const int m = random.bounded(13), n = random.bounded(13);
     for (int i = 0; i < m; ++i) left.append(QString::number(random.bounded(3)));
     for (int i = 0; i < n; ++i) right.append(QString::number(random.bounded(3)));
     QVector<QVector<int>> lengths(m + 1, QVector<int>(n + 1));
@@ -419,6 +480,22 @@ void TestDiffAlignment(const QStringList &samplePaths) {
     checkRows(compare(ReadFile(samplePaths[0]), ReadFile(samplePaths[1])), 1, 53);
     QTextStream(stdout) << "Desktop XML comparison: 1 deleted / 53 added lines, " << timer.elapsed() << " ms\n";
   }
+#ifdef Q_OS_MACOS
+  QByteArray unrelatedLocal, unrelatedRemote;
+  for (int i = 0; i < 30000; ++i) {
+    unrelatedLocal += "local-" + QByteArray::number(i) + '\n';
+    unrelatedRemote += "remote-" + QByteArray::number(i) + '\n';
+  }
+  WriteFile(localPath, unrelatedLocal); WriteFile(remotePath, unrelatedRemote);
+  bool cancelledResult = false;
+  const auto cancellation = QObject::connect(&manager, &ProtocolSyncManager::diffFinished,
+      &manager, [&](const QString &, const QVariantList &) { cancelledResult = true; });
+  manager.getXmlDiff("app_msg_protocol.xml");
+  QTimer::singleShot(20, &manager, &ProtocolSyncManager::cancelPendingOperations);
+  Expect(Wait([&] { return !manager.busy(); }, 1500) && !cancelledResult,
+         "取消大文件比较应及时停止后台计算，且不得交付已取消的结果");
+  QObject::disconnect(cancellation);
+#endif
   QFile::remove(localPath);
 }
 
@@ -727,6 +804,7 @@ int main(int argc, char *argv[]) {
   TestSmbPaths();
   TestCredentials();
   TestConnectionLifecycle();
+  TestMountedShareReuse();
   TestAsyncLifetime();
   TestDiffReadFailures();
 #endif

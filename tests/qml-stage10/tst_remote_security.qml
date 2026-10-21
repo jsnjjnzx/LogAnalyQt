@@ -9,15 +9,16 @@ Item {
     Next.GlassTheme { id: testTheme }
     Window { id: ownerWindow; visible: false; width: 1280; height: 900 }
     QtObject {
-        id: backend
+        id: mockBackend
         property var popupResultModel: []
         property int protocolType: 0
+        signal highlightRange(int start, int end, int modelId)
         function getUiSetting(key,fallback) { return fallback }
         function setUiSetting(key,value) { return true }
     }
     Component { id: syncMock; MockSyncManager {} }
     Component { id: nextSync; Next.ProtocolSyncDialog { theme: testTheme } }
-    Component { id: nextSsh; Next.LiveLogDialog { theme: testTheme; backend: backend } }
+    Component { id: nextSsh; Next.LiveLogDialog { theme: testTheme; backend: mockBackend; useSystemCredentials: true } }
     TestCase {
         name: "RemoteSecurityViews"
         when: windowShown
@@ -110,6 +111,119 @@ Item {
                        "encoding text must not overlap its arrow")
             }
         }
+        function test_sshConfigFoldPreservesDraftsAndReleasesSpace() {
+            make(nextSsh)
+            const ssh = item("ssh-terminal-backend")
+            verify(page.connectionConfigExpanded)
+            edit("ssh-host", "monitor.example")
+            edit("ssh-port", "2222")
+            edit("ssh-username", "operator")
+            edit("ssh-password-draft", "fold-test-draft")
+            item("ssh-buffer-lines").text = "8000"
+            item("ssh-reconnect-count").text = "4"
+            item("ssh-reconnect-interval").text = "3000"
+            item("ssh-encoding").currentIndex = 1
+            wait(30)
+            const terminal = item("ssh-terminal-pane")
+            const expandedHeight = terminal.height
+            const disconnects = ssh.disconnectCalls
+            mouseClick(item("ssh-config-toggle"))
+            tryCompare(item("ssh-connection-scroll"), "visible", false)
+            verify(!item("ssh-save-password").visible)
+            verify(!item("ssh-clear-password").visible)
+            tryVerify(function() { return terminal.height > expandedHeight + 30 })
+            compare(item("ssh-target-summary").text, "监控 · operator@monitor.example:2222 · GB2312")
+            compare(ssh.connectCalls, 0); compare(ssh.disconnectCalls, disconnects)
+            page.visible = false; page.visible = true
+            verify(!page.connectionConfigExpanded)
+            mouseClick(item("ssh-config-toggle"))
+            tryCompare(item("ssh-connection-scroll"), "visible", true)
+            compare(item("ssh-host").text, "monitor.example")
+            compare(item("ssh-port").text, "2222")
+            compare(item("ssh-username").text, "operator")
+            compare(item("ssh-password-draft").text, "fold-test-draft")
+            compare(item("ssh-buffer-lines").text, "8000")
+            compare(item("ssh-reconnect-count").text, "4")
+            compare(item("ssh-reconnect-interval").text, "3000")
+            compare(item("ssh-encoding").currentText, "GB2312")
+            edit("ssh-host", "very-long-monitor-hostname-".repeat(8) + ".example")
+            page.width = 900
+            mouseClick(item("ssh-config-toggle")); wait(30)
+            const summary = item("ssh-target-summary")
+            verify(summary.truncated)
+            const summaryRight = summary.mapToItem(page, summary.width, 0).x
+            const connectLeft = item("sshConnectAction").mapToItem(page, 0, 0).x
+            verify(summaryRight <= connectLeft, "summary must not overlap connection actions")
+            const copy = item("ssh-copy-on-select")
+            verify(copy.mapToItem(page, copy.width, 0).x <= page.width)
+            for (const name of ["ssh-config-toggle", "ssh-pause", "ssh-clear", "ssh-copy-on-select"])
+                verify(!item(name).contentItem.truncated, name + " text must fit")
+        }
+        function test_sshFoldedControlsKeepWorking() {
+            make(nextSsh)
+            const ssh = item("ssh-terminal-backend")
+            edit("ssh-password-draft", "connect-fold-draft")
+            mouseClick(item("ssh-config-toggle"))
+            mouseClick(item("sshConnectAction")); tryCompare(ssh, "connectCalls", 1)
+            verify(!page.connectionConfigExpanded)
+            ssh.connectionState = 2; ssh.connected = true
+            ssh.appendTestLines(["RX 68 04 07 00 00 00", "tail"], 10)
+            wait(30)
+            page.selectLineAndExtractHex(0)
+            page.searchKeyword = "RX"; page.refreshSearchResult()
+            page.parseWindowVisible = true
+            mouseClick(item("ssh-config-toggle")); mouseClick(item("ssh-config-toggle"))
+            compare(ssh.currentLineCount, 2)
+            compare(page.selectedLineIndex, 0)
+            compare(page.selectedHexText.replace(/ /g, ""), "680407000000")
+            compare(page.searchMatches.length, 1)
+            verify(page.parseWindowVisible)
+            mouseClick(item("ssh-pause")); verify(!page.autoScroll)
+            mouseClick(item("ssh-pause")); verify(page.autoScroll)
+            verify(item("ssh-copy-on-select").visible && item("ssh-copy-on-select").enabled)
+            mouseClick(item("ssh-copy-on-select")); verify(page.copyOnSelect)
+            verify(findChild(page, "ssh-copy-all") === null)
+            mouseClick(item("ssh-clear")); compare(ssh.currentLineCount, 0)
+            const disconnects = ssh.disconnectCalls
+            mouseClick(item("sshConnectAction")); compare(ssh.disconnectCalls, disconnects + 1)
+            verify(!page.connectionConfigExpanded)
+        }
+        function test_sshCommandManagementFold() {
+            make(nextSsh)
+            const ssh = item("ssh-terminal-backend")
+            verify(!page.commandManagementExpanded)
+            verify(!item("ssh-command-editor").visible)
+            mouseClick(item("ssh-command-management-toggle"))
+            tryCompare(item("ssh-command-editor"), "visible", true)
+            wait(30)
+            verify(!item("ssh-command-add").contentItem.truncated)
+            item("ssh-command-name").text = "测试命令"
+            item("ssh-command-content").text = "echo synthetic"
+            const expandedHeight = item("ssh-terminal-pane").height
+            mouseClick(item("ssh-command-management-toggle"))
+            tryVerify(function() { return item("ssh-terminal-pane").height > expandedHeight + 20 })
+            page.visible = false; page.visible = true
+            verify(!page.commandManagementExpanded)
+            mouseClick(item("ssh-command-management-toggle"))
+            wait(30)
+            compare(item("ssh-command-name").text, "测试命令")
+            compare(item("ssh-command-content").text, "echo synthetic")
+            mouseClick(item("ssh-command-add")); compare(page.customCommands.length, 1)
+            tryVerify(function() { return visualItem(page, "ssh-command-delete-0") !== null })
+            const remove = visualItem(page, "ssh-command-delete-0")
+            const run = visualItem(page, "ssh-command-run-0")
+            verify(remove.visible)
+            mouseClick(item("ssh-command-management-toggle")); verify(!remove.visible); wait(30)
+            verify(run.visible); verify(!run.enabled)
+            verify(!run.contentItem.truncated)
+            ssh.connectionState = 2; ssh.connected = true
+            mouseClick(run)
+            compare(ssh.sentCommands.length, 1); compare(ssh.sentCommands[0], "echo synthetic")
+            compare(page.customCommands.length, 1)
+            mouseClick(item("ssh-command-management-toggle")); verify(remove.visible); wait(30)
+            mouseClick(remove, remove.width / 2, remove.height / 2)
+            compare(page.customCmdPendingDeleteName, "测试命令")
+        }
         function test_sshSelectionAndSearchSurviveEviction() {
             make(nextSsh)
             const ssh = item("ssh-terminal-backend")
@@ -185,7 +299,7 @@ Item {
             const scroll = item("ssh-connection-scroll")
             const encoding = item("ssh-encoding")
             const fields = [item("ssh-host"), encoding, item("ssh-buffer-lines"),
-                            item("ssh-auto-reconnect"), item("ssh-reconnect-count"), item("ssh-reconnect-interval")]
+                            item("ssh-reconnect-count"), item("ssh-reconnect-interval"), item("ssh-auto-reconnect")]
             for (const width of [902, 1160, 1600]) {
                 page.width = width
                 wait(30)
@@ -205,14 +319,14 @@ Item {
                 if (width === 902) {
                     verify(scroll.contentWidth > scroll.width)
                     scroll.contentX = scroll.contentWidth - scroll.width
-                    const interval = fields[fields.length - 1]
-                    const right = interval.mapToItem(scroll, interval.width, 0).x
-                    verify(right <= scroll.width && right > 0, "horizontal scrolling must reveal reconnect interval")
+                    const last = fields[fields.length - 1]
+                    const right = last.mapToItem(scroll, last.width, 0).x
+                    verify(right <= scroll.width && right > 0, "horizontal scrolling must reveal automatic reconnect at the end")
                     fields[0].forceActiveFocus()
                     tryCompare(scroll, "contentX", fields[0].x)
-                    interval.forceActiveFocus()
+                    last.forceActiveFocus()
                     wait(20)
-                    verify(interval.mapToItem(scroll, interval.width, 0).x <= scroll.width,
+                    verify(last.mapToItem(scroll, last.width, 0).x <= scroll.width,
                            "keyboard focus must scroll the active field into view")
                 }
             }
@@ -225,6 +339,73 @@ Item {
             verify(left !== null); verify(right !== null)
             compare(left.text,"<b>literal XML</b>"); compare(left.textFormat,Text.PlainText)
             compare(right.text,"<Item Name=\"<b>\" />"); compare(right.textFormat,Text.PlainText)
+        }
+        function diffItem(window, name) {
+            const found = visualItem(window.contentItem, name); verify(found !== null, name); return found;
+        }
+        function openDiff(rows) {
+            openSync(); connectSync(); page.requestDiff("698_protocol.xml");
+            manager.busy = false; manager.diffFinished("698_protocol.xml", rows);
+            const window = item("protocol-diff-window"); tryCompare(window, "visible", true); wait(40); return window;
+        }
+        function diffRows() {
+            const rows = [];
+            for (let i = 0; i < 80; ++i) rows.push({leftType: "same", rightType: "same", leftText: "<Item index=\"" + i + "\" />", rightText: "<Item index=\"" + i + "\" />"});
+            rows[0].leftType = "del"; rows[0].rightType = "empty";
+            for (const i of [35, 36]) { rows[i].leftType = "del"; rows[i].rightType = "add"; }
+            rows[79].leftType = "empty"; rows[79].rightType = "add";
+            rows[20] = {leftType:"fold", rightType:"fold", leftText:"省略相同内容", rightText:"省略相同内容"};
+            return rows;
+        }
+        function test_protocolDiffOverviewAndBlockNavigation() {
+            const window = openDiff(diffRows());
+            compare(window.changeBlocks.length, 3); compare(window.changeBlocks[1].start, 35); compare(window.changeBlocks[1].end, 36);
+            compare(window.currentBlock, 0);
+            const list = diffItem(window, "protocol-diff-list");
+            const overview = diffItem(window, "protocol-diff-overview");
+            const previous = diffItem(window, "protocol-diff-prev");
+            const next = diffItem(window, "protocol-diff-next");
+            verify(!previous.enabled); verify(next.enabled);
+            mouseClick(next); compare(window.currentBlock, 1); compare(list.currentIndex, 35); verify(list.contentY > 0);
+            mouseClick(overview, 9, overview.height - 1); compare(window.currentBlock, 2); compare(list.currentIndex, 79); verify(!next.enabled);
+            const viewport = diffItem(window, "protocol-diff-viewport"); verify(viewport.y > 0);
+            keyClick(Qt.Key_Up); compare(window.currentBlock, 1);
+            mouseClick(overview, 9, 0); compare(window.currentBlock, 0);
+            keyClick(Qt.Key_Down); compare(window.currentBlock, 1);
+            mouseClick(previous); compare(window.currentBlock, 0);
+            window.width = 600; window.height = 400; wait(30);
+            verify(overview.width > 0 && overview.height > 0); verify(next.x + next.width <= window.width);
+            mouseClick(overview, 9, overview.height * 36 / 80); compare(window.currentBlock, 1);
+        }
+        function test_protocolDiffResetAndIdenticalFiles() {
+            const window = openDiff(diffRows());
+            window.jumpBlock(2); compare(window.currentBlock, 2);
+            page.diffData = [{leftType:"same", rightType:"same", leftText:"<Same />", rightText:"<Same />"}];
+            tryCompare(window, "currentBlock", -1); compare(window.changeBlocks.length, 0);
+            verify(!diffItem(window, "protocol-diff-prev").enabled); verify(!diffItem(window, "protocol-diff-next").enabled);
+            verify(diffItem(window, "protocol-diff-summary").text.indexOf("无差异") >= 0);
+            mouseClick(diffItem(window, "protocol-diff-overview")); compare(window.currentBlock, -1);
+            page.diffData = [{leftType:"empty", rightType:"add", leftText:"", rightText:"<New />"}];
+            tryCompare(window, "currentBlock", 0); compare(window.changeBlocks.length, 1);
+            verify(window.changeBlocks[0].added); verify(!window.changeBlocks[0].deleted);
+            window.close(); tryCompare(page, "diffData", []);
+            page.requestDiff("other.xml"); manager.busy = false; manager.diffFinished("other.xml", diffRows());
+            tryCompare(window, "visible", true); tryCompare(window, "currentBlock", 0); compare(window.diffFileName, "other.xml");
+            page.diffData = []; tryCompare(window, "currentBlock", -1);
+        }
+        function test_protocolDiffShowsLoadingAndIgnoresCancelledResult() {
+            openSync(); connectSync(); page.requestDiff("module_msg_protocol.xml");
+            const window = item("protocol-diff-window");
+            tryCompare(window, "visible", true); verify(window.loading);
+            compare(diffItem(window, "protocol-diff-close").text, "取消");
+            verify(diffItem(window, "protocol-diff-summary").text.indexOf("正在比较") >= 0);
+            mouseClick(diffItem(window, "protocol-diff-close"));
+            verify(!window.visible); compare(manager.cancelOperationCalls, 1); compare(page.pendingAction, "");
+            manager.busy = false; manager.diffFinished("module_msg_protocol.xml", diffRows());
+            verify(!window.visible); compare(page.diffData.length, 0);
+            page.requestDiff("698_protocol.xml"); verify(window.visible); verify(window.loading);
+            manager.busy = false; manager.diffFinished("698_protocol.xml", diffRows()); wait(40);
+            verify(!window.loading); compare(window.currentBlock, 0); compare(window.changeBlocks.length, 3);
         }
         function test_legacyPlatformSyncContract() {
             manager = syncMock.createObject(scene,{usesSystemSmb:false})

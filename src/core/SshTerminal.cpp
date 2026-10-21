@@ -105,7 +105,7 @@ public:
 public slots:
   void shutdown() { cleanup(); }
   void doConnect(quint64 generation, const QString &host, int port,
-                 const QString &user, const QString &password, const QString &encoding) {
+                 const QString &user, const QString &password, const QString &encoding, bool useSystemCredentials) {
     cleanup();
     if (generation != m_buffer->activeGeneration.load()) return;
     m_generation = generation;
@@ -117,6 +117,7 @@ public slots:
     m_port = port;
     m_user = user;
     m_password = password.toUtf8();
+    m_useSystemCredentials = useSystemCredentials;
 #ifdef Q_OS_WIN
     static const bool socketsReady = [] {
       WSADATA data;
@@ -169,7 +170,7 @@ public slots:
   }
   void doSendCommand(const QString &cmd, bool appendNewline,
                      const QString &encoding) {
-    if (m_phase != Running) return;
+    if (m_phase != Running || m_buffer->receptionPauseRequested.load()) return;
     QByteArray data = SshLogStream::encode(cmd, encoding);
     if (!cmd.isEmpty() && data.isEmpty()) { fail(QStringLiteral("SSH 命令字符编码失败")); return; }
     if (appendNewline && !data.endsWith('\n')) data.append('\n');
@@ -206,7 +207,16 @@ public slots:
     resumeRead();
   }
   void resumeRead() {
-    if (m_phase == Running && m_timer && !m_timer->isActive()) m_timer->start(0);
+    if (m_phase != Running || !m_timer) return;
+    if (m_buffer->receptionPauseRequested.load()) {
+      m_timer->stop();
+      if (m_readNotifier) m_readNotifier->setEnabled(false);
+      if (m_writeNotifier) m_writeNotifier->setEnabled(false);
+    } else if (!m_timer->isActive()) m_timer->start(0);
+  }
+  void applyReceptionState(quint64 revision, bool paused) {
+    resumeRead();
+    emit receptionStateApplied(revision, paused);
   }
 
 signals:
@@ -214,6 +224,7 @@ signals:
   void errorOccurred(quint64 generation, const QString &error, bool securityFailure);
   void disconnected(quint64 generation);
   void dataReady(quint64 generation, quint64 revision);
+  void receptionStateApplied(quint64 revision, bool paused);
   void hostKeyRequired(quint64 generation, const QString &host, int port,
                        const QString &algorithm, const QString &fingerprint,
                        const QString &requestId);
@@ -273,18 +284,39 @@ private:
     emit errorOccurred(generation, error, securityFailure);
     emit disconnected(generation);
   }
+  void prepareMonitor() {
+    QVariantList rules;
+    quint64 revision;
+    {
+      QMutexLocker lock(&m_buffer->mutex);
+      revision = m_buffer->monitorRevision;
+      if (revision == m_monitorRevision) return;
+      rules = m_buffer->monitorRules;
+    }
+    m_monitor.configure(rules, revision, m_stream.logicalId(), m_stream.partialLine(), m_stream.logicalOffset());
+    m_monitorRevision = revision;
+  }
   void publish(std::vector<SshLogLine> lines) {
     bool notify = false;
+    SshLogLine partial{m_stream.partialLine(), m_stream.logicalId(), m_stream.continuation(), m_stream.hasPendingInput()};
+    m_monitor.feed(lines, partial);
+    auto hit = m_monitor.takeHit();
     {
       QMutexLocker lock(&m_buffer->mutex);
       if (m_generation != m_buffer->activeGeneration.load() ||
           m_streamRevision != m_buffer->contentRevision.load()) return;
+      if (!hit.data.isEmpty() && hit.revision == m_buffer->monitorRevision
+          && (m_buffer->monitorHit.data.isEmpty() || !m_buffer->monitorHit.data.value("pauseOnMatch", true).toBool()))
+        m_buffer->monitorHit = std::move(hit);
       for (auto &line : lines) {
         m_buffer->bytes += line.storageBytes();
         m_buffer->lines.push_back(std::move(line));
       }
-      m_buffer->partial = {m_stream.partialLine(), m_stream.logicalId(), m_stream.continuation(), m_stream.hasPendingInput()};
-      if ((!m_buffer->lines.empty() || !m_buffer->tabData.isEmpty() || m_buffer->tabOverflow) &&
+      const bool liveChanged = m_buffer->partial.text != m_stream.partialLine() || m_buffer->cursorColumn != m_stream.cursorColumn();
+      m_buffer->partial = std::move(partial);
+      m_buffer->cursorColumn = m_stream.cursorColumn();
+      m_buffer->cursorPosition = m_stream.cursorPosition(); m_buffer->cursorPadding = m_stream.cursorPadding();
+      if ((!m_buffer->lines.empty() || liveChanged || !m_buffer->tabData.isEmpty() || m_buffer->tabOverflow) &&
           !m_buffer->notificationPending) {
         m_buffer->notificationPending = true; notify = true;
       }
@@ -292,6 +324,7 @@ private:
     if (notify) emit dataReady(m_generation, m_streamRevision);
   }
   void appendData(const char *data, int size) {
+    prepareMonitor();
     QByteArray replay;
     bool capturing = false;
     {
@@ -384,7 +417,7 @@ private:
       if (!m_credentialsLoaded) {
         m_credentialsLoaded = true;
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-        if (m_password.isEmpty()) {
+        if (m_useSystemCredentials && m_password.isEmpty()) {
           QString error;
           emit credentialReadState(m_generation, true);
           const bool read = m_credentials->read(sshCredentialProfile(m_host, m_port, m_user),
@@ -397,7 +430,7 @@ private:
 #endif
         // Keychain may have waited for native UI while the owner cancelled.
         if (m_generation != m_buffer->activeGeneration.load()) { cleanup(); return; }
-        if (m_password.isEmpty()) { fail(QStringLiteral("请输入 SSH 密码或保存到钥匙串"), true); return; }
+        if (m_password.isEmpty()) { fail(QStringLiteral("请输入 SSH 密码"), true); return; }
       }
       const QByteArray user = m_user.toUtf8();
       rc = libssh2_userauth_password_ex(m_session, user.constData(), user.size(),
@@ -431,6 +464,7 @@ private:
     case Running: {
       m_timer->stop();
       m_readNotifier->setEnabled(false); m_writeNotifier->setEnabled(false);
+      if (m_buffer->receptionPauseRequested.load()) return;
       if (m_streamRevision != m_buffer->contentRevision.load()) return;
       int waitDirections = 0;
       bool writeProgress = false;
@@ -448,6 +482,7 @@ private:
       while (bytesRead < 256 * 1024 && budget.nsecsElapsed() < 2 * 1000 * 1000) {
         bool progress = false;
         for (int stream = 0; stream < 2; ++stream) {
+          if (m_buffer->receptionPauseRequested.load()) return;
           if (m_generation != m_buffer->activeGeneration.load() ||
               m_streamRevision != m_buffer->contentRevision.load()) return;
           qsizetype allowance;
@@ -461,6 +496,7 @@ private:
           if (m_replayOffset < m_replay.size()) {
             // Completion recovery uses the same budget as socket input, including newline-heavy output.
             const auto take = qMin(allowance, m_replay.size() - m_replayOffset);
+            prepareMonitor();
             publish(m_stream.feed(QByteArrayView(m_replay).sliced(m_replayOffset, take)));
             m_replayOffset += take; bytesRead += take; progress = true;
             if (m_replayOffset == m_replay.size()) { m_replay.clear(); m_replayOffset = 0; }
@@ -475,7 +511,9 @@ private:
         if (paused) break;
         if (!progress) { drained = true; break; }
       }
+      if (m_buffer->receptionPauseRequested.load()) return;
       if (drained && libssh2_channel_eof(m_channel)) {
+        prepareMonitor();
         publish(m_stream.finish());
         const auto generation = m_generation;
         cleanup(); emit disconnected(generation);
@@ -541,8 +579,11 @@ private:
   QByteArray m_password, m_hostKey, m_outgoing, m_writeInFlight, m_replay;
   qsizetype m_replayOffset = 0;
   bool m_credentialsLoaded = false;
+  bool m_useSystemCredentials = false;
   QString m_encoding = QStringLiteral("UTF-8");
   SshLogStream m_stream;
+  SshMonitorMatcher m_monitor;
+  quint64 m_monitorRevision = ~quint64(0);
   quint64 m_streamRevision = 0;
 };
 
@@ -565,13 +606,15 @@ QVariant TerminalLineModel::data(const QModelIndex &index, int role) const {
     return line.text;
   if (role == LineIdRole) return lineId(index.row());
   if (role == ContinuationRole) return line.continuation;
+  if (role == MonitorColorRole) return line.monitorColor;
+  if (role == MonitorRuleNameRole) return line.monitorRuleName;
   if (role == ContinuesRole) return line.continues;
   return {};
 }
 
 QHash<int, QByteArray> TerminalLineModel::roleNames() const {
   return {{LineTextRole, "lineText"}, {LineIdRole, "lineId"},
-          {ContinuationRole, "continuation"}, {ContinuesRole, "continues"}};
+          {ContinuationRole, "continuation"}, {ContinuesRole, "continues"}, {MonitorColorRole, "monitorColor"}, {MonitorRuleNameRole, "monitorRuleName"}};
 }
 
 void TerminalLineModel::appendLines(const QStringList &lines) {
@@ -673,6 +716,27 @@ QString TerminalLineModel::bufferText() const {
   return result;
 }
 
+QString TerminalLineModel::textRange(qint64 firstId, int firstOffset, qint64 lastId,
+                                    int lastOffset, const QString &tail) const {
+  if (firstId > lastId || (firstId == lastId && firstOffset > lastOffset)) {
+    std::swap(firstId, lastId);
+    std::swap(firstOffset, lastOffset);
+  }
+  const int first = firstId == m_nextLineId ? rowCount() : indexForId(firstId);
+  const int last = lastId == m_nextLineId ? rowCount() : indexForId(lastId);
+  if (first < 0 || last < first) return {};
+  QString result;
+  for (int row = first; row <= last; ++row) {
+    const QString text = row == rowCount() ? tail : lineAt(row);
+    const int length = int(text.size());
+    const int from = row == first ? qBound(0, firstOffset, length) : 0;
+    const int to = row == last ? qBound(from, lastOffset, length) : length;
+    result.append(text.mid(from, to - from));
+    if (row < last && !m_lines[size_t(row)].continues) result.append('\n');
+  }
+  return result;
+}
+
 qint64 TerminalLineModel::lineId(int index) const {
   return index >= 0 && index < int(m_lines.size()) ? m_firstLineId + index : -1;
 }
@@ -711,6 +775,31 @@ int TerminalLineModel::segmentOffset(int index) const {
   int offset = 0;
   for (int i = start; i >= 0 && i < index; ++i) offset += int(m_lines[size_t(i)].text.size());
   return offset;
+}
+
+qint64 TerminalLineModel::idForLogicalOffset(quint64 logicalId, qsizetype offset) const {
+  qsizetype position = 0;
+  bool seen = false;
+  for (int i = 0; i < int(m_lines.size()); ++i) {
+    const auto &line = m_lines[size_t(i)];
+    if (line.logicalId != logicalId) continue;
+    if (!seen && line.continuation) return -2;
+    seen = true;
+    if (position + line.text.size() > offset || !line.continues) return lineId(i);
+    position += line.text.size();
+  }
+  return -1;
+}
+
+bool SshTerminal::setMonitorRules(const QVariantList &rules, bool armed) {
+  if (!SshMonitorMatcher::validRules(rules)) return false;
+  QMutexLocker lock(&m_buffer->mutex);
+  const QVariantList selected = armed ? rules : QVariantList{};
+  if (m_buffer->monitorRules == selected) return true;
+  m_buffer->monitorRules = selected;
+  ++m_buffer->monitorRevision;
+  m_buffer->monitorHit = {};
+  return true;
 }
 
 // --- SshTerminal 实现 ---
@@ -770,7 +859,24 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
   });
   connect(m_worker, &SshWorker::dataReady, this, [this](quint64 generation, quint64 revision) {
     if (generation != m_generation || revision != m_buffer->contentRevision.load()) return;
-    if (!m_flushTimer->isActive()) m_flushTimer->start(m_presentationActive ? 180 : 500);
+    if (m_buffer->receptionPauseRequested.load()) return;
+    const int delay = m_presentationActive ? (m_lastInput.isValid() && m_lastInput.elapsed() < 1000 ? 16 : 180) : 500;
+    if (!m_flushTimer->isActive() || m_flushTimer->remainingTime() > delay) m_flushTimer->start(delay);
+  });
+  connect(m_worker, &SshWorker::receptionStateApplied, this, [this](quint64 revision, bool paused) {
+    if (revision != m_receptionRevision || paused != m_buffer->receptionPauseRequested.load()) return;
+    if (paused) {
+      // The worker has stopped reading. Commit only the data received before it stopped.
+      for (;;) {
+        flushPendingData();
+        QMutexLocker lock(&m_buffer->mutex);
+        if (m_buffer->lines.empty()) break;
+      }
+      m_flushTimer->stop();
+    }
+    if (m_receptionPaused == paused) return;
+    m_receptionPaused = paused;
+    emit receptionPausedChanged();
   });
   connect(m_worker, &SshWorker::hostKeyRequired, this,
       [this](quint64 generation, const QString &host, int port, const QString &algorithm,
@@ -845,9 +951,21 @@ void SshTerminal::refreshCredentials() {
   m_credentialError.clear();
   ++m_credentialGeneration;
   m_buffer->credentialRevision.store(m_credentialGeneration);
+  if (!usesSecureCredentials()) {
+    m_credentialBusy = false;
+    m_refreshPending = false;
+    emit credentialStateChanged();
+    return;
+  }
   m_refreshPending = true;
   if (!m_credentialInFlight) dispatchCredentialRefresh();
   emit credentialStateChanged();
+}
+
+void SshTerminal::setUseSystemCredentials(bool enabled) {
+  if (m_useSystemCredentials == enabled) return;
+  m_useSystemCredentials = enabled;
+  refreshCredentials();
 }
 
 void SshTerminal::dispatchCredentialRefresh() {
@@ -948,11 +1066,7 @@ void SshTerminal::setUsername(const QString &username) {
 }
 
 QString SshTerminal::password() const {
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-  return {};
-#else
-  return m_password;
-#endif
+  return usesSecureCredentials() ? QString() : m_password;
 }
 
 void SshTerminal::setPassword(const QString &password) {
@@ -970,9 +1084,11 @@ void SshTerminal::setEncoding(const QString &encoding) {
     flushFinalPendingData();
     m_encoding = encoding;
     resetPendingData(false);
-    auto settings = this->settings();
-    settings.setValue("ssh/encoding", m_encoding);
-  settings.sync();
+    if (m_persistSettings) {
+      auto settings = this->settings();
+      settings.setValue("ssh/encoding", m_encoding);
+      settings.sync();
+    }
     emit encodingChanged();
   }
 }
@@ -993,9 +1109,11 @@ void SshTerminal::setAutoReconnectEnabled(bool enabled) {
     return;
   }
   m_autoReconnectEnabled = enabled;
-  auto settings = this->settings();
-  settings.setValue("ssh/autoReconnectEnabled", m_autoReconnectEnabled);
-  settings.sync();
+  if (m_persistSettings) {
+    auto settings = this->settings();
+    settings.setValue("ssh/autoReconnectEnabled", m_autoReconnectEnabled);
+    settings.sync();
+  }
   emit autoReconnectEnabledChanged();
 }
 
@@ -1007,9 +1125,11 @@ void SshTerminal::setReconnectMaxAttempts(int attempts) {
     return;
   }
   m_reconnectMaxAttempts = attempts;
-  auto settings = this->settings();
-  settings.setValue("ssh/reconnectMaxAttempts", m_reconnectMaxAttempts);
-  settings.sync();
+  if (m_persistSettings) {
+    auto settings = this->settings();
+    settings.setValue("ssh/reconnectMaxAttempts", m_reconnectMaxAttempts);
+    settings.sync();
+  }
   emit reconnectMaxAttemptsChanged();
 }
 
@@ -1021,9 +1141,11 @@ void SshTerminal::setReconnectIntervalMs(int intervalMs) {
     return;
   }
   m_reconnectIntervalMs = intervalMs;
-  auto settings = this->settings();
-  settings.setValue("ssh/reconnectIntervalMs", m_reconnectIntervalMs);
-  settings.sync();
+  if (m_persistSettings) {
+    auto settings = this->settings();
+    settings.setValue("ssh/reconnectIntervalMs", m_reconnectIntervalMs);
+    settings.sync();
+  }
   emit reconnectIntervalMsChanged();
 }
 
@@ -1041,9 +1163,19 @@ void SshTerminal::setMaxBufferLines(int maxLines) {
   }
 }
 
-int SshTerminal::currentLineCount() const { return m_lineModel->rowCount(); }
+int SshTerminal::currentLineCount() const { return lineModel()->rowCount(); }
 
 TerminalLineModel *SshTerminal::lineModel() const { return m_lineModel; }
+
+void SshTerminal::setReceptionPaused(bool paused) {
+  if (m_buffer->receptionPauseRequested.exchange(paused) == paused) return;
+  const auto revision = ++m_receptionRevision;
+  if (paused) {
+    m_flushTimer->stop();
+    if (m_tabBusy) finishTabCapture();
+  }
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, revision, paused] { worker->applyReceptionState(revision, paused); });
+}
 
 void SshTerminal::setPresentationActive(bool active) {
   if (m_presentationActive == active) return;
@@ -1088,7 +1220,7 @@ void SshTerminal::startConnection() {
   m_buffer->activeGeneration.store(m_generation);
   resetPendingData(false);
   emit sigDisconnect(previous);
-  emit sigStartConnect(m_generation, m_host, m_port, m_username, m_password, m_encoding);
+  emit sigStartConnect(m_generation, m_host, m_port, m_username, m_password, m_encoding, usesSecureCredentials());
 }
 
 void SshTerminal::connectToHost() {
@@ -1097,7 +1229,7 @@ void SshTerminal::connectToHost() {
     setStatusMessage(QStringLiteral("请输入有效的主机、端口和用户名"));
     return;
   }
-  if (credentialBusy() || !m_credentialError.isEmpty()) {
+  if (usesSecureCredentials() && (credentialBusy() || !m_credentialError.isEmpty())) {
     setStatusMessage(credentialBusy() ? QStringLiteral("正在处理 SSH 钥匙串，请稍候") : m_credentialError);
     return;
   }
@@ -1134,7 +1266,7 @@ void SshTerminal::disconnectFromHost() {
 }
 
 void SshTerminal::sendCommand(const QString &cmd) {
-  if (m_connected) {
+  if (m_connected && !m_buffer->receptionPauseRequested.load()) {
     // 先清空远端当前输入行，避免 Tab
     // 补全阶段残留内容（候选/前缀）与最终命令拼接 Ctrl+U: Unix shell
     // 行编辑“清空到行首”
@@ -1143,13 +1275,14 @@ void SshTerminal::sendCommand(const QString &cmd) {
 }
 
 void SshTerminal::sendRawBytes(const QString &text) {
-  if (m_connected) {
+  if (m_connected && !m_buffer->receptionPauseRequested.load()) {
+    m_lastInput.start();
     emit sigSendCommand(text, false, m_encoding);
   }
 }
 
 void SshTerminal::sendTabCompletion(const QString &prefix) {
-  if (!m_connected)
+  if (!m_connected || m_buffer->receptionPauseRequested.load())
     return;
   // 防重入：Tab 序列结束前（包含 phase0→phase1 过渡）忽略所有新按键
   if (m_tabBusy)
@@ -1191,9 +1324,9 @@ QVariantList SshTerminal::findLineIndexes(const QString &keyword,
   }
   const Qt::CaseSensitivity sensitivity =
       caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive;
-  const int total = m_lineModel->rowCount();
+  const int total = lineModel()->rowCount();
   for (int i = 0; i < total; ++i) {
-    const QString line = m_lineModel->lineAt(i);
+    const QString line = lineModel()->lineAt(i);
     if (line.contains(keyword, sensitivity)) {
       result << i;
     }
@@ -1211,42 +1344,42 @@ QVariantList SshTerminal::findLineIndexesInRange(const QString &keyword,
     return result;
   const Qt::CaseSensitivity sensitivity =
       caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive;
-  const int total = m_lineModel->rowCount();
+  const int total = lineModel()->rowCount();
   // 修正范围边界，防止越界
   const int from = qMax(0, fromLine);
   const int to = qMin(total - 1, toLine);
   for (int i = from; i <= to; ++i) {
-    if (m_lineModel->lineAt(i).contains(keyword, sensitivity))
+    if (lineModel()->lineAt(i).contains(keyword, sensitivity))
       result << i;
   }
   return result;
 }
 
 QString SshTerminal::lineAt(int index) const {
-  return m_lineModel->logicalLineAt(index);
+  return lineModel()->logicalLineAt(index);
 }
 
 QVariantList SshTerminal::findLineIds(const QString &keyword, qint64 fromId) const {
   QVariantList result;
   if (keyword.isEmpty()) return result;
   const auto startId = qMax(fromId, firstLineId());
-  int row = m_lineModel->indexForId(startId);
+  int row = lineModel()->indexForId(startId);
   if (row < 0) return result;
-  row = m_lineModel->logicalStart(row);
-  while (row < m_lineModel->rowCount()) {
-    if (m_lineModel->logicalLineAt(row).contains(keyword, Qt::CaseInsensitive))
-      result.append(m_lineModel->lineId(row));
-    row = m_lineModel->logicalEnd(row) + 1;
+  row = lineModel()->logicalStart(row);
+  while (row < lineModel()->rowCount()) {
+    if (lineModel()->logicalLineAt(row).contains(keyword, Qt::CaseInsensitive))
+      result.append(lineModel()->lineId(row));
+    row = lineModel()->logicalEnd(row) + 1;
   }
   return result;
 }
 
 void SshTerminal::copyLineToClipboard(int index) const {
-  QString line = m_lineModel->logicalLineAt(index);
+  QString line = lineModel()->logicalLineAt(index);
   if (line.isEmpty()) {
     return;
   }
-  if (!m_lineModel->completeLineAt(index)) line.prepend(QStringLiteral("[日志片段，内容尚未完整或较早部分已淘汰]\n"));
+  if (!lineModel()->completeLineAt(index)) line.prepend(QStringLiteral("[日志片段，内容尚未完整或较早部分已淘汰]\n"));
   if (QGuiApplication::clipboard()) {
     QGuiApplication::clipboard()->setText(line);
   }
@@ -1255,7 +1388,7 @@ void SshTerminal::copyLineToClipboard(int index) const {
 void SshTerminal::copyBufferToClipboard() const {
   if (QGuiApplication::clipboard()) {
     QString text = getBufferText();
-    if (m_lineModel->rowCount() && !m_lineModel->completeLineAt(0))
+    if (lineModel()->rowCount() && !lineModel()->completeLineAt(0))
       text.prepend(QStringLiteral("[首条日志为片段，较早内容已淘汰或尚未完整]\n"));
     QGuiApplication::clipboard()->setText(text);
   }
@@ -1277,17 +1410,22 @@ void SshTerminal::clearBuffer() {
 
 void SshTerminal::onWorkerConnected() {
   auto settings = this->settings();
-  settings.setValue("ssh/host", m_host);
-  settings.setValue("ssh/port", m_port);
-  settings.setValue("ssh/username", m_username);
-
-  settings.setValue("ssh/maxLines", m_maxBufferLines);
-  settings.sync();
+  if (m_persistSettings) {
+    settings.setValue("ssh/host", m_host);
+    settings.setValue("ssh/port", m_port);
+    settings.setValue("ssh/username", m_username);
+    settings.setValue("ssh/maxLines", m_maxBufferLines);
+    settings.sync();
+  }
   const bool configurationSaved = settings.status() == QSettings::NoError;
 
   m_manualDisconnectRequested = false;
   m_reconnectPending = false;
   if (m_reconnectAttempt != 0) {
+    emit linesAboutToChange();
+    m_lineModel->appendLines({QStringLiteral("[%1] SSH 已重新连接成功")
+        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"))});
+    emit lineCountChanged();
     m_reconnectAttempt = 0;
     emit reconnectAttemptChanged();
   }
@@ -1390,15 +1528,20 @@ void SshTerminal::triggerReconnect() {
 
 void SshTerminal::resetPendingData(bool discardPartial) {
   m_flushTimer->stop();
-  m_committedPartial.clear();
+  m_committedPartial.clear(); m_committedMonitorColor.clear();
+  m_cursorColumn = 0;
+  m_cursorPosition = m_cursorPadding = 0;
+  emit liveLineChanged();
   const auto revision = ++m_buffer->contentRevision;
   bool hadPartial = false;
   {
     QMutexLocker lock(&m_buffer->mutex);
     hadPartial = !m_buffer->partial.text.isEmpty() || m_buffer->partial.continuation || m_buffer->partial.continues;
-    m_buffer->lines.clear(); m_buffer->bytes = 0; m_buffer->partial = {};
+    m_buffer->lines.clear(); m_buffer->bytes = 0; m_buffer->partial = {}; m_buffer->cursorColumn = 0;
     m_buffer->tabData.clear(); m_buffer->tabCapture = false; m_buffer->tabOverflow = false;
     m_buffer->notificationPending = false;
+    m_buffer->monitorHit = {};
+    ++m_buffer->monitorRevision;
   }
   if (m_tabBusy) finishTabCapture();
   const auto encoding = m_encoding;
@@ -1425,6 +1568,7 @@ void SshTerminal::flushFinalPendingData() {
     emit lineCountChanged();
   }
   m_flushTimer->stop();
+  m_committedPartial.clear(); m_committedMonitorColor.clear(); m_cursorColumn = m_cursorPosition = m_cursorPadding = 0; emit liveLineChanged();
 }
 
 void SshTerminal::flushPendingData() {
@@ -1432,6 +1576,11 @@ void SshTerminal::flushPendingData() {
   std::vector<SshLogLine> lines;
   qsizetype bytes = 0;
   bool more, tabOverflow;
+  QString live;
+  QString liveColor;
+  int column, position, padding;
+  SshMonitorHit hit;
+  quint64 partialLogicalId;
   {
     QMutexLocker lock(&m_buffer->mutex);
     while (!m_buffer->lines.empty() && lines.size() < 4096 && bytes < 2 * 1024 * 1024) {
@@ -1440,14 +1589,37 @@ void SshTerminal::flushPendingData() {
     }
     m_buffer->bytes -= bytes;
     more = !m_buffer->lines.empty();
-    m_committedPartial = more ? QString() : m_buffer->partial.text;
+    live = more ? QString() : m_buffer->partial.text;
+    liveColor = more ? QString() : m_buffer->partial.monitorColor;
+    partialLogicalId = m_buffer->partial.logicalId;
+    column = more ? 0 : m_buffer->cursorColumn;
+    position = more ? 0 : m_buffer->cursorPosition; padding = more ? 0 : m_buffer->cursorPadding;
     m_buffer->notificationPending = more;
+    const auto &pending = m_buffer->monitorHit;
+    if (!pending.data.isEmpty() && pending.revision == m_buffer->monitorRevision
+        && (!more || std::any_of(lines.begin(), lines.end(), [&](const SshLogLine &line) { return line.logicalId == pending.logicalId; })))
+      hit = std::exchange(m_buffer->monitorHit, {});
     tabOverflow = m_buffer->tabOverflow; m_buffer->tabOverflow = false;
   }
   if (!lines.empty()) {
     emit linesAboutToChange();
     m_lineModel->appendRecords(std::move(lines));
-    emit lineCountChanged();
+  }
+  if (!hit.data.isEmpty()) {
+    auto data = hit.data;
+    data["lineId"] = m_lineModel->idForLogicalOffset(hit.logicalId, hit.offset);
+    if (data["lineId"].toLongLong() == -1 && !more && !live.isEmpty() && partialLogicalId == hit.logicalId)
+      data["lineId"] = m_lineModel->firstLineId() + m_lineModel->rowCount();
+    data["time"] = QDateTime::currentDateTime().toString("HH:mm:ss");
+    data["receivedLineId"] = m_lineModel->firstLineId() + m_lineModel->rowCount();
+    emit monitorMatched(data);
+  }
+  if (bytes) emit lineCountChanged();
+  if (m_committedPartial != live || m_cursorColumn != column || m_committedMonitorColor != liveColor) {
+    m_committedPartial = std::move(live); m_cursorColumn = column;
+    m_committedMonitorColor = liveColor;
+    m_cursorPosition = position; m_cursorPadding = padding;
+    emit liveLineChanged();
   }
   if (tabOverflow) {
     finishTabCapture();

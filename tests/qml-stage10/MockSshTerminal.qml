@@ -3,7 +3,8 @@ import QtQml.Models
 QtObject {
     id: root
     enum ConnectionState { Idle, Connecting, Connected, Reconnecting, Failed, Disconnected }
-    property bool usesSecureCredentials: true
+    property bool useSystemCredentials: false
+    property bool usesSecureCredentials: useSystemCredentials
     property string host: "old.example"
     property int port: 22
     property string username: "old-user"
@@ -22,10 +23,26 @@ QtObject {
     property int reconnectIntervalMs: 2000
     property int reconnectAttempt: 0
     property int maxBufferLines: 10000
-    property int currentLineCount: 0
-    property real firstLineId: 0
+    readonly property int currentLineCount: lineModel.count
+    property real receivedFirstLineId: 0
+    readonly property real firstLineId: receivedFirstLineId
+    property bool receptionPaused: false
+    property var pendingPeerLines: []
+    onReceptionPausedChanged: {
+        if (!receptionPaused && pendingPeerLines.length) {
+            const lines = pendingPeerLines; pendingPeerLines = []
+            appendTestLines(lines, maxBufferLines)
+        }
+    }
     property bool presentationActive: true
-    property ListModel lineModel: ListModel {}
+    property string liveLine: ""
+    property string liveMonitorColor: ""
+    property int cursorColumn: 0
+    property int cursorPosition: liveLine.length
+    property int cursorPadding: 0
+    property bool persistSettings: true
+    property ListModel receiveModel: ListModel {}
+    readonly property var lineModel: receiveModel
     property bool initialized: false
     property int connectCalls: 0
     property int disconnectCalls: 0
@@ -41,6 +58,10 @@ QtObject {
     signal hostKeyConfirmationRequested(string host, int port, string algorithm, string fingerprint, string requestId)
     signal sharedBufferOverflowed()
     signal lineCountChanged()
+    signal monitorMatched(var hit)
+    property var monitorRules: []
+    property bool monitorArmed: false
+    function setMonitorRules(rules, armed) { monitorRules = rules; monitorArmed = armed; return true }
     signal linesAboutToChange()
     signal connectionError(string error)
     signal tabCompletionReady(string completedText, var candidates)
@@ -66,11 +87,20 @@ QtObject {
         hostKeyPending = false
         if (!accept) disconnectFromHost()
     }
-    function sendCommand(command) {}
-    function sendRawBytes(value) {}
+    property var sentCommands: []
+    function sendCommand(command) { sentCommands = sentCommands.concat([command]) }
+    property var rawInput: []
+    function sendRawBytes(value) { rawInput = rawInput.concat([value]) }
     function sendTabCompletion(prefix) {}
-    function getBufferText() { return "" }
-    function clearBuffer() { linesAboutToChange(); firstLineId += currentLineCount; lineModel.clear(); currentLineCount = 0; lineCountChanged() }
+    function getBufferText() {
+        const lines = []
+        for (let i = 0; i < receiveModel.count; ++i) lines.push(receiveModel.get(i).lineText)
+        return lines.join("\n")
+    }
+    function clearBuffer() {
+        linesAboutToChange(); receivedFirstLineId += receiveModel.count; receiveModel.clear()
+        lineCountChanged()
+    }
     function findLineIndexes(keyword, sensitive) { return [] }
     function findLineIndexesInRange(keyword, start, end, sensitive) { return [] }
     function findLineIds(keyword, fromId) {
@@ -82,17 +112,63 @@ QtObject {
     }
     function lineIdAt(index) { return index >= 0 && index < currentLineCount ? firstLineId + index : -1 }
     function indexForLineId(id) { return id >= firstLineId && id < firstLineId + currentLineCount ? id - firstLineId : -1 }
-    function lineIsComplete(index) { return index >= 0 && index < currentLineCount }
-    function lineSegmentOffset(index) { return 0 }
-    function lineAt(index) { return index >= 0 && index < currentLineCount ? lineModel.get(index).lineText : "" }
+    function logicalStart(index) {
+        while (index > 0 && lineModel.get(index).continuation) --index
+        return index
+    }
+    function lineIsComplete(index) {
+        if (index < 0 || index >= currentLineCount) return false
+        const start = logicalStart(index)
+        while (index + 1 < currentLineCount && lineModel.get(index).continues) ++index
+        return !lineModel.get(start).continuation && !lineModel.get(index).continues
+    }
+    function lineSegmentOffset(index) {
+        let offset = 0
+        for (let i = logicalStart(index); i < index; ++i) offset += lineModel.get(i).lineText.length
+        return offset
+    }
+    function lineAt(index) {
+        if (index < 0 || index >= currentLineCount) return ""
+        let text = ""
+        for (let i = logicalStart(index); i < currentLineCount; ++i) {
+            text += lineModel.get(i).lineText
+            if (!lineModel.get(i).continues) break
+        }
+        return text
+    }
     function appendTestLines(lines, limit) {
+        if (receptionPaused) { pendingPeerLines = pendingPeerLines.concat(lines); return }
         linesAboutToChange()
-        for (const text of lines) lineModel.append({lineText:text,lineId:firstLineId+lineModel.count,continuation:false,continues:false})
-        while (lineModel.count > limit) { lineModel.remove(0); firstLineId++ }
-        currentLineCount = lineModel.count
+        const nextId = receivedFirstLineId + receiveModel.count
+        for (const text of lines) receiveModel.append({lineText:text,lineId:receivedFirstLineId+receiveModel.count,continuation:false,continues:false,monitorColor:"",monitorRuleName:""})
+        while (receiveModel.count > limit) { receiveModel.remove(0); receivedFirstLineId++ }
+        for (let i = 0; i < lines.length && monitorArmed; ++i) {
+            const found = monitorRules.filter(rule => new RegExp(rule.pattern, rule.ignoreCase ? "i" : "").test(lines[i]))
+            const rule = found.find(value => value.pauseOnMatch !== false) || found[0]
+            if (!rule) continue
+            const row = nextId + i - receivedFirstLineId
+            if (row >= 0 && row < receiveModel.count) {
+                receiveModel.setProperty(row, "monitorColor", rule.color || "#e8b76a")
+                receiveModel.setProperty(row, "monitorRuleName", rule.name)
+            }
+            monitorMatched({ruleId:rule.id,ruleName:rule.name,color:rule.color || "#e8b76a",pauseOnMatch:rule.pauseOnMatch !== false,
+                text:lines[i],lineId:nextId+i,receivedLineId:receivedFirstLineId+receiveModel.count,time:"12:00:00"})
+        }
         lineCountChanged()
     }
     function copyLineToClipboard(index) {}
     function copyBufferToClipboard() {}
-    function clipboardText() { return "" }
+    function selectedText(firstId, firstOffset, lastId, lastOffset) {
+        const first = firstId - firstLineId, last = lastId - firstLineId
+        if (first < 0 || last < first || last > currentLineCount) return ""
+        let result = ""
+        for (let row = first; row <= last; ++row) {
+            const text = row === currentLineCount ? liveLine : lineModel.get(row).lineText
+            result += text.slice(row === first ? firstOffset : 0, row === last ? lastOffset : text.length)
+            if (row < last && !lineModel.get(row).continues) result += "\n"
+        }
+        return result
+    }
+    property string clipboardContents: ""
+    function clipboardText() { return clipboardContents }
 }

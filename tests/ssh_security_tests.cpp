@@ -13,6 +13,7 @@
 #include <functional>
 #include <stdexcept>
 #include <atomic>
+#include <thread>
 
 static void check(bool ok, const char *message) {
   if (!ok) throw std::runtime_error(message);
@@ -29,6 +30,7 @@ public:
   FakeSshCredentials() : SecureCredentialStore(Domain::Ssh) {}
   bool isAvailable() const override { return true; }
   bool contains(const QString &id, bool *exists, QString *) const override {
+    ++containsCalls;
     if (silentContainsFailure) return false;
     *exists = values.contains(id); return true;
   }
@@ -54,6 +56,7 @@ public:
   bool silentRemoveFailure = false;
   bool silentContainsFailure = false;
   mutable std::atomic<bool> blockRead{false}, enteredRead{false}, releaseRead{false};
+  mutable std::atomic<int> containsCalls{0};
 };
 static QString profile(const QString &host, int port, const QString &user) {
   return QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(QJsonArray{
@@ -70,11 +73,46 @@ static void trustChecks() {
   check(store.check("host", 2222, "two") == SshHostKeyStore::Changed, "rotation blocked");
   check(!store.trust("host", 2222, "two", &error), "no silent replacement");
   check(store.check("host", 2222, "one") == SshHostKeyStore::Trusted, "original retained");
+  QLockFile held(dir.filePath("knownhosts.json.lock"));
+  check(held.tryLock(0), "hold concurrent trust writer lock");
+  bool trusted = false;
+  std::thread writer([&] {
+    SshHostKeyStore concurrent(dir.filePath("knownhosts.json"));
+    trusted = concurrent.trust("second-host", 22, "second-key");
+  });
+  QThread::msleep(80); held.unlock(); writer.join();
+  check(trusted && store.check("second-host", 22, "second-key") == SshHostKeyStore::Trusted
+            && store.check("host", 2222, "one") == SshHostKeyStore::Trusted, "concurrent trust writes wait and preserve both endpoints");
   QFile file(dir.filePath("knownhosts.json")); check(file.open(QIODevice::WriteOnly), "corrupt fixture");
   file.write("broken"); file.close();
   check(store.check("new", 22, "one", &error) == SshHostKeyStore::Error, "corrupt fail closed");
   SshHostKeyStore unwritable(dir.filePath("missing/knownhosts.json"));
   check(!unwritable.trust("host", 22, "one", &error), "write error blocks trust");
+}
+static void sessionSettingsChecks() {
+  QTemporaryDir directory;
+  const auto path = directory.filePath("settings.json");
+  JsonSettings settings(path);
+  settings.setValue("ssh/host", "original.invalid"); settings.setValue("ssh/encoding", "UTF-8"); settings.sync();
+  QFile file(path); check(file.open(QIODevice::ReadOnly), "read original session settings");
+  const auto before = file.readAll(); file.close();
+  auto credentials = std::make_shared<FakeSshCredentials>();
+  credentials->silentContainsFailure = true;
+  SshTerminal first(credentials, directory.path()), second(credentials, directory.path());
+  check(!first.usesSecureCredentials() && !second.usesSecureCredentials() && !first.credentialBusy()
+            && first.credentialError().isEmpty() && credentials->containsCalls.load() == 0, "plain account/password sessions do not query the system credential store");
+  check(first.setProperty("persistSettings", false) && second.setProperty("persistSettings", false), "workspace owns session configuration persistence");
+  first.setHost("first.invalid"); second.setHost("second.invalid");
+  first.setPassword("plain-a"); second.setPassword("plain-b");
+  check(first.password() == "plain-a" && second.password() == "plain-b", "plain passwords are independently available to connection records");
+  first.setEncoding("GB2312"); second.setEncoding("UTF-8");
+  first.setAutoReconnectEnabled(false); second.setAutoReconnectEnabled(true);
+  first.setReconnectMaxAttempts(2); second.setReconnectMaxAttempts(8);
+  first.setReconnectIntervalMs(1000); second.setReconnectIntervalMs(4000);
+  check(QMetaObject::invokeMethod(&first, "onWorkerConnected") && QMetaObject::invokeMethod(&second, "onWorkerConnected"), "exercise connected-setting writes without network");
+  check(file.open(QIODevice::ReadOnly) && file.readAll() == before, "independent sessions cannot overwrite legacy/shared connection defaults");
+  check(first.encoding() == "GB2312" && second.encoding() == "UTF-8" && first.reconnectMaxAttempts() == 2 && second.reconnectMaxAttempts() == 8,
+        "session settings remain independent in memory");
 }
 static void credentialChecks() {
   QTemporaryDir dir;
@@ -86,6 +124,7 @@ static void credentialChecks() {
   auto store = std::make_shared<FakeSshCredentials>();
   store->values[profile("legacy.invalid", 2222, "synthetic")] = "migrated-secret";
   SshTerminal terminal(store, dir.path());
+  terminal.setUseSystemCredentials(true);
   check(waitFor([&] { return !terminal.credentialBusy(); }), "credential status completion");
   check(terminal.hasSavedPassword() && terminal.password().isEmpty(), "JSON identity loads saved state without echoing secret");
   QSettings old(oldPath, QSettings::IniFormat);
@@ -107,6 +146,7 @@ static void migrationSourceChecks() {
   QTemporaryDir dir;
   auto store = std::make_shared<FakeSshCredentials>();
   SshTerminal terminal(store, dir.path());
+  terminal.setUseSystemCredentials(true);
   terminal.setHost("valid.invalid"); terminal.setUsername("synthetic");
   check(waitFor([&] { return !terminal.credentialBusy(); }), "silent failure fixture ready");
   QString completed; bool success = true;
@@ -144,6 +184,7 @@ static void cancellationChecks() {
   QTcpServer server;
   check(server.listen(QHostAddress::LocalHost, 0), "local fake listener");
   SshTerminal terminal(store, dir.path());
+  terminal.setUseSystemCredentials(true);
   check(waitFor([&] { return !terminal.credentialBusy(); }), "initial credentials");
   terminal.setHost("127.0.0.1"); terminal.setPort(server.serverPort()); terminal.setUsername("fake");
   check(waitFor([&] { return !terminal.credentialBusy(); }), "identity ready");
@@ -158,6 +199,7 @@ static void cancellationChecks() {
   QElapsedTimer elapsed; elapsed.start();
   {
     SshTerminal temporary(store, dir.path());
+    temporary.setUseSystemCredentials(true);
     check(waitFor([&] { return !temporary.credentialBusy(); }), "temporary ready");
     temporary.setHost("127.0.0.1"); temporary.setPort(server.serverPort()); temporary.setUsername("fake");
     check(waitFor([&] { return !temporary.credentialBusy(); }), "temporary identity ready");
@@ -174,6 +216,7 @@ static void credentialDestructionChecks() {
   QTemporaryDir dir;
   auto store = std::make_shared<FakeSshCredentials>();
   auto *terminal = new SshTerminal(store, dir.path());
+  terminal->setUseSystemCredentials(true);
   terminal->setHost("synthetic.invalid"); terminal->setUsername("synthetic");
   check(waitFor([&] { return !terminal->credentialBusy(); }), "slow store ready");
   store->blockRead = true;
@@ -225,6 +268,7 @@ static void localSshdChecks() {
   startDaemon(firstKey);
   {
     SshTerminal terminal(store, dir.path());
+    terminal.setUseSystemCredentials(true);
     check(waitFor([&] { return !terminal.credentialBusy(); }), "SSH test credentials ready");
     terminal.setHost("127.0.0.1"); terminal.setPort(port); terminal.setUsername("stage10-synthetic-nonexistent");
     terminal.setReconnectIntervalMs(500); terminal.setReconnectMaxAttempts(2);
@@ -319,7 +363,7 @@ static void localSshdChecks() {
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    trustChecks(); credentialChecks(); migrationSourceChecks(); cancellationChecks(); credentialDestructionChecks();
+    trustChecks(); sessionSettingsChecks(); credentialChecks(); migrationSourceChecks(); cancellationChecks(); credentialDestructionChecks();
     if (app.arguments().contains("--local-sshd")) localSshdChecks();
     QTextStream(stdout) << "PASS: SSH trust, confirmed-config isolation, target binding, cancellation and destruction\n";
     return 0;

@@ -7,7 +7,41 @@
 #include <iconv.h>
 #endif
 
+namespace {
+int cellWidth(char32_t c) {
+  const auto category = QChar::category(c);
+  if (category == QChar::Mark_NonSpacing || category == QChar::Mark_Enclosing || c == 0x200d) return 0;
+  return (c >= 0x1100 && c <= 0x115f) || (c >= 0x2e80 && c <= 0xa4cf)
+      || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff)
+      || (c >= 0xfe10 && c <= 0xfe6f) || (c >= 0xff01 && c <= 0xff60)
+      || (c >= 0xffe0 && c <= 0xffe6) || (c >= 0x1f300 && c <= 0x1faff)
+      || (c >= 0x20000 && c <= 0x3ffff) ? 2 : 1;
+}
+char32_t codePoint(QStringView text, qsizetype index, qsizetype *length) {
+  *length = text[index].isHighSurrogate() && index + 1 < text.size() && text[index + 1].isLowSurrogate() ? 2 : 1;
+  return *length == 2 ? QChar::surrogateToUcs4(text[index], text[index + 1]) : text[index].unicode();
+}
+int columns(QStringView text) {
+  int count = 0;
+  for (qsizetype i = 0, length; i < text.size(); i += length) count += cellWidth(codePoint(text, i, &length));
+  return count;
+}
+struct CellPosition { qsizetype index; int column; };
+CellPosition cellPosition(QStringView text, int target, bool roundUp = false) {
+  int column = 0;
+  for (qsizetype i = 0, length; i < text.size(); i += length) {
+    const int width = cellWidth(codePoint(text, i, &length));
+    if (width && column >= target) return {i, column};
+    if (column + width > target) return roundUp ? CellPosition{i + length, column + width} : CellPosition{i, column};
+    column += width;
+  }
+  return {text.size(), column};
+}
+}
+
 SshLogStream::SshLogStream(const QString &encoding) { reset(encoding); }
+int SshLogStream::cursorPosition() const { return int(cellPosition(m_partial, m_column).index); }
+int SshLogStream::cursorPadding() const { return qMax(0, m_column - cellPosition(m_partial, m_column).column); }
 
 SshLogStream::~SshLogStream() {
 #ifndef Q_OS_WIN
@@ -27,8 +61,9 @@ void SshLogStream::reset(const QString &encoding, bool clearedPartialLine) {
   m_gb = encoding.startsWith("GB", Qt::CaseInsensitive);
   m_utf8 = QStringDecoder(QStringConverter::Utf8);
   m_pendingBytes.clear(); m_partial.clear();
-  m_state = State::Text; m_afterCr = false; m_continuation = clearedPartialLine; m_pendingUtf8 = 0;
+  m_state = State::Text; m_csi.clear(); m_column = m_lineColumns = 0; m_continuation = clearedPartialLine; m_pendingUtf8 = 0;
   ++m_logicalId;
+  m_logicalOffset = 0;
 #ifndef Q_OS_WIN
   if (m_converter) iconv_close(m_converter);
   m_converter = nullptr;
@@ -122,24 +157,68 @@ QByteArray SshLogStream::encode(const QString &text, const QString &encoding) {
 }
 
 void SshLogStream::emitLine(std::vector<SshLogLine> &lines, bool continues) {
+  m_logicalOffset = continues ? m_logicalOffset + m_partial.size() : 0;
   lines.push_back({std::exchange(m_partial, {}), m_logicalId, m_continuation, continues});
+  m_column = m_lineColumns = 0;
   m_continuation = continues;
   if (!continues) ++m_logicalId;
 }
 
 void SshLogStream::append(QStringView text, std::vector<SshLogLine> &lines) {
   while (!text.isEmpty()) {
+    if (m_column != m_lineColumns) {
+      qsizetype length;
+      const int width = cellWidth(codePoint(text, 0, &length));
+      const auto start = cellPosition(m_partial, m_column);
+      const auto end = cellPosition(m_partial, m_column + width, true);
+      const QString replacement = QString(qMax(0, m_column - start.column), ' ') + text.first(length)
+          + QString(qMax(0, end.column - m_column - width), ' ');
+      m_partial.replace(start.index, end.index - start.index, replacement);
+      m_column += width; m_lineColumns = columns(m_partial);
+      text = text.sliced(length);
+      if (m_partial.size() > SegmentCharacters) {
+        auto split = SegmentCharacters;
+        if (m_partial[split - 1].isHighSurrogate()) --split;
+        const auto tail = m_partial.mid(split); m_partial.truncate(split);
+        emitLine(lines, true); append(tail, lines);
+      }
+      continue;
+    }
     if (m_partial.size() == SegmentCharacters) {
       // Keep a UTF-16 surrogate pair together at the display-segment boundary.
       if (m_partial.back().isHighSurrogate() && text.front().isLowSurrogate()) {
         const auto high = m_partial.back(); m_partial.chop(1);
-        emitLine(lines, true); m_partial.append(high);
+        emitLine(lines, true); m_partial.append(high); m_column = m_lineColumns = 1;
       } else emitLine(lines, true);
     }
     const auto take = qMin(SegmentCharacters - m_partial.size(), text.size());
     if (m_partial.isEmpty()) m_partial = text.first(take).toString();
     else m_partial.append(text.first(take));
+    m_lineColumns += columns(text.first(take)); m_column = m_lineColumns;
     text = text.sliced(take);
+  }
+}
+
+void SshLogStream::applyCsi(QChar final) {
+  // shortcut: current-line terminal editing only; use a screen emulator for full-screen TUIs.
+  bool valid = false;
+  const int value = m_csi.section(';', 0, 0).toInt(&valid);
+  const int count = valid && value > 0 ? qMin(value, int(SegmentCharacters)) : 1;
+  if (final == 'C' || final == 'a') m_column = qMin(int(SegmentCharacters), m_column + count);
+  else if (final == 'D') m_column = qMax(0, m_column - count);
+  else if (final == 'G' || final == '`') m_column = count - 1;
+  else if (final == 'K') {
+    const int mode = valid ? value : 0;
+    if (mode == 0) m_partial.truncate(cellPosition(m_partial, m_column).index);
+    else if (mode == 1) m_partial.replace(0, cellPosition(m_partial, m_column + 1, true).index, QString(m_column + 1, ' '));
+    else if (mode == 2) m_partial.clear();
+    m_lineColumns = columns(m_partial);
+  } else if (final == 'P' || final == '@' || final == 'X') {
+    const auto start = cellPosition(m_partial, m_column);
+    const auto end = cellPosition(m_partial, m_column + count, true);
+    if (final == '@') m_partial.insert(start.index, QString(qMin(count, int(SegmentCharacters - m_partial.size())), ' '));
+    else m_partial.replace(start.index, end.index - start.index, final == 'X' ? QString(qMin(count, int(end.column - start.column)), ' ') : QString());
+    m_lineColumns = columns(m_partial);
   }
 }
 
@@ -148,26 +227,32 @@ void SshLogStream::consume(QStringView text, std::vector<SshLogLine> &lines) {
   while (i < text.size()) {
     const QChar c = text[i++];
     if (m_state == State::Text) {
-      if (m_afterCr) { m_afterCr = false; if (c == '\n') continue; }
-      if (c == '\r' || c == '\n') {
-        emitLine(lines, false); m_afterCr = c == '\r';
+      if (c == '\n') {
+        emitLine(lines, false);
+      } else if (c == '\r') {
+        m_column = 0;
+      } else if (c == '\b') {
+        m_column = qMax(0, m_column - 1);
+      } else if (c == '\t') {
+        append(QString(8 - m_column % 8, ' '), lines);
       } else if (c == QChar(0x1b)) {
         m_state = State::Escape;
-      } else if (c != QChar(7)) {
+      } else if (c.unicode() >= 0x20 && c != QChar(0x7f)) {
         const auto start = i - 1;
         while (i < text.size() && text[i] != '\r' && text[i] != '\n' &&
-               text[i] != QChar(0x1b) && text[i] != QChar(7)) ++i;
+               text[i].unicode() >= 0x20 && text[i] != QChar(0x7f)) ++i;
         append(text.sliced(start, i - start), lines);
       }
     } else if (m_state == State::Escape) {
-      if (c == '[') m_state = State::Csi;
+      if (c == '[') { m_csi.clear(); m_state = State::Csi; }
       else if (c == ']') m_state = State::Osc;
       else if (c == 'P' || c == '^' || c == '_') m_state = State::String;
       else if (c.unicode() >= 0x20 && c.unicode() <= 0x2f) m_state = State::EscapeIntermediate;
       else m_state = State::Text;
     } else if (m_state == State::Csi) {
-      if (c.unicode() >= 0x40 && c.unicode() <= 0x7e) m_state = State::Text;
+      if (c.unicode() >= 0x40 && c.unicode() <= 0x7e) { applyCsi(c); m_csi.clear(); m_state = State::Text; }
       else if (c == QChar(0x1b)) m_state = State::Escape;
+      else if (m_csi.size() < 64) m_csi.append(c);
     } else if (m_state == State::EscapeIntermediate) {
       if (c.unicode() >= 0x30 && c.unicode() <= 0x7e) m_state = State::Text;
     } else if (m_state == State::StringEscape) {
@@ -203,6 +288,6 @@ std::vector<SshLogLine> SshLogStream::finish() {
   const auto tail = decode({}, true);
   consume(tail, lines);
   if (!m_partial.isEmpty()) emitLine(lines, false);
-  m_state = State::Text; m_afterCr = false; m_pendingUtf8 = 0;
+  m_state = State::Text; m_csi.clear(); m_pendingUtf8 = 0;
   return lines;
 }

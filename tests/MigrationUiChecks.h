@@ -8,16 +8,56 @@
 #include <QFileInfo>
 #include <QEventLoop>
 #include <QElapsedTimer>
+#include <QClipboard>
 #include <QMouseEvent>
+#include <QMimeData>
 #include <QImage>
+#include <QKeyEvent>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QQmlEngine>
 #include <QQmlIncubationController>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QTemporaryDir>
 #include <QTimeZone>
 #include <QUrl>
 #include <functional>
+#include <memory>
+
+struct SshTerminalTestAccess {
+  struct MonitorInput {
+    QByteArray waitingAtPeer;
+    SshLogStream stream;
+    SshMonitorMatcher matcher;
+    quint64 revision = ~quint64(0);
+    void feed(SshTerminal &terminal, const QByteArray &bytes) {
+      waitingAtPeer.append(bytes);
+      if (terminal.m_buffer->receptionPauseRequested.load()) return;
+      const auto incoming = std::exchange(waitingAtPeer, {});
+      {
+        QMutexLocker lock(&terminal.m_buffer->mutex);
+        if (revision != terminal.m_buffer->monitorRevision) {
+          revision = terminal.m_buffer->monitorRevision;
+          matcher.configure(terminal.m_buffer->monitorRules, revision, stream.logicalId(), stream.partialLine(), stream.logicalOffset());
+        }
+      }
+      auto lines = stream.feed(incoming);
+      SshLogLine partial{stream.partialLine(), stream.logicalId(), stream.continuation(), stream.hasPendingInput()};
+      matcher.feed(lines, partial);
+      {
+        QMutexLocker lock(&terminal.m_buffer->mutex);
+        for (auto &line : lines) {
+          terminal.m_buffer->bytes += line.storageBytes(); terminal.m_buffer->lines.push_back(std::move(line));
+        }
+        terminal.m_buffer->partial = partial;
+        if (!matcher.hit().data.isEmpty()) terminal.m_buffer->monitorHit = matcher.hit();
+      }
+      terminal.flushPendingData();
+    }
+  };
+};
 
 // Called only by --ui-smoke --ui-checks from the isolated runtime test runner.
 inline QString checkMigratedUi(QQuickWindow *window) {
@@ -38,12 +78,13 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     auto *backend = window->findChild<LogBackend *>("analysisBackend");
     require(backend != nullptr, "real LogBackend is missing");
     auto trace = [](const char *step) { qInfo() << "UI_CHECK_STEP" << step; };
-    auto settle = [&] {
+    auto settle = [&](QQuickWindow *renderWindow = nullptr) {
+      if (!renderWindow) renderWindow = window;
       QEventLoop frame;
       bool rendered = false;
-      QObject::connect(window, &QQuickWindow::frameSwapped, &frame, [&] { rendered = true; frame.quit(); }, Qt::QueuedConnection);
+      QObject::connect(renderWindow, &QQuickWindow::frameSwapped, &frame, [&] { rendered = true; frame.quit(); }, Qt::QueuedConnection);
       QTimer::singleShot(2000, &frame, &QEventLoop::quit);
-      window->update();
+      renderWindow->update();
       frame.exec();
       require(rendered, "UI frame did not finish rendering");
       auto *controller = qmlEngine(window)->incubationController();
@@ -65,11 +106,12 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     auto uiItem = [&](const QString &name) { return findItem(window->contentItem(), name); };
     auto click = [&](QQuickItem *item) {
       require(item && item->isVisible(), "click target is missing or hidden");
+      auto *targetWindow = item->window();
       const QPointF point = item->mapToScene(QPointF(item->width() / 2, item->height() / 2));
-      QMouseEvent press(QEvent::MouseButtonPress, point, window->mapToGlobal(point.toPoint()), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-      QMouseEvent release(QEvent::MouseButtonRelease, point, window->mapToGlobal(point.toPoint()), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-      QCoreApplication::sendEvent(window, &press);
-      QCoreApplication::sendEvent(window, &release);
+      QMouseEvent press(QEvent::MouseButtonPress, point, targetWindow->mapToGlobal(point.toPoint()), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+      QMouseEvent release(QEvent::MouseButtonRelease, point, targetWindow->mapToGlobal(point.toPoint()), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(targetWindow, &press);
+      QCoreApplication::sendEvent(targetWindow, &release);
       settle();
     };
     auto navigate = [&](int page) {
@@ -137,7 +179,8 @@ inline QString checkMigratedUi(QQuickWindow *window) {
                 && backend->parseResult().contains(QString::fromUtf8("无法识别")), "truncated APDU must show a failure");
     trace("live log selection and real protocol parsing");
     navigate(5);
-    auto *livePage = window->findChild<QQuickItem *>("page-5");
+    auto *liveWorkspace = window->findChild<QQuickItem *>("page-5");
+    auto *livePage = liveWorkspace ? liveWorkspace->property("activeSession").value<QObject *>() : nullptr;
     auto *ssh = livePage ? livePage->findChild<SshTerminal *>("ssh-terminal-backend") : nullptr;
     require(ssh, "live log backend is missing");
     ssh->clearBuffer();
@@ -145,27 +188,86 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     ssh->lineCountChanged(); settle();
     for (int row = 0; row < 2; ++row) {
       auto *line = uiItem("ssh-log-line-" + QString::number(ssh->lineIdAt(row)));
-      click(line);
-      const auto hex = livePage->property("selectedHexText").toString().remove(' ');
-      require(hex == (row == 0 ? "680407000000" : "0501024000020000"), "live selection extracted the wrong frame");
+      require(line, "HEX double-click target is missing");
+      const auto hexPoint = line->mapToScene(QPointF(10 + livePage->property("charWidth").toReal() * (row == 0 ? 5.1 : 12.1), line->height() / 2));
+      for (auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease, QEvent::MouseButtonPress,
+                        QEvent::MouseButtonDblClick, QEvent::MouseButtonRelease}) {
+        QMouseEvent event(type, hexPoint, window->mapToGlobal(hexPoint.toPoint()), Qt::LeftButton,
+                          type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &event);
+      }
+      settle();
+      const auto hex = livePage->property("parseableHexText").toString().remove(' ');
+      require(livePage->property("hasTextSelection").toBool()
+                  && hex == (row == 0 ? "680407000000" : "0501024000020000"), "native double-click did not select the complete HEX frame");
+      const auto hexScreenshot = qEnvironmentVariable("LOGANALYQT_SSH_HEX_SCREENSHOT");
+      if (row == 1 && !hexScreenshot.isEmpty())
+        require(window->grabWindow().save(hexScreenshot + ".selection.png"), "HEX selection capture failed");
       const auto point = line->mapToScene(QPointF(line->width() / 2, line->height() / 2));
       QMouseEvent press(QEvent::MouseButtonPress, point, window->mapToGlobal(point.toPoint()), Qt::RightButton, Qt::RightButton, Qt::NoModifier);
       QMouseEvent release(QEvent::MouseButtonRelease, point, window->mapToGlobal(point.toPoint()), Qt::RightButton, Qt::NoButton, Qt::NoModifier);
       QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release); settle();
-      click(uiItem("ssh-parse-auto"));
-      require(backend->popupResultModel()->rowCount() > 2 && livePage->property("parsePanelVisible").toBool(),
+      auto *parseAction = uiItem("ssh-parse-auto");
+      require(parseAction && parseAction->property("enabled").toBool()
+                  && parseAction->property("text").toString() == QString::fromUtf8("立即解析"), "immediate parse action is missing");
+      if (row == 1 && !hexScreenshot.isEmpty())
+        require(window->grabWindow().save(hexScreenshot + ".menu.png"), "HEX menu capture failed");
+      click(parseAction);
+      auto *liveResult = backend->parseModel(livePage->property("parseSessionId").toInt());
+      require(liveResult && liveResult->rowCount() > 2 && livePage->property("parseWindowVisible").toBool(),
               "live context menu did not produce real parsed fields");
+      auto *parserWindow = livePage->findChild<QQuickWindow *>("ssh-parse-window");
+      auto *frame = parserWindow ? findItem(parserWindow->contentItem(), "ssh-parse-frame") : nullptr;
+      require(frame && frame->property("text").toString() == livePage->property("parsedHex").toString(),
+              "monitor parser does not display its original frame");
       if (row == 1) {
-        bool hasOad = false;
-        for (int field = 0; field < backend->popupResultModel()->rowCount(); ++field)
-          hasOad |= backend->popupResultModel()->data(backend->popupResultModel()->index(field), ParseResultModel::ValueRole)
-                        .toString().remove(' ').contains("40000200");
-        require(hasOad, "live 698 APDU selection lost the actual OAD field");
+        int oadRow = -1;
+        for (int field = 0; field < liveResult->rowCount(); ++field)
+          if (liveResult->data(liveResult->index(field), ParseResultModel::NameRole).toString() == "OAD") oadRow = field;
+        require(oadRow >= 0, "live 698 APDU selection lost the actual OAD field");
+        const int fieldCount = liveResult->rowCount();
+        click(findItem(parserWindow->contentItem(), "ssh-parse-field-" + QString::number(oadRow)));
+        settle(parserWindow);
+        require(frame->property("selectedText").toString() == "40 00 02 00"
+                    && liveResult->rowCount() == fieldCount, "native OAD field click did not highlight exactly its raw bytes or cleared parsing");
+        if (!hexScreenshot.isEmpty()) {
+          require(parserWindow->grabWindow().save(hexScreenshot + ".parse.png"), "HEX parser capture failed");
+        }
         const auto screenshot = qEnvironmentVariable("LOGANALYQT_SSH_UI_SCREENSHOT");
         if (!screenshot.isEmpty()) require(window->grabWindow().save(screenshot), "live log UI capture failed");
       }
     }
-    ssh->clearBuffer(); livePage->setProperty("parsePanelVisible", false);
+    trace("drag-selected text and native clipboard with copy-on-select toggle");
+    {
+      auto *clipboard = QGuiApplication::clipboard();
+      auto *saved = new QMimeData;
+      if (const auto *mime = clipboard->mimeData())
+        for (const auto &format : mime->formats()) saved->setData(format, mime->data(format));
+      std::unique_ptr<QMimeData, std::function<void(QMimeData *)>> restore(saved,
+          [clipboard](QMimeData *data) { clipboard->setMimeData(data); });
+      clipboard->setText("selection-test-sentinel");
+      auto *row = uiItem("ssh-log-line-" + QString::number(ssh->lineIdAt(0)));
+      require(row && !uiItem("ssh-copy-all") && uiItem("ssh-copy-on-select"),
+              "selection-copy toggle did not replace the copy-all button");
+      const qreal charWidth = livePage->property("charWidth").toReal();
+      auto drag = [&] {
+        const auto from = row->mapToScene(QPointF(10 + charWidth * 0.1, row->height() / 2));
+        const auto to = row->mapToScene(QPointF(10 + charWidth * 2.1, row->height() / 2));
+        QMouseEvent press(QEvent::MouseButtonPress, from, window->mapToGlobal(from.toPoint()), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QMouseEvent move(QEvent::MouseMove, to, window->mapToGlobal(to.toPoint()), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, to, window->mapToGlobal(to.toPoint()), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &move); settle();
+        require(clipboard->text() == "selection-test-sentinel", "drag changed clipboard before mouse release");
+        QCoreApplication::sendEvent(window, &release); settle();
+      };
+      drag();
+      require(clipboard->text() == "selection-test-sentinel", "unchecked selection-copy changed clipboard");
+      click(uiItem("ssh-copy-on-select")); settle();
+      drag();
+      require(clipboard->text() == "RX", "native clipboard does not contain the dragged text");
+      click(uiItem("ssh-copy-on-select"));
+    }
+    ssh->clearBuffer(); livePage->setProperty("parseWindowVisible", false);
     trace("live log paused viewport across coalesced batches");
     const int previousLimit = ssh->maxBufferLines();
     ssh->setMaxBufferLines(100);
@@ -185,6 +287,225 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     settle(); QMetaObject::invokeMethod(livePage, "captureLogViewport");
     require(livePage->property("viewAnchorId").toLongLong() == anchor, "coalesced updates moved the paused log record");
     livePage->setProperty("autoScroll", true); ssh->clearBuffer(); ssh->setMaxBufferLines(previousLimit);
+    trace("independent SSH monitor tabs and parser windows");
+    ssh->lineModel()->appendLines({"RX 68 04 07 00 00 00"}); ssh->lineCountChanged();
+    require(QMetaObject::invokeMethod(livePage, "selectLineAndExtractHex", Q_ARG(QVariant, 0))
+                && QMetaObject::invokeMethod(livePage, "parseSelectedHexWithProtocol", Q_ARG(QVariant, 0)), "first monitor parse failed");
+    const int firstMonitorModel = livePage->property("parseSessionId").toInt();
+    click(uiItem("ssh-new-session")); settle();
+    auto *secondPage = liveWorkspace->property("activeSession").value<QObject *>();
+    auto *secondSsh = secondPage ? secondPage->findChild<SshTerminal *>("ssh-terminal-backend") : nullptr;
+    require(secondPage && secondPage != livePage && secondSsh && secondSsh != ssh, "monitor tabs share a session/backend");
+    secondSsh->lineModel()->appendLines({"RX 05 01 02 40 00 02 00 00"}); secondSsh->lineCountChanged();
+    require(QMetaObject::invokeMethod(secondPage, "selectLineAndExtractHex", Q_ARG(QVariant, 0))
+                && QMetaObject::invokeMethod(secondPage, "parseSelectedHexWithProtocol", Q_ARG(QVariant, 0)), "second monitor parse failed");
+    const int secondMonitorModel = secondPage->property("parseSessionId").toInt();
+    require(firstMonitorModel != secondMonitorModel && backend->parseModel(firstMonitorModel)->rowCount() == 3
+                && backend->parseModel(secondMonitorModel)->rowCount() > 3, "monitor parse results were shared or overwritten");
+    require(livePage->property("parseWindowVisible").toBool() && secondPage->property("parseWindowVisible").toBool(),
+            "monitor parser windows are not independent");
+    auto *firstFrame = livePage->findChild<QQuickItem *>("ssh-parse-frame");
+    auto *secondFrame = secondPage->findChild<QQuickItem *>("ssh-parse-frame");
+    require(firstFrame && secondFrame, "independent parser raw frames are missing");
+    backend->handleLink("highlight:0,1", firstMonitorModel);
+    backend->handleLink("highlight:3,4", secondMonitorModel);
+    require(firstFrame->property("selectedText").toString() == "68"
+                && secondFrame->property("selectedText").toString() == "40 00 02 00",
+            "field highlight crossed monitor session boundaries");
+    liveWorkspace->setProperty("currentIndex", 0); settle();
+    require(liveWorkspace->property("activeSession").value<QObject *>() == livePage && ssh->currentLineCount() == 1
+                && secondSsh->currentLineCount() == 1, "switching monitor tabs replaced a session or its log");
+    livePage->setProperty("parseWindowVisible", false); secondPage->setProperty("parseWindowVisible", false);
+    trace("native SSH monitor windows, reparenting, maximize and docking");
+    require(QMetaObject::invokeMethod(liveWorkspace, "detachSession", Q_ARG(QVariant, QVariant::fromValue(livePage)))
+                && QMetaObject::invokeMethod(liveWorkspace, "detachSession", Q_ARG(QVariant, QVariant::fromValue(secondPage))),
+            "cannot detach monitor sessions");
+    auto *firstMonitorWindow = qobject_cast<QQuickWindow *>(livePage->property("monitorWindow").value<QObject *>());
+    auto *secondMonitorWindow = qobject_cast<QQuickWindow *>(secondPage->property("monitorWindow").value<QObject *>());
+    require(firstMonitorWindow && secondMonitorWindow && firstMonitorWindow != secondMonitorWindow
+                && firstMonitorWindow != window && secondMonitorWindow != window
+                && firstMonitorWindow->isVisible() && secondMonitorWindow->isVisible(),
+            "detached monitors are not independent native windows");
+    settle(secondMonitorWindow);
+    require(!firstMonitorWindow->transientParent() && !secondMonitorWindow->transientParent()
+                && firstMonitorWindow->modality() == Qt::NonModal,
+            "detached monitor is modal or attached to the main window");
+    auto *firstMonitorItem = qobject_cast<QQuickItem *>(livePage);
+    auto *secondMonitorItem = qobject_cast<QQuickItem *>(secondPage);
+    require(firstMonitorItem->window() == firstMonitorWindow && secondMonitorItem->window() == secondMonitorWindow,
+            "the existing monitor views did not move to their native windows");
+    require(livePage->findChild<SshTerminal *>("ssh-terminal-backend") == ssh
+                && secondPage->findChild<SshTerminal *>("ssh-terminal-backend") == secondSsh,
+            "detaching replaced a monitor backend");
+    firstMonitorWindow->raise(); firstMonitorWindow->requestActivate();
+    firstMonitorWindow->showMaximized(); settle(firstMonitorWindow);
+    require(firstMonitorWindow->visibility() == QWindow::Maximized, "native monitor cannot maximize");
+    firstMonitorWindow->showNormal(); settle(firstMonitorWindow);
+    for (auto *screen : QGuiApplication::screens()) {
+      firstMonitorWindow->setScreen(screen);
+      firstMonitorWindow->setPosition(screen->availableGeometry().topLeft() + QPoint(32, 32));
+      settle(firstMonitorWindow);
+      require(firstMonitorWindow->screen() == screen, "native monitor did not move to the requested screen");
+    }
+    const auto monitorScreenshot = qEnvironmentVariable("LOGANALYQT_SSH_WINDOW_SCREENSHOT");
+    if (!monitorScreenshot.isEmpty()) {
+      require(firstMonitorWindow->grabWindow().save(monitorScreenshot), "native monitor capture failed");
+    }
+    firstMonitorWindow->close(); settle();
+    if (!monitorScreenshot.isEmpty()) {
+      require(window->grabWindow().save(monitorScreenshot + ".main.png"), "session sidebar capture failed");
+      click(uiItem("ssh-sidebar-toggle")); settle();
+      auto *sidebar = uiItem("ssh-session-sidebar");
+      auto *badge = uiItem("ssh-session-badge-" + livePage->property("sessionId").toString());
+      require(sidebar && sidebar->width() >= 60 && badge && badge->isVisible(),
+              "collapsed session rail has no visible session identifier");
+      require(window->grabWindow().save(monitorScreenshot + ".collapsed.png"), "collapsed session rail capture failed");
+      const auto point = badge->mapToScene(QPointF(badge->width() / 2, badge->height() / 2));
+      QMouseEvent press(QEvent::MouseButtonPress, point, window->mapToGlobal(point.toPoint()), Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+      QMouseEvent release(QEvent::MouseButtonRelease, point, window->mapToGlobal(point.toPoint()), Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release); settle();
+      auto *detachAction = uiItem("ssh-session-detach-" + livePage->property("sessionId").toString());
+      require(detachAction && detachAction->isVisible(), "collapsed session menu has no detached-window action");
+      require(window->grabWindow().save(monitorScreenshot + ".options.png"), "session options menu capture failed");
+      QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+      QCoreApplication::sendEvent(window, &escape); settle();
+      click(uiItem("ssh-sidebar-toggle")); settle();
+    }
+    require(!livePage->property("detached").toBool() && !firstMonitorWindow->isVisible()
+                && firstMonitorItem->window() == window && secondMonitorWindow->isVisible()
+                && ssh->currentLineCount() == 1 && secondSsh->currentLineCount() == 1,
+            "closing a monitor failed to dock it or affected another session");
+    require(QMetaObject::invokeMethod(liveWorkspace, "dockSession", Q_ARG(QVariant, QVariant::fromValue(secondPage))),
+            "cannot dock second monitor");
+    settle();
+    require(!secondMonitorWindow->isVisible() && secondMonitorItem->window() == window,
+            "second monitor remained orphaned after docking");
+    if (!monitorScreenshot.isEmpty()) {
+      QFile evidence(monitorScreenshot + ".json");
+      const QJsonObject result{{"platform", QGuiApplication::platformName()},
+                               {"screens", QGuiApplication::screens().size()},
+                               {"independentMonitorWindows", 2}, {"maximizeAndDock", true},
+                               {"preservedBackendsAndLogs", true}};
+      const auto data = QJsonDocument(result).toJson();
+      require(evidence.open(QIODevice::WriteOnly) && evidence.write(data) == data.size(),
+              "cannot save native monitor verification result");
+    }
+    trace("shared monitor rules, colored matches, native editor and independent-window resume");
+    {
+      auto addRule = [&](const QString &name, const QString &pattern, const QString &color, bool pause = true) {
+        QVariant id;
+        require(QMetaObject::invokeMethod(liveWorkspace, "saveMonitorRule", Q_RETURN_ARG(QVariant, id),
+                    Q_ARG(QVariant, -1), Q_ARG(QVariant, name), Q_ARG(QVariant, pattern), Q_ARG(QVariant, false), Q_ARG(QVariant, color), Q_ARG(QVariant, pause))
+                    && id.toInt() > 0, "cannot save shared monitor rule");
+        return id.toInt();
+      };
+      const int errorRule = addRule(QString::fromUtf8("严重错误"), "ERROR", "#f79a93");
+      const int offlineRule = addRule(QString::fromUtf8("设备离线"), "OFFLINE", "#80b9ff");
+      const int markRule = addRule(QString::fromUtf8("普通提醒"), "NOTICE", "#7ed6a0", false);
+      auto currentHit = [](QObject *page) {
+        const auto value = page->property("monitorHit");
+        return value.metaType() == QMetaType::fromType<QJSValue>() ? value.value<QJSValue>().toVariant().toMap() : value.toMap();
+      };
+      liveWorkspace->setProperty("currentIndex", 0);
+      ssh->clearBuffer(); secondSsh->clearBuffer();
+      livePage->setProperty("monitorRuleIds", QVariantList{errorRule, markRule}); livePage->setProperty("monitorEnabled", true); livePage->setProperty("autoScroll", true);
+      secondPage->setProperty("monitorRuleIds", QVariantList{offlineRule}); secondPage->setProperty("monitorEnabled", true); secondPage->setProperty("autoScroll", true);
+      SshTerminalTestAccess::MonitorInput firstInput, secondInput;
+      firstInput.feed(*ssh, "NOTICE mark without pausing\nNOTICE next reminder\n"); settle();
+      require(livePage->property("autoScroll").toBool() && ssh->lineModel()->data(ssh->lineModel()->index(0), TerminalLineModel::MonitorColorRole).toString() == "#7ed6a0",
+              "mark-only rule stopped following or failed to color the log history");
+      firstInput.feed(*ssh, "regular output\nERROR synthetic failure\nfollowing output\n"); settle();
+      require(!livePage->property("autoScroll").toBool() && livePage->property("monitorHitColor").value<QColor>() == QColor("#f79a93")
+                  && secondPage->property("autoScroll").toBool(), "a rule paused the wrong session or lost its configured color");
+      const auto hitId = currentHit(livePage).value("lineId").toLongLong();
+      firstInput.feed(*ssh, "ERROR while paused\nreception continues\n"); settle();
+      require(ssh->getBufferText().contains("reception continues") && currentHit(livePage).value("lineId").toLongLong() == hitId,
+              "paused monitor stopped receiving or replaced its original match");
+      click(uiItem("ssh-monitor-rules"));
+      auto *ruleEditor = liveWorkspace->findChild<QQuickWindow *>("ssh-rule-window");
+      require(ruleEditor && ruleEditor->isVisible(), "shared rule editor did not open");
+      settle(ruleEditor);
+      QEventLoop validateRule;
+      QTimer::singleShot(160, &validateRule, &QEventLoop::quit); validateRule.exec();
+      auto *purple = findItem(ruleEditor->contentItem(), "ssh-rule-color-bb9cf5");
+      click(purple);
+      require(findItem(ruleEditor->contentItem(), "ssh-rule-save")->isEnabled(), "rule validation did not enable save");
+      click(findItem(ruleEditor->contentItem(), "ssh-rule-save")); settle(ruleEditor);
+      require(livePage->property("monitorHitColor").value<QColor>() == QColor("#f79a93"), "editing a rule relabeled the old match color");
+      const auto ruleScreenshot = qEnvironmentVariable("LOGANALYQT_SSH_RULE_SCREENSHOT");
+      if (!ruleScreenshot.isEmpty()) require(ruleEditor->grabWindow().save(ruleScreenshot + ".library.png"), "rule library capture failed");
+      ruleEditor->close(); settle();
+      click(uiItem("ssh-pause"));
+      firstInput.feed(*ssh, "normal after resume\n"); settle();
+      require(livePage->property("autoScroll").toBool(), "resuming rematched historical output");
+      firstInput.feed(*ssh, "ERROR new after resume\n"); settle();
+      require(!livePage->property("autoScroll").toBool() && livePage->property("monitorHitColor").value<QColor>() == QColor("#bb9cf5"),
+              "new match after resume did not use the saved rule color");
+      if (!ruleScreenshot.isEmpty()) require(window->grabWindow().save(ruleScreenshot + ".paused.png"), "colored paused monitor capture failed");
+      click(uiItem("ssh-rule-select"));
+      if (!ruleScreenshot.isEmpty()) require(window->grabWindow().save(ruleScreenshot + ".picker.png"), "rule picker capture failed");
+      QMetaObject::invokeMethod(livePage->findChild<QObject *>("ssh-rule-picker"), "close"); settle();
+      secondInput.feed(*secondSsh, "OFFLINE synthetic terminal\n"); settle();
+      require(!secondPage->property("autoScroll").toBool() && secondPage->property("monitorHitColor").value<QColor>() == QColor("#80b9ff")
+                  && livePage->property("monitorHitColor").value<QColor>() == QColor("#bb9cf5"), "background monitor colors are not isolated");
+      require(QMetaObject::invokeMethod(liveWorkspace, "detachSession", Q_ARG(QVariant, QVariant::fromValue(livePage))), "cannot detach rule-triggered monitor");
+      settle(firstMonitorWindow);
+      if (!ruleScreenshot.isEmpty()) require(firstMonitorWindow->grabWindow().save(ruleScreenshot + ".detached.png"), "detached rule monitor capture failed");
+      auto clickMonitorControl = [&](QQuickItem *target) {
+        require(target && target->isVisible(), "independent-window rule control is missing");
+        const auto position = target->mapToScene(QPointF(target->width()/2, target->height()/2));
+        auto *targetWindow = target->window();
+        for (auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+          QMouseEvent event(type, position, targetWindow->mapToGlobal(position.toPoint()), Qt::LeftButton,
+                            type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
+          QCoreApplication::sendEvent(targetWindow, &event);
+        }
+        settle(targetWindow);
+      };
+      clickMonitorControl(findItem(firstMonitorWindow->contentItem(), "ssh-rule-select"));
+      clickMonitorControl(findItem(firstMonitorWindow->contentItem(), "ssh-rule-manage"));
+      require(ruleEditor->isVisible() && ruleEditor->transientParent() == firstMonitorWindow,
+              "independent monitor cannot select rules or open the shared rule manager");
+      settle(ruleEditor); ruleEditor->close(); settle(firstMonitorWindow);
+      auto *resume = findItem(firstMonitorWindow->contentItem(), "ssh-pause");
+      const auto point = resume->mapToScene(QPointF(resume->width()/2, resume->height()/2));
+      for (auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+        QMouseEvent event(type, point, firstMonitorWindow->mapToGlobal(point.toPoint()), Qt::LeftButton,
+                          type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(firstMonitorWindow, &event);
+      }
+      firstInput.feed(*ssh, "normal detached output\n"); settle(firstMonitorWindow);
+      require(livePage->property("autoScroll").toBool(), "detached continue-follow did not rearm new output monitoring");
+      firstInput.feed(*ssh, "ERROR new detached match\n"); settle(firstMonitorWindow);
+      require(!livePage->property("autoScroll").toBool(), "detached window did not pause on a new match");
+      require(QMetaObject::invokeMethod(liveWorkspace, "dockSession", Q_ARG(QVariant, QVariant::fromValue(livePage))), "cannot dock rule monitor"); settle();
+      trace("stopped reception, received HEX parsing and independent-window resume");
+      firstInput.feed(*ssh, "RX 680407000000\n"); settle();
+      const int receivedFrame = ssh->currentLineCount() - 1;
+      const int stoppedRows = ssh->currentLineCount();
+      auto *pauseButton = findItem(firstMonitorItem, "ssh-pause");
+      auto *stopButton = findItem(firstMonitorItem, "ssh-stop-reception");
+      require(stopButton && pauseButton && stopButton->x() > pauseButton->x(), "stop-screen button must follow pause-follow");
+      click(stopButton);
+      require(ssh->receptionPaused(), "stop-screen button did not stop reception");
+      firstInput.feed(*ssh, "output waits until reception resumes\n"); settle();
+      require(!ssh->getBufferText().contains("output waits until reception resumes") && ssh->currentLineCount() == stoppedRows,
+              "stopped reception accepted new input");
+      require(QMetaObject::invokeMethod(livePage, "selectLineAndExtractHex", Q_ARG(QVariant, receivedFrame))
+                  && QMetaObject::invokeMethod(livePage, "parseSelectedHexWithProtocol", Q_ARG(QVariant, 0)), "stopped-session HEX selection/parse failed");
+      require(backend->parseModel(livePage->property("parseSessionId").toInt())->rowCount() > 2, "received frame did not produce real parsed fields while stopped");
+      livePage->setProperty("parseWindowVisible", false); settle();
+      require(QMetaObject::invokeMethod(liveWorkspace, "detachSession", Q_ARG(QVariant, QVariant::fromValue(livePage))), "cannot move stopped session to independent window");
+      settle(firstMonitorWindow);
+      const auto receptionScreenshot = qEnvironmentVariable("LOGANALYQT_SSH_RECEPTION_SCREENSHOT");
+      if (!receptionScreenshot.isEmpty()) require(firstMonitorWindow->grabWindow().save(receptionScreenshot + ".stopped.png"), "stopped reception capture failed");
+      clickMonitorControl(findItem(firstMonitorWindow->contentItem(), "ssh-stop-reception"));
+      firstInput.feed(*ssh, {}); settle(firstMonitorWindow);
+      require(!ssh->receptionPaused() && ssh->lineAt(ssh->currentLineCount() - 1) == "output waits until reception resumes"
+                  && !livePage->property("autoScroll").toBool(), "independent-window resume lost waiting input or changed follow state");
+      require(QMetaObject::invokeMethod(liveWorkspace, "dockSession", Q_ARG(QVariant, QVariant::fromValue(livePage))), "cannot dock restored monitor"); settle();
+      if (!receptionScreenshot.isEmpty()) require(window->grabWindow().save(receptionScreenshot + ".buttons.png"), "monitor buttons capture failed");
+    }
     std::function<void(QQuickItem *)> checkBrand = [&](QQuickItem *item) {
       if (!item->isVisible()) return;
       require(!item->property("text").toString().contains("LogAnalyQt"), "visible UI still contains the old brand");
@@ -271,6 +592,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     }
     const int originalProtocol = backend->protocolType();
     QList<QString> parsedValues;
+    QList<int> parsedModelIds;
     for (int tab = 0; tab < 11; ++tab) {
       if (tab >= 5)
         require(QMetaObject::invokeMethod(window, "addParseTab"), "adding parse tab failed");
@@ -278,7 +600,10 @@ inline QString checkMigratedUi(QQuickWindow *window) {
         tabs->setProperty("currentIndex", tab);
       settle();
       require(tabs->property("currentIndex").toInt() == tab, "new tab was not selected");
-      const int modelId = tab + 4;
+      const auto *activePane = window->property("activeParsePane").value<QObject *>();
+      require(activePane, "active parse pane is missing");
+      const int modelId = activePane->property("targetModelId").toInt();
+      parsedModelIds.append(modelId);
       auto *pane = uiItem(QString("session-pane-%1").arg(modelId));
       require(pane && pane->isVisible(), "new parse pane is missing");
       require(QMetaObject::invokeMethod(sessionProtocol, "activated", Q_ARG(int, tab % 2 ? 0 : 3)), "protocol selector failed");
@@ -312,10 +637,10 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       tabs->setProperty("currentIndex", tab);
       settle();
       for (int other = 0; other < 11; ++other) {
-        auto *pane = uiItem(QString("session-pane-%1").arg(other + 4));
+        auto *pane = uiItem(QString("session-pane-%1").arg(parsedModelIds[other]));
         require(pane && pane->isVisible() == (other == tab), "tab switch must show exactly one pane");
       }
-      const int modelId = tab + 4;
+      const int modelId = parsedModelIds[tab];
       auto *pane = uiItem(QString("session-pane-%1").arg(modelId));
       require(pane->property("protocolIndex").toInt() == (tab % 2 ? 0 : 3)
                   && pane->property("encodingIndex").toInt() == tab % 4, "tab parser options were overwritten");
@@ -331,8 +656,8 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       backend->handleLink("highlight:0,1", modelId);
       require(input->property("selectedText").toString() == "68", "tab field highlight targeted wrong input");
     }
-    backend->parseHex("", "auto", 14, 0);
-    require(backend->parseModel(14)->rowCount() == 0 && backend->parseModel(4)->rowCount() > 2,
+    backend->parseHex("", "auto", parsedModelIds.last(), 0);
+    require(backend->parseModel(parsedModelIds.last())->rowCount() == 0 && backend->parseModel(parsedModelIds.first())->rowCount() > 2,
             "clearing a tab affected another tab");
 
     trace("files and filters");
@@ -453,6 +778,132 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(backend->findNextDiff(-1) >= 0, "diff model missing changed fields");
     backend->clearDiffs();
     require(backend->findNextDiff(-1) < 0, "diff state not cleared");
+
+    trace("protocol sync diff overview");
+    require(!uiItem("diff-overview-1") && !uiItem("diff-overview-2"), "misplaced packet diff overview was not reverted");
+    navigate(8);
+    auto *syncPage = uiItem("page-8");
+    auto *diffWindow = syncPage->findChild<QQuickWindow *>("protocol-diff-window");
+    require(diffWindow, "protocol comparison window missing");
+    const int diffRowCount = 30000;
+    const int middleDiffRow = diffRowCount / 2;
+    QVariantList diffRows;
+    for (int i = 0; i < diffRowCount; ++i) {
+      const QString text = QString("<DataItem OAD=\"40000200\" value=\"%1\" />").arg(i);
+      const bool deleted = i == 0 || i == middleDiffRow || i == middleDiffRow + 1;
+      const bool added = i == middleDiffRow || i == middleDiffRow + 1 || i == diffRowCount - 1;
+      diffRows.append(QVariantMap{{"leftType", deleted ? "del" : added ? "empty" : "same"},
+                                  {"rightType", added ? "add" : deleted ? "empty" : "same"},
+                                  {"leftText", added && !deleted ? QString() : text},
+                                  {"rightText", deleted && !added ? QString() : added ? text + " <!-- remote -->" : text}});
+    }
+    QElapsedTimer diffPresentation;
+    diffPresentation.start();
+    qInfo() << "UI_CHECK_DIFF_ASSIGNING" << diffRows.size();
+    syncPage->setProperty("diffData", diffRows);
+    diffWindow->setProperty("diffFileName", "698_protocol.xml");
+    diffWindow->show();
+    settle();
+    qInfo() << "UI_CHECK_DIFF_PRESENTED_MS" << diffPresentation.elapsed();
+    require(diffPresentation.elapsed() < 3000, "large C++ diff payload blocked the UI before the window appeared");
+    auto *diffList = findItem(diffWindow->contentItem(), "protocol-diff-list");
+    auto *overview = findItem(diffWindow->contentItem(), "protocol-diff-overview");
+    auto *next = findItem(diffWindow->contentItem(), "protocol-diff-next");
+    require(diffList && overview && next && overview->isVisible(), "protocol diff navigation controls missing");
+    require(diffWindow->property("currentBlock").toInt() == 0, "protocol diff did not select the first change");
+    click(next);
+    require(diffWindow->property("currentBlock").toInt() == 1 && diffList->property("currentIndex").toInt() == middleDiffRow,
+            "protocol next-change button did not group adjacent changes");
+    click(overview);
+    require(diffList->property("currentIndex").toInt() == middleDiffRow, "protocol overview click selected the wrong block");
+    require(QMetaObject::invokeMethod(overview, "jumpAt", Q_ARG(QVariant, overview->height())), "protocol overview jump failed");
+    settle();
+    require(diffWindow->property("currentBlock").toInt() == 2 && diffList->property("currentIndex").toInt() == diffRowCount - 1 && !next->isEnabled(),
+            "protocol trailing addition was not reachable");
+    QMetaObject::invokeMethod(diffWindow, "jumpBlock", Q_ARG(QVariant, 1));
+    settle();
+    const auto diffScreenshot = qEnvironmentVariable("LOGANALYQT_DIFF_SCREENSHOT");
+    if (!diffScreenshot.isEmpty()) require(diffWindow->grabWindow().save(diffScreenshot), "protocol diff capture failed");
+    diffWindow->close();
+    settle();
+    require(syncPage->property("diffData").toList().isEmpty(), "protocol diff close kept stale data");
+#ifdef Q_OS_MACOS
+    {
+      QTemporaryDir remote;
+      const QString localDirectory = backend->syncManager()->localProtocolDir();
+      const auto write = [&](const QString &path, const QByteArray &bytes) {
+        QFile file(path); require(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size(), "isolated diff fixture write failed");
+      };
+      const auto read = [&](const QString &path) {
+        QFile file(path); require(file.open(QIODevice::ReadOnly), "isolated diff fixture read failed"); return file.readAll();
+      };
+      const auto snapshotLocal = qEnvironmentVariable("LOGANALYQT_DIFF_LOCAL_XML");
+      const auto snapshotRemote = qEnvironmentVariable("LOGANALYQT_DIFF_REMOTE_XML");
+      const auto originalXml = read(localDirectory + "/698_protocol.xml");
+      const auto originalSmallXml = read(localDirectory + "/module_msg_protocol.xml");
+      const auto localXml = snapshotLocal.isEmpty() ? originalXml : read(snapshotLocal);
+      auto remoteXml = snapshotRemote.isEmpty() ? localXml : read(snapshotRemote);
+      if (snapshotRemote.isEmpty()) {
+        const int first = remoteXml.indexOf("<Item ");
+        const int last = remoteXml.lastIndexOf("<Item ");
+        require(first >= 0 && last > first, "large XML fixture fields missing");
+        remoteXml.insert(last, "<!-- remote -->");
+        remoteXml.insert(first, "<!-- remote -->");
+      }
+      write(localDirectory + "/698_protocol.xml", localXml);
+      write(remote.filePath("698_protocol.xml"), remoteXml);
+      write(localDirectory + "/module_msg_protocol.xml", "<local />\n");
+      write(remote.filePath("module_msg_protocol.xml"), "<remote />\n");
+      ProtocolSyncManager::Dependencies dependencies;
+      dependencies.settingsFile = remote.filePath("settings.json");
+      int systemOpenRequests = 0;
+      dependencies.openShare = [&](const QUrl &) { ++systemOpenRequests; return false; };
+      dependencies.mounts = [path = remote.path()] { return QList<SmbShare::Mount>{{"//diff-test.invalid/share", path}}; };
+      ProtocolSyncManager manager(dependencies);
+      manager.setSharePath("smb://diff-test.invalid/share");
+      QEventLoop connectionWait;
+      QObject::connect(&manager, &ProtocolSyncManager::connectionFinished, &connectionWait, &QEventLoop::quit);
+      manager.connectToShare();
+      QTimer::singleShot(5000, &connectionWait, &QEventLoop::quit); connectionWait.exec();
+      require(!manager.connecting() && manager.lastError().isEmpty(), "isolated diff share connection failed");
+      require(systemOpenRequests == 0, "mounted share reuse unexpectedly requested Finder");
+      syncPage->setProperty("syncManager", QVariant::fromValue(&manager));
+      syncPage->setProperty("remoteReady", true);
+      for (const auto &name : {QString("module_msg_protocol.xml"), QString("698_protocol.xml")}) {
+        QEventLoop comparisonWait;
+        QElapsedTimer elapsed; elapsed.start();
+        int heartbeats = 0;
+        QTimer heartbeat; heartbeat.setInterval(20);
+        QObject::connect(&heartbeat, &QTimer::timeout, &comparisonWait, [&] { ++heartbeats; }); heartbeat.start();
+        int deleted = 0, added = 0;
+        const auto done = QObject::connect(&manager, &ProtocolSyncManager::diffFinished, &comparisonWait,
+            [&](const QString &, const QVariantList &rows) {
+          for (const auto &value : rows) {
+            const auto row = value.toMap();
+            deleted += row.value("leftType") == "del";
+            added += row.value("rightType") == "add";
+            require(row.value("leftType") != "same" || row.value("leftText") == row.value("rightText"), "real XML diff misaligned equal lines");
+          }
+          comparisonWait.quit();
+        });
+        qInfo() << "UI_CHECK_REAL_DIFF_REQUEST" << name << localXml.size() << remoteXml.size();
+        require(QMetaObject::invokeMethod(syncPage, "requestDiff", Q_ARG(QVariant, name)), "real diff request failed");
+        QTimer::singleShot(60000, &comparisonWait, &QEventLoop::quit); comparisonWait.exec();
+        QObject::disconnect(done);
+        qInfo() << "UI_CHECK_REAL_DIFF_COMPLETED_MS" << name << elapsed.elapsed() << "heartbeats" << heartbeats << "deleted" << deleted << "added" << added;
+        require(!manager.busy() && diffWindow->isVisible(), "small-then-large diff did not open its comparison window");
+        require(elapsed.elapsed() < 5000, "small-then-large XML comparison exceeded the responsiveness budget");
+        if (name == "698_protocol.xml" && snapshotRemote.isEmpty()) require(deleted == 2 && added == 2, "large XML comparison invented differences in unchanged content");
+        settle();
+        if (name == "698_protocol.xml" && !diffScreenshot.isEmpty()) require(diffWindow->grabWindow().save(diffScreenshot), "real XML diff capture failed");
+        diffWindow->close(); settle();
+      }
+      write(localDirectory + "/698_protocol.xml", originalXml);
+      write(localDirectory + "/module_msg_protocol.xml", originalSmallXml);
+      syncPage->setProperty("syncManager", QVariant::fromValue(backend->syncManager()));
+    }
+#endif
+    navigate(1);
 
     trace("frame verification");
     const QString frame = backend->buildFullFrame("05 01 01 40 00 02 00 00", {{"serverAddrHex", "000000000001"}, {"prm", true}, {"funcCode", 3}});

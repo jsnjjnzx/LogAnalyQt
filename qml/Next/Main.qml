@@ -329,6 +329,11 @@ ApplicationWindow {
             navigate(3);
             return;
         }
+        if (!liveLogDialog.saveWorkspace()) {
+            close.accepted = false;
+            navigate(5);
+            return;
+        }
         saveWindowGeometry();
         liveLogDialog.closing();
         if (installingUpdate) {
@@ -3142,7 +3147,7 @@ ApplicationWindow {
         theme: mainWindow.uiTheme
     }
 
-    Next.LiveLogDialog {
+    Next.SshMonitorPage {
         id: liveLogDialog
         objectName: "page-5"
         parent: pageDeck

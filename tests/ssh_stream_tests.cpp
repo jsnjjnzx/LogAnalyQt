@@ -4,6 +4,23 @@
 #include <QCoreApplication>
 #include <QTextStream>
 #include <stdexcept>
+#include <QTemporaryDir>
+#include <QSignalSpy>
+
+struct SshTerminalTestAccess {
+  static void publish(SshTerminal &terminal, std::vector<SshLogLine> lines, const SshLogLine &partial, SshMonitorHit hit = {}) {
+    {
+      QMutexLocker lock(&terminal.m_buffer->mutex);
+      for (auto &line : lines) {
+        terminal.m_buffer->bytes += line.storageBytes();
+        terminal.m_buffer->lines.push_back(std::move(line));
+      }
+      terminal.m_buffer->partial = partial;
+      if (!hit.data.isEmpty()) { hit.revision = terminal.m_buffer->monitorRevision; terminal.m_buffer->monitorHit = hit; }
+    }
+    terminal.flushPendingData();
+  }
+};
 
 static int checks = 0;
 static void check(bool condition, const char *message) {
@@ -25,7 +42,7 @@ static void streamChecks() {
     for (int offset = 0; offset < input.size(); offset += block)
       result += flattened(stream.feed(QByteArrayView(input).sliced(offset, qMin(qsizetype(block), input.size() - offset))));
     result += flattened(stream.finish());
-    check(result == QString::fromUtf8("中文😀\nred\nplain\ntail\n"), "UTF-8/ANSI/CRLF survive arbitrary read boundaries");
+    check(result == QString::fromUtf8("中文😀\nplain\ntail\n"), "UTF-8/ANSI/CRLF and carriage-return redraw survive arbitrary read boundaries");
   }
   const auto chinese = QString::fromUtf8("中文监控");
   const auto gb = QByteArray::fromHex("d6d0cec4bce0bfd8");
@@ -39,6 +56,20 @@ static void streamChecks() {
   SshLogStream invalid;
   invalid.feed(QByteArray::fromHex("e4b8"));
   check(flattened(invalid.finish()).contains(QChar::ReplacementCharacter), "dangling UTF-8 is explicit at EOF");
+  SshLogStream terminal;
+  check(terminal.feed("test$ abc").empty() && terminal.partialLine() == "test$ abc" && terminal.cursorColumn() == 9,
+        "prompt and echo are available without a newline");
+  terminal.feed("\b \b");
+  check(terminal.partialLine() == "test$ ab " && terminal.cursorColumn() == 8, "remote backspace redraw moves the cursor and erases the old glyph");
+  terminal.feed("\rtest$ history\x1b[K");
+  check(terminal.partialLine() == "test$ history" && terminal.cursorColumn() == 13, "CR and clear-to-end redraw remote history in place");
+  check(flattened(terminal.feed("\r\n")) == "test$ history\n", "CRLF commits a remote line exactly once");
+  terminal.feed(QString::fromUtf8("test$ 中文").toUtf8());
+  check(terminal.cursorColumn() == 10, "Chinese echo occupies two terminal cells per character");
+  terminal.feed("\b\b  \b\b");
+  check(terminal.partialLine() == QString::fromUtf8("test$ 中  ") && terminal.cursorColumn() == 8, "remote deletion preserves preceding Chinese characters");
+  terminal.feed("\r\x1b[2Ktest$ \x1b[2DXY");
+  check(terminal.partialLine() == "testXY" && terminal.cursorColumn() == 6, "CSI cursor movement edits the current remote line");
   SshLogStream reset;
   reset.feed("old-part"); reset.reset("UTF-8", true);
   const auto afterClear = reset.feed("new-tail\nnew\n");
@@ -67,6 +98,8 @@ static void streamChecks() {
   check(model.logicalLineAt(1) == longLine && model.completeLineAt(1), "clicking a continued row retrieves full logical line");
   check(model.segmentOffset(1) == 8191, "selection uses the segment offset");
   check(model.bufferText() == longLine + '\n', "copy history introduces no artificial newlines");
+  check(model.textRange(model.lineId(0), 8189, model.lineId(1), 3) == longLine.mid(8189, 5),
+        "drag selection across display segments adds no artificial newline");
   SshLogStream unbounded;
   TerminalLineModel bounded(100);
   for (int i = 0; i < 1000; ++i) bounded.appendRecords(unbounded.feed(QByteArray(16384, 'a')));
@@ -93,6 +126,16 @@ static void modelChecks() {
   check(resets == 0, "normal append and eviction do not reset the model");
   model.clear(); check(resets == 1 && model.rowCount() == 0 && model.indexForId(lastId) < 0, "clear invalidates old IDs");
   model.appendLines({"new"}); check(model.lineId(0) > lastId, "clear never reuses an old identity");
+  const auto selectedId = model.lineId(0);
+  model.appendLines({QString::fromUtf8("中文😀abcdef"), "last"});
+  check(model.textRange(selectedId + 1, 0, selectedId + 1, 4) == QString::fromUtf8("中文😀"),
+        "selected text preserves Unicode and UTF-16 cursor offsets");
+  check(model.textRange(selectedId + 2, 2, selectedId, 1) == QString::fromUtf8("ew\n中文😀abcdef\nla"),
+        "reverse multiline selection preserves real line boundaries");
+  check(model.textRange(lastId, 0, selectedId, 1).isEmpty(), "evicted selections never copy unrelated rows");
+  check(model.textRange(selectedId + 2, 1, selectedId + 3, 3, "live prompt") == "ast\nliv",
+        "selection can include the unfinished live line");
+  check(model.textRange(selectedId, -20, selectedId, 200) == "new", "selection offsets are bounded");
   TerminalLineModel byteBounded(200000);
   byteBounded.appendLines({"older-than-discarded-data"});
   QStringList large;
@@ -105,10 +148,118 @@ static void modelChecks() {
         "byte-trimmed batches keep only the newest contiguous IDs");
 }
 
+static void monitorChecks() {
+  const QVariantList rules{
+      QVariantMap{{"id", 1}, {"name", "errors"}, {"pattern", "ERROR"}, {"ignoreCase", false}, {"color", "#f79a93"}},
+      QVariantMap{{"id", 2}, {"name", "device"}, {"pattern", QString::fromUtf8("设备.*超时")}, {"ignoreCase", true}, {"color", "#80b9ff"}}};
+  check(SshMonitorMatcher::validRules(rules), "valid rule library compiles with colors");
+  check(!SshMonitorMatcher::test("(", false, "sample").value("valid").toBool(), "invalid expressions cannot be enabled");
+  check(!SshMonitorMatcher::test("", false, "sample").value("valid").toBool(), "empty expressions are rejected");
+  const auto preview = SshMonitorMatcher::test("error", true, "ERROR\nerror");
+  check(preview.value("matches").toList().size() == 2, "test preview matches case-insensitively per line");
+  check(SshMonitorMatcher::test("foo\\nbar", false, "foo\nbar").value("matches").toList().isEmpty(), "test preview does not invent cross-line matches");
+  check(!SshMonitorMatcher::test("(*NO_JIT)(a+)+$", false, QString(100, 'a') + '!').value("error").toString().isEmpty(),
+        "pathological backtracking returns a bounded error");
+  SshLogStream stream;
+  SshMonitorMatcher matcher;
+  stream.feed("old ERROR");
+  matcher.configure(rules, 1, stream.logicalId(), stream.partialLine(), stream.logicalOffset());
+  auto feed = [&](const QByteArray &bytes) {
+    auto lines = stream.feed(bytes);
+    SshLogLine partial{stream.partialLine(), stream.logicalId(), stream.continuation(), stream.hasPendingInput()};
+    matcher.feed(lines, partial);
+  };
+  feed(" unchanged");
+  check(matcher.hit().data.isEmpty(), "arming never rematches existing partial output");
+  feed("\nnormal\nnew ERROR\nafter\n");
+  check(matcher.hit().data.value("ruleId").toInt() == 1 && matcher.hit().data.value("text").toString() == "new ERROR"
+            && matcher.hit().data.value("color").toString() == "#f79a93", "first matching new line retains its rule and color");
+  const auto oldHit = matcher.hit().logicalId;
+  feed("ERROR again\n");
+  check(matcher.hit().logicalId == oldHit, "a latched match is not replaced while paused");
+  SshMonitorMatcher greedy;
+  const QVariantList greedyRules{QVariantMap{{"id", 1}, {"name", "greedy"}, {"pattern", "ERROR.*"}, {"ignoreCase", false}}};
+  greedy.configure(greedyRules, 4, 1, "ERROR old", 0);
+  std::vector<SshLogLine> greedyLines;
+  SshLogLine greedyPartial{"ERROR old appended after resume", 1};
+  greedy.feed(greedyLines, greedyPartial);
+  check(greedy.hit().data.isEmpty(), "a greedy old match cannot re-trigger when its partial line grows after resume");
+  greedyLines = {{"ERROR old appended after resume", 1, false, false}, {"ERROR new line", 2, false, false}};
+  greedyPartial = {"", 3}; greedy.feed(greedyLines, greedyPartial);
+  check(greedy.hit().logicalId == 2, "a greedy rule resumes on newly starting log content");
+  matcher.configure(rules, 2, stream.logicalId(), stream.partialLine(), stream.logicalOffset());
+  feed("normal\n"); check(matcher.hit().data.isEmpty(), "resume ignores all previous logs");
+  const auto payload = QString::fromUtf8("设备 12 超时").toUtf8();
+  for (const char byte : payload) feed(QByteArray(1, byte));
+  check(matcher.hit().data.value("ruleId").toInt() == 2 && matcher.hit().data.value("color").toString() == "#80b9ff",
+        "fragmented UTF-8 and unfinished output match another selected rule");
+  SshLogStream longStream;
+  SshMonitorMatcher longMatcher;
+  longMatcher.configure(rules, 3, longStream.logicalId(), {}, 0);
+  auto lines = longStream.feed(QByteArray(8190, 'x') + "ERROR\n");
+  SshLogLine longPartial{longStream.partialLine(), longStream.logicalId()};
+  longMatcher.feed(lines, longPartial);
+  check(longMatcher.hit().offset == 8190, "expressions cross display segment boundaries without data loss");
+  TerminalLineModel model(100); model.appendRecords(lines);
+  check(model.idForLogicalOffset(longMatcher.hit().logicalId, longMatcher.hit().offset) == model.lineId(0), "match offsets locate the original display row");
+  QTemporaryDir temporary;
+  SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
+  terminal.setUseSystemCredentials(false);
+  QSignalSpy hits(&terminal, &SshTerminal::monitorMatched);
+  bool hitBeforeRows = false;
+  QObject::connect(&terminal, &SshTerminal::lineCountChanged, [&] { hitBeforeRows = !hits.isEmpty(); });
+  check(terminal.setMonitorRules(rules, true), "terminal accepts compiled rules");
+  SshTerminalTestAccess::publish(terminal, lines, {}, longMatcher.hit());
+  check(hits.size() == 1 && hitBeforeRows, "matching is delivered before auto-follow's row notification");
+  check(hits.at(0).at(0).toMap().value("lineId").toLongLong() == terminal.lineIdAt(0), "worker match maps to a stable view identity");
+  terminal.setMonitorRules(rules, false);
+  SshTerminalTestAccess::publish(terminal, {{"receiving while paused", 99, false, false}}, {});
+  check(terminal.getBufferText().contains("receiving while paused") && hits.size() == 1, "pausing detection never pauses reception or commits old hits again");
+  QVariantList mixedRules = rules;
+  mixedRules.prepend(QVariantMap{{"id", 3}, {"name", "mark only"}, {"pattern", "WARN|ERROR"}, {"ignoreCase", false}, {"color", "#7ed6a0"}, {"pauseOnMatch", false}});
+  SshLogStream markingStream; SshMonitorMatcher marking;
+  marking.configure(mixedRules, 8, markingStream.logicalId(), {}, 0);
+  auto markingLines = markingStream.feed("WARN first\nWARN second\n");
+  SshLogLine markingPartial{markingStream.partialLine(), markingStream.logicalId()};
+  marking.feed(markingLines, markingPartial);
+  check(!marking.hit().data.value("pauseOnMatch", true).toBool() && markingLines[0].monitorColor == "#7ed6a0"
+            && markingLines[1].monitorColor == "#7ed6a0", "mark-only rules color every matching row without latching");
+  auto moreMarks = markingStream.feed("WARN third\nERROR must pause\n");
+  markingPartial = {markingStream.partialLine(), markingStream.logicalId()}; marking.feed(moreMarks, markingPartial);
+  check(marking.hit().data.value("pauseOnMatch").toBool() && marking.hit().data.value("ruleId").toInt() == 1
+            && moreMarks[1].monitorColor == "#f79a93", "a pause rule takes precedence over mark-only matches on the same log");
+  model.appendRecords(markingLines);
+  check(model.data(model.index(model.rowCount() - 2), TerminalLineModel::MonitorColorRole).toString() == "#7ed6a0",
+        "mark-only row colors persist in history independently of the latest notification");
+}
+
+static void receptionPauseChecks() {
+  QTemporaryDir temporary;
+  SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
+  terminal.setUseSystemCredentials(false);
+  SshTerminalTestAccess::publish(terminal, {{"RX 680407000000", 1, false, false}}, {"old prompt", 2, false, true});
+  auto *model = terminal.lineModel();
+  const auto id = terminal.lineIdAt(0);
+  QSignalSpy state(&terminal, &SshTerminal::receptionPausedChanged);
+  terminal.setReceptionPaused(true);
+  check(state.wait(1000) && terminal.receptionPaused(), "worker acknowledges stopped reception without blocking the GUI");
+  check(terminal.lineModel() == model && terminal.currentLineCount() == 1 && terminal.liveLine() == "old prompt",
+        "stopping reception keeps the actual history model and prompt, not a display snapshot");
+  check(terminal.selectedText(id, 3, id, 15) == "680407000000" && terminal.lineIsComplete(0),
+        "received logs remain selectable and parseable while reception is stopped");
+  check(terminal.findLineIds("RX").size() == 1, "search still uses already received logs");
+  terminal.clearBuffer();
+  check(terminal.receptionPaused() && terminal.currentLineCount() == 0, "clearing received logs does not resume network reception");
+  terminal.setReceptionPaused(false);
+  check(state.wait(1000) && !terminal.receptionPaused(), "reception resumes only after an explicit resume request");
+  terminal.setReceptionPaused(true); terminal.setReceptionPaused(false); terminal.setReceptionPaused(true);
+  check(state.wait(1000) && terminal.receptionPaused(), "rapid stop/resume ignores stale worker acknowledgements");
+}
+
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    streamChecks(); modelChecks();
+    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks();
     QTextStream(stdout) << "PASS: " << checks << " SSH stream/model assertions; synthetic payloads stayed in RAM\n";
     return 0;
   } catch (const std::exception &error) {

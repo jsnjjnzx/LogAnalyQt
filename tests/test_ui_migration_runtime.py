@@ -44,7 +44,9 @@ def main():
             log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
             errors = [line for line in log.splitlines()
                       if (" WARN " in line or " CRIT " in line or " FATAL " in line)
-                      and "Populating font family aliases" not in line]
+                      and "Populating font family aliases" not in line
+                      and not (os.environ.get("QT_QPA_PLATFORM", "offscreen") == "offscreen"
+                               and line.endswith("This plugin does not support raise()"))]
             if "--mqtt-checks" in arguments and "MQTT_UI_CHECK_PASSED" not in log:
                 errors.append("Packaged executable did not complete MQTT UI/backend checks")
             if result.returncode or errors:
@@ -57,6 +59,16 @@ def main():
         assert (data_root / "LogAnalyQt.ini").read_bytes() == original and not (data_root / "settings.json").exists(), "cancel must not write or delete configuration"
         run("--migration-action", "confirm", "--ui-checks")
         assert not (data_root / "LogAnalyQt.ini").exists() and (data_root / "settings.json").exists(), "only confirmed, verified migration deletes old INI"
+        def monitor_preferences():
+            saved = json.loads((data_root / "settings.json").read_text())
+            state = saved["ui"]["next"]["sshMonitor"]["workspace"]
+            state = json.loads(state) if isinstance(state, str) else state
+            return state["monitorRules"], [(entry["config"]["monitorEnabled"], entry["config"]["monitorRuleIds"]) for entry in state["sessions"]]
+        monitor_before_restart = monitor_preferences()
+        rules, selections = monitor_before_restart
+        assert len(rules) == 3 and rules[0]["color"] == "#bb9cf5" and rules[0]["pauseOnMatch"] is True
+        assert rules[2]["pauseOnMatch"] is False and rules[2]["color"] == "#7ed6a0", "mark-only action/color were not persisted"
+        assert selections == [(True, [rules[0]["id"], rules[2]["id"]]), (True, [rules[1]["id"]])], "session rule selections were not persisted independently"
         conflict_home = runtime / "conflict-home"
         conflict_data = conflict_home / "Library/Application Support/LogAnalyQt" if sys.platform == "darwin" else runtime
         if sys.platform == "darwin":
@@ -67,6 +79,7 @@ def main():
             assert conflict_run.returncode == 0, conflict_run.stderr
             assert json.loads((conflict_data / "settings.json").read_text())["parser"]["protocolType"] == 2 and not (conflict_data / "LogAnalyQt.ini").exists(), "unresolved conflict must allow selection and retry through the same confirmation dialog"
         run("--mqtt-checks", "--size", "1200", "800")
+        assert monitor_preferences() == monitor_before_restart, "application restart overwrote monitor rules, colors, actions or selections"
         prompt_path = data_root / "prompts" / "ai_698_framing.md"
         assert prompt_path.is_file() and "DL/T 698" in prompt_path.read_text(encoding="utf-8"), "prompt not extracted to application data directory"
         prompt_path.write_text("User edited prompt survives app restart.\n", encoding="utf-8")
@@ -77,6 +90,7 @@ def main():
         if sys.platform == "darwin":
             assert not any((runtime / name).exists() for name in ("settings.json", "device-state.ini", "mqtt", "LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log")), "Mac app generated data beside its bundle"
         print("PASS: platform data directories, prompt extraction and restart preservation")
+        print("PASS: shared monitor rules, rule colors/actions and independent session selections persist across application restart")
         print("PASS: packaged MQTT broker, loopback publish/subscribe, V2 layout, editor controls and helper cleanup")
         print("PASS: migrated routes/parsers, 11 isolated tabs, close/add, restart restoration, empty workspace, corrupt-state backup and save-failure protection")
 

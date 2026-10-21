@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -102,8 +103,8 @@ def main():
     args = parser.parse_args()
     if args.input_probe and args.headless:
         parser.error("--input-probe requires the GUI")
-    if args.full_app and (args.headless or args.sessions != 1 or args.qml_source):
-        parser.error("--full-app requires one visible session with its embedded QML")
+    if args.full_app and (args.headless or args.qml_source):
+        parser.error("--full-app requires the visible application with its embedded QML")
     if args.interaction_probe and (not args.full_app or args.input_probe or args.seconds < 30):
         parser.error("--interaction-probe requires --full-app, >= 30 seconds and no --input-probe")
     if args.profile and args.seconds < 30:
@@ -170,6 +171,15 @@ def main():
             result["source"] = "production SshTerminal and LiveLogDialog; isolated credentials and unrelated UI backend"
             if args.full_app:
                 result["source"] = "complete application with real LogBackend and embedded production QML; isolated credentials"
+                settings_path = (Path(temporary) / "home/Library/Application Support/LogAnalyQt/settings.json"
+                                 if sys.platform == "darwin" else Path(temporary) / "settings.json")
+                settings = json.loads(settings_path.read_text())
+                saved_workspace = json.loads(settings["ui"]["next"]["sshMonitor"]["workspace"])
+                saved_connections = saved_workspace.get("connections", [])
+                result["saved_connection_count"] = len(saved_connections)
+                result["saved_account_password_verified"] = (len(saved_connections) == 1
+                    and saved_connections[0]["username"] == "loganalyqt-test"
+                    and saved_connections[0]["password"] == "synthetic-loopback-password")
                 log = Path(temporary) / "home/Library/Logs/LogAnalyQt/log.txt"
                 result["app_diagnostics_bytes"] = log.stat().st_size if log.exists() else 0
                 result["app_warnings"] = ([line for line in log.read_text().splitlines()
@@ -184,9 +194,15 @@ def main():
                                                 and result["window_active_samples"] == result["window_samples"]
                                                 and result["window_exposed_samples"] == result["window_samples"])
                 result["validated"] = result["validated"] and not result["app_warnings"]
+                result["validated"] = result["validated"] and result["saved_account_password_verified"]
+                if args.sessions > 1:
+                    result["validated"] = (result["validated"] and result["ui_session_count"] == args.sessions
+                                           and result["tab_switch_checks"] > 0 and result["tab_switch_errors"] == 0)
             if args.input_probe:
                 result["validated"] = (result["validated"] and result.get("input_response", {}).get("samples", 0) > 0
                                        and result["input_response"]["failed_keystrokes"] == 0)
+                result["validated"] = (result["validated"] and result["input_response"]["ascii_samples"] > 0
+                                       and result["input_response"]["ime_samples"] > 0)
             if args.interaction_probe:
                 actions = result.get("interaction_response", {})
                 names = ("input", "pause", "scroll", "resume", "search", "search_clear",

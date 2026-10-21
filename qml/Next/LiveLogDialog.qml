@@ -12,7 +12,84 @@ GlassPage {
     palette.highlight: theme ? theme.accentMuted : "#1976D2"
 
     property var backend
-    property var cmdInput: null
+    property int sessionId: 0
+    property string sessionName: "监控"
+    property bool persistConnectionSettings: true
+    property bool workspaceManaged: false
+    property bool relocatingWindow: false
+    property bool useSystemCredentials: false
+    property var sharedCommands: null
+    property var monitorRuleLibrary: null
+    property bool monitorEnabled: false
+    property var monitorRuleIds: []
+    property var monitorHit: null
+    property var monitorNotice: null
+    readonly property var monitorEvent: monitorHit || monitorNotice
+    readonly property color monitorHitColor: monitorHit && monitorHit.color ? monitorHit.color : "#e8b76a"
+    property string monitorError: ""
+    readonly property var selectedMonitorRules: monitorRuleLibrary
+        ? monitorRuleLibrary.monitorRules.filter(function(rule) { return monitorRuleIds.indexOf(rule.id) >= 0; }) : []
+    readonly property string monitorConfiguration: JSON.stringify([selectedMonitorRules, monitorEnabled, autoScroll])
+    onMonitorConfigurationChanged: { monitorError = ""; configureMonitorRules(); }
+    function configureMonitorRules() {
+        if (!sshTerminal) return;
+        if (!sshTerminal.setMonitorRules(selectedMonitorRules, monitorEnabled && autoScroll && monitorError === "")) {
+            sshTerminal.setMonitorRules([], false);
+            monitorError = "规则无效，请在规则库中检查表达式。";
+        }
+    }
+    function toggleMonitorRule(id, checked) {
+        monitorRuleIds = checked ? monitorRuleIds.indexOf(id) >= 0 ? monitorRuleIds : monitorRuleIds.concat([id])
+            : monitorRuleIds.filter(function(value) { return value !== id; });
+    }
+    function resumeFollowing() {
+        monitorHit = null; monitorNotice = null; monitorError = ""; autoScroll = true;
+        configureMonitorRules();
+        logListView.positionViewAtEnd();
+    }
+    function positionMonitorHit() {
+        if (!monitorHit || autoScroll) return;
+        const row = sshTerminal.indexForLineId(monitorHit.lineId);
+        if (row >= 0) {
+            logListView.positionViewAtIndex(row, ListView.Center);
+            const item = logListView.itemAtIndex(row);
+            viewAnchorId = monitorHit.lineId;
+            viewAnchorOffset = item ? item.y - logListView.contentY : 0;
+        } else if (monitorHit.lineId === liveSelectionId) logListView.positionViewAtEnd();
+    }
+    readonly property alias terminal: sshTerminal
+    readonly property string configurationSnapshot: JSON.stringify(connectionConfiguration())
+    signal configurationEdited()
+    onConfigurationSnapshotChanged: configurationEdited()
+    function connectionConfiguration() {
+        return {name: sessionName, host: hostInput.text, port: portInput.text, username: userInput.text,
+            password: secureCredentials ? "" : pwdInput.text,
+            encoding: encodingCombo.currentText, maxLines: maxLinesInput.text,
+            autoReconnect: sshTerminal.autoReconnectEnabled, reconnectCount: reconnectCountInput.text,
+            reconnectInterval: reconnectIntervalInput.text, expanded: connectionConfigExpanded,
+            commandManagementExpanded: commandManagementExpanded, copyOnSelect: copyOnSelect,
+            monitorEnabled: monitorEnabled, monitorRuleIds: monitorRuleIds};
+    }
+    function restoreConfiguration(config) {
+        sessionName = config.name;
+        hostInput.text = config.host; portInput.text = config.port; userInput.text = config.username;
+        encodingCombo.currentIndex = config.encoding === "GB2312" ? 1 : 0;
+        sshTerminal.encoding = encodingCombo.currentText;
+        maxLinesInput.text = config.maxLines;
+        sshTerminal.autoReconnectEnabled = config.autoReconnect;
+        reconnectCountInput.text = config.reconnectCount; reconnectIntervalInput.text = config.reconnectInterval;
+        connectionConfigExpanded = config.expanded; commandManagementExpanded = config.commandManagementExpanded;
+        copyOnSelect = config.copyOnSelect === true;
+        monitorRuleIds = config.monitorRuleIds || [];
+        monitorEnabled = config.monitorEnabled === true;
+        sshTerminal.host = config.host; sshTerminal.username = config.username;
+        if (portInput.acceptableInput) sshTerminal.port = Number(config.port);
+        pwdInput.text = config.password || "";
+        sshTerminal.password = pwdInput.text;
+    }
+    readonly property alias terminalInput: terminalCapture
+    property bool connectionConfigExpanded: true
+    property bool commandManagementExpanded: false
     readonly property bool secureCredentials: sshTerminal.usesSecureCredentials
     property var pendingSshAction: null
     property string passwordOperationId: ""
@@ -70,8 +147,14 @@ GlassPage {
             return
         }
         if (!secureCredentials) {
-            sshTerminal.host = hostInput.text; sshTerminal.port = parseInt(portInput.text) || 22
-            sshTerminal.username = userInput.text; sshTerminal.password = pwdInput.text
+            if (!hostInput.text.trim() || !userInput.text.trim() || !portInput.acceptableInput || !pwdInput.text) {
+                passwordNotice = "请填写有效的主机、端口、账号和密码。"; passwordNoticeError = true; return;
+            }
+            passwordNotice = "";
+            const draft = pwdInput.text;
+            sshTerminal.host = hostInput.text.trim(); sshTerminal.port = Number(portInput.text)
+            sshTerminal.username = userInput.text.trim(); sshTerminal.password = draft
+            pwdInput.text = draft;
             sshTerminal.maxBufferLines = parseInt(maxLinesInput.text) || 10000
             sshTerminal.reconnectMaxAttempts = parseInt(reconnectCountInput.text) || 0
             sshTerminal.reconnectIntervalMs = parseInt(reconnectIntervalInput.text) || 2000
@@ -88,22 +171,36 @@ GlassPage {
     function closeSshSession() {
         pendingSshAction = null; passwordOperationId = ""; passwordOperationTarget = null
         if (pendingHostKey) respondHostKey(false)
-        pwdInput.text = ""
+        if (secureCredentials) pwdInput.text = ""
         sshTerminal.disconnectFromHost()
     }
-    Component.onDestruction: closeSshSession()
+    Component.onDestruction: {
+        closeSshSession();
+        if (backend && parseSessionId >= 4) backend.closeParseSession(parseSessionId);
+    }
 
 
     property bool autoScroll: true
+    property bool copyOnSelect: false
+    property var textSelectionAnchor: null
+    property var textSelectionFocus: null
+    property bool selectionPointerDown: false
+    readonly property real liveSelectionId: sshTerminal.firstLineId + sshTerminal.currentLineCount
+    readonly property var textSelectionRange: {
+        if (!textSelectionAnchor || !textSelectionFocus) return null;
+        const a = textSelectionAnchor, b = textSelectionFocus;
+        return a.id < b.id || a.id === b.id && a.position <= b.position
+            ? {firstId: a.id, firstOffset: a.position, lastId: b.id, lastOffset: b.position}
+            : {firstId: b.id, firstOffset: b.position, lastId: a.id, lastOffset: a.position};
+    }
+    readonly property bool hasTextSelection: textSelectionRange !== null
+        && (textSelectionRange.firstId !== textSelectionRange.lastId || textSelectionRange.firstOffset !== textSelectionRange.lastOffset)
+    property int terminalFontSize: 13
     property int selectedLineIndex: -1
-    property var cmdHistory: []
-    property int historyIndex: -1
-    property string pendingInput: ""
-    property var customCommands: []
+    property var localCustomCommands: []
+    property var customCommands: sharedCommands ? sharedCommands.commands : localCustomCommands
     property bool customCommandsLoaded: false
     property string customCmdPendingDeleteName: ""
-    // #9 命令历史上限提取为属性，方便后续调整，不再硬编码 200
-    readonly property int cmdHistoryMaxSize: 200
 
     property bool findBarVisible: false
     property string searchKeyword: ""
@@ -116,14 +213,24 @@ GlassPage {
     property real viewAnchorId: -1
     property real viewAnchorOffset: 0
     property bool viewUpdatePending: false
-    onAutoScrollChanged: if (autoScroll) viewAnchorId = -1
+    onAutoScrollChanged: if (autoScroll) { viewAnchorId = -1; monitorHit = null; monitorNotice = null; }
     property int selectedHexStart: -1
     property int selectedHexEnd: -1
     property string selectedHexText: ""
-    property bool parsePanelVisible: false
-    property real parsePanelWidth: 0
-    readonly property real parsePanelMinWidth: 380
-    readonly property real parsePanelMaxRatio: 0.65
+    readonly property string parseableHexText: {
+        if (!hasTextSelection) return validatedHex(selectedHexText);
+        const range = textSelectionRange;
+        if (range.lastId === liveSelectionId) {
+            const tail = sshTerminal.liveLine.slice(range.firstId === liveSelectionId ? range.firstOffset : 0, range.lastOffset);
+            return validatedHex(range.firstId === liveSelectionId ? tail
+                : sshTerminal.selectedText(range.firstId, range.firstOffset, range.lastId, 0) + tail);
+        }
+        return validatedHex(sshTerminal.selectedText(range.firstId, range.firstOffset, range.lastId, range.lastOffset));
+    }
+    property alias parseWindowVisible: parseOutputWindow.visible
+    property int parseSessionId: -1
+    readonly property var parseResultModel: backend && parseSessionId >= 4 ? backend.parseModel(parseSessionId) : null
+    property string parsedHex: ""
 
     // #3 协议类型常量对象，对应 ProtocolDetector.h 中 ProtocolType 枚举值，
     // 避免在上下文菜单中直接使用含义不明的魔法数字。
@@ -143,7 +250,7 @@ GlassPage {
         id: charMeasurer
         visible: false
         font.family: Next.PlatformFonts.monospaceFamily
-        font.pixelSize: 13  // #10 与终端文本保持同一字体规格，确保 charWidth 计算准确
+        font.pixelSize: liveLogDialog.terminalFontSize
         // Monospace logs need no optional ligatures; Qt still shapes scripts that require it.
         font.kerning: false
         font.preferShaping: false
@@ -151,11 +258,27 @@ GlassPage {
     }
     readonly property real charWidth: charMeasurer.contentWidth / charMeasurer.text.length
 
+    function beginWindowMove() {
+        relocatingWindow = true;
+        captureLogViewport();
+        hostKeyDialog.close();
+        terminalContextMenu.close();
+        rulePicker.close(); matchDetails.close();
+    }
+    function endWindowMove() {
+        relocatingWindow = false;
+        logListView.forceLayout();
+        applyLogViewport();
+        if (pendingHostKey && visible) hostKeyDialog.open();
+        else if (visible && sshTerminal.connected) terminalCapture.forceActiveFocus();
+    }
+
     function openDialog() { requested(); }
 
 
 
     function stateText() {
+        if (sshTerminal.hostKeyPending) return "待确认指纹";
         switch (sshTerminal.connectionState) {
         case SshTerminal.Connecting:
             return "连接中";
@@ -255,42 +378,33 @@ GlassPage {
         selectLineAndExtractHex(targetIndex);
     }
 
-    function prevWordStart(text, pos) {
-        var index = Math.max(0, Math.min(pos, text.length));
-        while (index > 0 && /\s/.test(text.charAt(index - 1)))
-            index--;
-        while (index > 0 && !/\s/.test(text.charAt(index - 1)))
-            index--;
-        return index;
+    function validatedHex(text) {
+        if (!/^[0-9A-Fa-f \t\r\n]+$/.test(text)) return "";
+        const compact = text.replace(/\s/g, "");
+        if (compact.length < 2 || compact.length % 2 !== 0) return "";
+        return compact.toUpperCase().match(/../g).join(" ");
     }
 
-    function nextWordStart(text, pos) {
-        var index = Math.max(0, Math.min(pos, text.length));
-        while (index < text.length && !/\s/.test(text.charAt(index)))
-            index++;
-        while (index < text.length && /\s/.test(text.charAt(index)))
-            index++;
-        return index;
-    }
-
-    function extractHexSegmentFromLine(lineText) {
+    function extractHexSegmentFromLine(lineText, position) {
         if (!lineText || lineText.length === 0)
             return null;
 
-        var hexPattern = /[0-9A-Fa-f]+(?:[ \t]+[0-9A-Fa-f]+)*/g;
+        var hexPattern = /(^|[^0-9A-Za-z_])([0-9A-Fa-f]+(?:[ \t]+[0-9A-Fa-f]+)*)(?=$|[^0-9A-Za-z_])/g;
         var best = null;
         var match;
 
         while ((match = hexPattern.exec(lineText)) !== null) {
-            var rawText = match[0];
+            var rawText = match[2];
+            var start = match.index + match[1].length;
             var hexOnly = rawText.replace(/[ \t]/g, "");
-            if (hexOnly.length < 10 || hexOnly.length % 2 !== 0)
+            if (hexOnly.length < (position === undefined ? 10 : 2) || hexOnly.length % 2 !== 0)
                 continue;
+            if (position !== undefined && (position < start || position >= start + rawText.length)) continue;
 
             if (!best || hexOnly.length > best.hexOnly.length) {
                 best = {
-                    start: match.index,
-                    end: match.index + rawText.length,
+                    start: start,
+                    end: start + rawText.length,
                     hexOnly: hexOnly
                 };
             }
@@ -299,15 +413,35 @@ GlassPage {
         if (!best)
             return null;
 
-        var formatted = "";
-        for (var i = 0; i < best.hexOnly.length; i += 2) {
-            if (i > 0)
-                formatted += " ";
-            formatted += best.hexOnly.substr(i, 2).toUpperCase();
-        }
-
-        best.formattedHex = formatted;
+        best.formattedHex = validatedHex(best.hexOnly);
         return best;
+    }
+
+    function logicalSelectionPoint(index, offset) {
+        while (index > 0 && sshTerminal.lineSegmentOffset(index) > offset) --index;
+        while (index + 1 < sshTerminal.currentLineCount) {
+            const nextOffset = sshTerminal.lineSegmentOffset(index + 1);
+            if (nextOffset === 0 || nextOffset >= offset) break;
+            ++index;
+        }
+        return {id: sshTerminal.lineIdAt(index), position: offset - sshTerminal.lineSegmentOffset(index)};
+    }
+    function selectHexAt(x, y) {
+        // positionAt returns the nearest caret; bias to the character under the pointer.
+        const point = selectionPoint(x - charWidth / 2, y);
+        clearTextSelection();
+        selectedLineIndex = -1; selectedLineId = -1;
+        selectedHexStart = -1; selectedHexEnd = -1; selectedHexText = "";
+        if (!point) return;
+        const index = sshTerminal.indexForLineId(point.id);
+        if (index >= 0 && !sshTerminal.lineIsComplete(index)) return;
+        const text = index >= 0 ? sshTerminal.lineAt(index) : sshTerminal.liveLine;
+        const offset = index >= 0 ? sshTerminal.lineSegmentOffset(index) : 0;
+        const hex = extractHexSegmentFromLine(text, offset + point.position);
+        if (!hex) return;
+        textSelectionAnchor = index >= 0 ? logicalSelectionPoint(index, hex.start) : {id: point.id, position: hex.start};
+        textSelectionFocus = index >= 0 ? logicalSelectionPoint(index, hex.end) : {id: point.id, position: hex.end};
+        autoScroll = false;
     }
 
     function applyHexSelectionOnCurrentLine() {
@@ -318,7 +452,54 @@ GlassPage {
             item["applyHexSelection"]();
     }
 
+    function clearTextSelection() {
+        selectionPointerDown = false;
+        textSelectionAnchor = null;
+        textSelectionFocus = null;
+    }
+    function selectionContains(id) {
+        return textSelectionRange !== null && id >= textSelectionRange.firstId && id <= textSelectionRange.lastId;
+    }
+    function applyTextSelection(editor, id) {
+        if (!editor || !selectionContains(id)) return false;
+        const range = textSelectionRange;
+        editor.select(id === range.firstId ? Math.min(range.firstOffset, editor.length) : 0,
+            id === range.lastId ? Math.min(range.lastOffset, editor.length) : editor.length);
+        return true;
+    }
+    function selectionPoint(x, y) {
+        const point = selectionArea.mapToItem(logListView.contentItem, x,
+            Math.max(0, Math.min(selectionArea.height - 1, y)));
+        const index = logListView.indexAt(1, point.y);
+        const footer = logListView.footerItem;
+        const row = index >= 0 ? logListView.itemAtIndex(index)
+            : footer && footer.height > 0 && point.y >= footer.y && point.y < footer.y + footer.height ? footer : null;
+        if (!row) return null;
+        const id = index >= 0 ? sshTerminal.lineIdAt(index) : liveSelectionId;
+        if (!textSelectionAnchor) textSelectionAnchor = {id: id, position: 0};
+        if (!textSelectionFocus || textSelectionFocus.id !== id) textSelectionFocus = {id: id, position: 0};
+        const position = row.selectionPosition(point.x, point.y);
+        return {id: id, position: position};
+    }
+    function extendTextSelection() {
+        const point = selectionPoint(selectionArea.mouseX, selectionArea.mouseY);
+        if (point) textSelectionFocus = point;
+        if (hasTextSelection) autoScroll = false;
+    }
+    function copyTextSelection() {
+        if (!hasTextSelection) return;
+        const range = textSelectionRange;
+        const text = sshTerminal.selectedText(range.firstId, range.firstOffset, range.lastId, range.lastOffset);
+        if (text === "") return;
+        clipboardHelper.text = text;
+        clipboardHelper.selectAll();
+        clipboardHelper.copy();
+        clipboardHelper.clear();
+        statusHint.text = "已复制选中文字";
+    }
+
     function selectLineAndExtractHex(lineIndex) {
+        clearTextSelection();
         var oldIndex = selectedLineIndex;
         selectedHexStart = -1;
         selectedHexEnd = -1;
@@ -351,162 +532,77 @@ GlassPage {
     }
 
     function parseSelectedHexWithProtocol(protocolType) {
-        if (!backend || selectedHexText === "")
+        if (!backend || parseableHexText === "")
             return;
 
-        var oldProtocolType = backend.protocolType;
-        backend.protocolType = protocolType;
-        backend.parseHex(selectedHexText, encodingCombo.currentText, 3);
-        backend.protocolType = oldProtocolType;
-
-        parsePanelVisible = true;
-        if (parsePanelWidth <= 0)
-            parsePanelWidth = Math.max(parsePanelMinWidth, terminalPane.width * 0.42);
-        Qt.callLater(function () {
-            popupCols.autoFit();
-        });
-    }
-
-    function clampParsePanelWidth(widthValue) {
-        var maxWidth = Math.max(parsePanelMinWidth, terminalPane.width * parsePanelMaxRatio);
-        return Math.max(parsePanelMinWidth, Math.min(widthValue, maxWidth));
+        if (parseSessionId < 4) parseSessionId = backend.createParseSession();
+        if (parseSessionId < 4) return;
+        parsedHex = parseableHexText;
+        parseFrameText.deselect();
+        parseFrameText.cursorPosition = 0;
+        backend.parseHex(parsedHex, encodingCombo.currentText, parseSessionId, protocolType);
+        parseOutputWindow.show();
+        Qt.callLater(function () { popupCols.autoFit(); });
     }
 
     function copySelectedHexToClipboard() {
-        if (selectedHexText === "")
+        if (parseableHexText === "")
             return;
-        clipboardHelper.text = selectedHexText;
+        clipboardHelper.text = parseableHexText;
         clipboardHelper.selectAll();
         clipboardHelper.copy();
     }
 
-    function handleCmdCtrlShortcut(event) {
-        if (!sshTerminal.connected || !cmdInput)
-            return false;
-        if (!(event.modifiers & Qt.ControlModifier) || (event.modifiers & Qt.AltModifier))
-            return false;
-
-        cmdInput.forceActiveFocus();
-
-        if (event.key === Qt.Key_C) {
-            // #5 有文本选中时执行系统复制，无选中时发送 SIGINT
-            if (cmdInput.selectedText.length > 0) {
-                cmdInput.copy();
-            } else {
-                sshTerminal.sendRawBytes("\x03");
-            }
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_V) {
-            cmdInput.insert(cmdInput.cursorPosition, sshTerminal.clipboardText());
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_A) {
-            cmdInput.cursorPosition = 0;
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_E) {
-            cmdInput.cursorPosition = cmdInput.length;
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_Left) {
-            cmdInput.cursorPosition = prevWordStart(cmdInput.text, cmdInput.cursorPosition);
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_Right) {
-            cmdInput.cursorPosition = nextWordStart(cmdInput.text, cmdInput.cursorPosition);
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_Backspace) {
-            var start = prevWordStart(cmdInput.text, cmdInput.cursorPosition);
-            if (start < cmdInput.cursorPosition)
-                cmdInput.remove(start, cmdInput.cursorPosition);
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_Delete) {
-            var end = nextWordStart(cmdInput.text, cmdInput.cursorPosition);
-            if (end > cmdInput.cursorPosition)
-                cmdInput.remove(cmdInput.cursorPosition, end);
-            event.accepted = true;
-            return true;
-        }
-        return false;
+    function sendTerminalText(text) {
+        if (!sshTerminal.connected || sshTerminal.receptionPaused || text === "") return;
+        if (!monitorHit) { autoScroll = true; logListView.positionViewAtEnd(); }
+        sshTerminal.sendRawBytes(text);
     }
-
-    function routeKeyToCmdInput(event) {
-        if (!sshTerminal.connected || !cmdInput)
-            return false;
-        if (handleCmdCtrlShortcut(event))
-            return true;
-        if (event.modifiers & Qt.AltModifier)
-            return false;
-        if (event.modifiers & Qt.ControlModifier)
-            return false;
-
-        cmdInput.forceActiveFocus();
-
-        if (event.key === Qt.Key_Backspace) {
-            if (cmdInput.cursorPosition > 0)
-                cmdInput.remove(cmdInput.cursorPosition - 1, cmdInput.cursorPosition);
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_Delete) {
-            if (cmdInput.cursorPosition < cmdInput.length)
-                cmdInput.remove(cmdInput.cursorPosition, cmdInput.cursorPosition + 1);
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_Left) {
-            cmdInput.cursorPosition = Math.max(0, cmdInput.cursorPosition - 1);
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_Right) {
-            cmdInput.cursorPosition = Math.min(cmdInput.length, cmdInput.cursorPosition + 1);
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_Home) {
-            cmdInput.cursorPosition = 0;
-            event.accepted = true;
-            return true;
-        }
-        if (event.key === Qt.Key_End) {
-            cmdInput.cursorPosition = cmdInput.length;
-            event.accepted = true;
-            return true;
-        }
-        if (event.text && event.text.length > 0 && event.text.charCodeAt(0) >= 32) {
-            cmdInput.insert(cmdInput.cursorPosition, event.text);
-            logListView.positionViewAtEnd();
-            event.accepted = true;
-            return true;
-        }
-        return false;
+    function pasteTerminal() {
+        terminalCapture.forceActiveFocus();
+        sendTerminalText(sshTerminal.clipboardText());
     }
-
-    function sendCommandAndTrackHistory(cmd) {
-        if (!sshTerminal.connected)
-            return;
-        sshTerminal.sendCommand(cmd);
-        if (cmd !== "" && (cmdHistory.length === 0 || cmdHistory[cmdHistory.length - 1] !== cmd)) {
-            var h = cmdHistory.slice();
-            h.push(cmd);
-            if (h.length > cmdHistoryMaxSize)
-                h = h.slice(h.length - cmdHistoryMaxSize);
-            cmdHistory = h;
-        }
-        historyIndex = -1;
-        pendingInput = "";
-        logListView.positionViewAtEnd();
+    function routeTerminalKey(event) {
+        if (!sshTerminal.connected || sshTerminal.receptionPaused) return false;
+        const mac = Qt.platform.os === "osx";
+        const control = !!(event.modifiers & (mac ? Qt.MetaModifier : Qt.ControlModifier));
+        const alt = !!(event.modifiers & Qt.AltModifier);
+        const shift = !!(event.modifiers & Qt.ShiftModifier);
+        if (mac && (event.modifiers & Qt.ControlModifier)) return false;
+        if (terminalCapture.inputMethodComposing && !control) return false;
+        let text = "";
+        const arrows = ({[Qt.Key_Up]:"A", [Qt.Key_Down]:"B", [Qt.Key_Right]:"C", [Qt.Key_Left]:"D", [Qt.Key_Home]:"H", [Qt.Key_End]:"F"});
+        if (arrows[event.key]) {
+            const modifier = 1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (control ? 4 : 0);
+            text = "\x1b[" + (modifier > 1 ? "1;" + modifier : "") + arrows[event.key];
+        } else if (control && event.key >= Qt.Key_A && event.key <= Qt.Key_Z) {
+            text = String.fromCharCode(event.key - Qt.Key_A + 1);
+        } else if (control && (event.key === Qt.Key_Space || event.key === Qt.Key_At)) text = "\x00";
+        else if (control && event.key === Qt.Key_BracketLeft) text = "\x1b";
+        else if (control && event.key === Qt.Key_Backslash) text = "\x1c";
+        else if (control && event.key === Qt.Key_BracketRight) text = "\x1d";
+        else if (control && event.key === Qt.Key_Backspace) text = "\x17";
+        else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) text = "\r";
+        else if (event.key === Qt.Key_Backspace) text = alt ? "\x1b\x7f" : "\x7f";
+        else if (event.key === Qt.Key_Backtab || event.key === Qt.Key_Tab && shift) text = "\x1b[Z";
+        else if (event.key === Qt.Key_Tab) text = "\t";
+        else if (event.key === Qt.Key_Escape) text = "\x1b";
+        else if ([Qt.Key_Insert, Qt.Key_Delete, Qt.Key_PageUp, Qt.Key_PageDown].indexOf(event.key) >= 0) {
+            const number = ({[Qt.Key_Insert]:2, [Qt.Key_Delete]:3, [Qt.Key_PageUp]:5, [Qt.Key_PageDown]:6})[event.key];
+            text = "\x1b[" + number + (control ? ";5" : "") + "~";
+        } else if (!control && event.text && event.text.charCodeAt(0) >= 32) text = (alt ? "\x1b" : "") + event.text;
+        if (text === "") return false;
+        terminalCapture.forceActiveFocus();
+        sendTerminalText(text);
+        event.accepted = true;
+        return true;
+    }
+    function sendQuickCommand(command) {
+        if (!sshTerminal.connected || sshTerminal.receptionPaused) return;
+        if (!monitorHit) autoScroll = true;
+        sshTerminal.sendCommand(command);
+        terminalCapture.forceActiveFocus();
+        if (autoScroll) logListView.positionViewAtEnd();
     }
 
     function addCustomCommand(name, command) {
@@ -533,7 +629,8 @@ GlassPage {
                 "command": trimmedCommand
             });
         }
-        customCommands = list;
+        if (sharedCommands) sharedCommands.commands = list;
+        else localCustomCommands = list;
         saveCustomCommands();
     }
 
@@ -547,7 +644,8 @@ GlassPage {
             if (customCommands[i].name !== targetName)
                 list.push(customCommands[i]);
         }
-        customCommands = list;
+        if (sharedCommands) sharedCommands.commands = list;
+        else localCustomCommands = list;
         saveCustomCommands();
     }
 
@@ -577,7 +675,8 @@ GlassPage {
                 }
             }
         }
-        customCommands = normalized;
+        if (sharedCommands) sharedCommands.commands = normalized;
+        else localCustomCommands = normalized;
     }
 
     function saveCustomCommands() {
@@ -597,7 +696,10 @@ GlassPage {
     function ensureCustomCommandsLoaded() {
         if (customCommandsLoaded || !backend)
             return;
-        loadCustomCommands();
+        if (!sharedCommands || !sharedCommands.loaded) {
+            loadCustomCommands();
+            if (sharedCommands) sharedCommands.loaded = true;
+        }
         customCommandsLoaded = true;
     }
 
@@ -605,10 +707,18 @@ GlassPage {
         customCommandsLoaded = false;
         ensureCustomCommandsLoaded();
     }
+    onSharedCommandsChanged: {
+        customCommandsLoaded = false;
+        ensureCustomCommandsLoaded();
+    }
 
     onVisibleChanged: {
-        if (visible) ensureCustomCommandsLoaded()
-        else if (pendingHostKey) respondHostKey(false)
+        if (relocatingWindow) return;
+        if (visible) {
+            ensureCustomCommandsLoaded();
+            if (monitorHit) Qt.callLater(positionMonitorHit);
+            if (pendingHostKey) hostKeyDialog.open();
+        } else hostKeyDialog.close();
     }
 
     onClosing: closeSshSession()
@@ -621,7 +731,12 @@ GlassPage {
     SshTerminal {
         id: sshTerminal
         objectName: "ssh-terminal-backend"
+        persistSettings: liveLogDialog.persistConnectionSettings
+        useSystemCredentials: liveLogDialog.useSystemCredentials
         presentationActive: liveLogDialog.visible
+        onReceptionPausedChanged: statusHint.text = receptionPaused
+            ? "后台日志接收已停止，SSH 连接保留。点击“恢复接收”重新读取。"
+            : "后台日志接收已恢复。"
         onCredentialStateChanged: liveLogDialog.continueSshAction()
         onPasswordOperationFinished: function(operationId, success, error) {
             if (operationId !== liveLogDialog.passwordOperationId) return
@@ -633,10 +748,9 @@ GlassPage {
             if (success) pwdInput.text = ""
         }
         onHostKeyConfirmationRequested: function(host, port, algorithm, fingerprint, requestId) {
-            if (!liveLogDialog.visible) { sshTerminal.confirmHostKey(requestId, fingerprint, false); return }
             if (liveLogDialog.pendingHostKey) liveLogDialog.respondHostKey(false)
             liveLogDialog.pendingHostKey = {host:host, port:port, algorithm:algorithm, fingerprint:fingerprint, requestId:requestId}
-            hostKeyDialog.open()
+            if (liveLogDialog.visible) hostKeyDialog.open()
         }
         onHostKeyPendingChanged: {
             if (!hostKeyPending) { liveLogDialog.pendingHostKey = null; hostKeyDialog.close() }
@@ -645,9 +759,9 @@ GlassPage {
         onConnectedChanged: {
             if (connected) {
                 Qt.callLater(function () {
-                    logListView.positionViewAtEnd();
-                    if (liveLogDialog.cmdInput)
-                        liveLogDialog.cmdInput.forceActiveFocus();
+                    if (liveLogDialog.autoScroll) logListView.positionViewAtEnd();
+                    if (liveLogDialog.visible && liveLogDialog.terminalInput)
+                        liveLogDialog.terminalInput.forceActiveFocus();
                 });
             }
         }
@@ -658,8 +772,30 @@ GlassPage {
 
         onLinesAboutToChange: liveLogDialog.captureLogViewport()
 
+        onMonitorMatched: function(hit) {
+            if (!liveLogDialog.monitorEnabled || !liveLogDialog.autoScroll) return;
+            if (hit.error) {
+                liveLogDialog.monitorError = hit.error;
+                liveLogDialog.configureMonitorRules();
+                return;
+            }
+            if (hit.pauseOnMatch === false) {
+                liveLogDialog.monitorNotice = hit;
+                statusHint.text = "命中「" + hit.ruleName + "」，已按规则颜色标记，继续跟随。";
+                return;
+            }
+            liveLogDialog.monitorHit = hit;
+            liveLogDialog.autoScroll = false;
+            statusHint.text = "已命中「" + hit.ruleName + "」，暂停跟随；后台继续接收。点击状态栏可查看命中原文。";
+            Qt.callLater(liveLogDialog.positionMonitorHit);
+        }
+        onLiveLineChanged: if (liveLogDialog.autoScroll) Qt.callLater(function() { if (liveLogDialog.autoScroll) logListView.positionViewAtEnd(); })
         onLineCountChanged: {
             if (!sshTerminal) return;
+            if (sshTerminal.currentLineCount === 0) viewAnchorId = -1;
+            if (sshTerminal.currentLineCount === 0 || textSelectionRange
+                    && (textSelectionRange.firstId < sshTerminal.firstLineId || textSelectionRange.lastId > liveSelectionId))
+                clearTextSelection();
             updateSearchResult();
             selectedLineIndex = sshTerminal.indexForLineId(selectedLineId);
             if (selectedLineIndex < 0 || !sshTerminal.lineIsComplete(selectedLineIndex)) {
@@ -670,11 +806,75 @@ GlassPage {
         }
     }
 
+    Popup {
+        id: rulePicker; objectName: "ssh-rule-picker"
+        parent: liveLogDialog.Overlay.overlay
+        width: Math.min(420, parent ? parent.width - 20 : 420)
+        padding: 12
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { color: theme ? theme.popupBackground : "#292d35"; border.color: cardBorder; radius: 9 }
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label { text: "当前会话使用的规则 · 已选 " + selectedMonitorRules.length + " 条"; color: labelColor; font.bold: true }
+            Next.GlassTextField { id: ruleSearch; objectName: "ssh-rule-search"; Layout.fillWidth: true; placeholderText: "搜索规则名称或表达式" }
+            ListView {
+                objectName: "ssh-rule-list"
+                Layout.fillWidth: true; Layout.preferredHeight: Math.min(330, Math.max(54, count * 57))
+                clip: true; spacing: 4
+                model: monitorRuleLibrary ? monitorRuleLibrary.monitorRules.filter(function(rule) {
+                    const keyword = ruleSearch.text.toLowerCase();
+                    return rule.name.toLowerCase().indexOf(keyword) >= 0 || rule.pattern.toLowerCase().indexOf(keyword) >= 0;
+                }) : []
+                delegate: Next.GlassCheckBox {
+                    required property var modelData
+                    objectName: "ssh-rule-choice-" + modelData.id
+                    width: ListView.view.width; height: 53
+                    text: modelData.name + "\n" + modelData.pattern
+                    checked: liveLogDialog.monitorRuleIds.indexOf(modelData.id) >= 0
+                    onToggled: liveLogDialog.toggleMonitorRule(modelData.id, checked)
+                    contentItem: Item {
+                        Rectangle { x: 31; y: 8; width: 8; height: 8; radius: 4; color: modelData.color || "#e8b76a" }
+                        Column {
+                            x: 47; width: parent.width - 47; spacing: 4
+                            Label { textFormat: Text.PlainText; text: modelData.name + (modelData.pauseOnMatch === false ? " · 仅标记" : " · 暂停跟随"); color: labelColor; font.pixelSize: 13 }
+                            Label { textFormat: Text.PlainText; text: modelData.pattern; width: parent.width; elide: Text.ElideRight; color: theme ? theme.subText : "#aaaaaa"; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 11 }
+                        }
+                    }
+                }
+                ScrollBar.vertical: ScrollBar {}
+                Label { anchors.centerIn: parent; visible: parent.count === 0; text: "暂无规则，请先新增"; color: labelColor }
+            }
+            Label { text: "按规则设置进行标记或暂停跟随；只监测新输出。"; color: theme ? theme.subText : "#aaaaaa"; font.pixelSize: 11 }
+            Next.GlassButton {
+                objectName: "ssh-rule-manage"; text: "打开规则库…"; Layout.fillWidth: true
+                onClicked: { rulePicker.close(); if (monitorRuleLibrary) monitorRuleLibrary.openMonitorRules(liveLogDialog.Window.window); }
+            }
+        }
+    }
+    Popup {
+        id: matchDetails; objectName: "ssh-match-details"
+        parent: liveLogDialog.Overlay.overlay; anchors.centerIn: parent
+        width: Math.min(640, parent ? parent.width - 24 : 640); padding: 12
+        background: Rectangle { color: theme ? theme.popupBackground : "#292d35"; border.color: cardBorder; radius: 9 }
+        contentItem: ColumnLayout {
+            Label { textFormat: Text.PlainText; text: "命中原文" + (monitorEvent && monitorEvent.truncated ? "（过长内容已截取）" : "") + " · " + (monitorEvent ? monitorEvent.ruleName : ""); color: labelColor }
+            ScrollView {
+                Layout.fillWidth: true; Layout.preferredHeight: 180
+                TextArea { text: monitorEvent ? monitorEvent.text : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; color: labelColor; font.family: Next.PlatformFonts.monospaceFamily }
+            }
+            RowLayout {
+                Item { Layout.fillWidth: true }
+                Next.GlassButton { text: "关闭"; onClicked: matchDetails.close() }
+            }
+        }
+    }
+
     Next.GlassDialog {
         id: hostKeyDialog; objectName: "ssh-host-key-dialog"
+        palette: liveLogDialog.palette
         parent: Overlay.overlay; anchors.centerIn: parent; width: Math.min(620, liveLogDialog.width - 30)
-        modal: true; title: "确认 SSH 主机密钥"; standardButtons: Dialog.NoButton; closePolicy: Popup.CloseOnEscape
-        onClosed: if (liveLogDialog.pendingHostKey) liveLogDialog.respondHostKey(false)
+        modal: false; title: "确认 SSH 主机密钥"; standardButtons: Dialog.NoButton; closePolicy: Popup.CloseOnEscape
+        onClosed: if (liveLogDialog.pendingHostKey && liveLogDialog.visible && !liveLogDialog.relocatingWindow) liveLogDialog.respondHostKey(false)
         contentItem: ColumnLayout {
             spacing: 12
             Label { objectName: "ssh-host-key-target"; text: liveLogDialog.pendingHostKey ? liveLogDialog.pendingHostKey.host + ":" + liveLogDialog.pendingHostKey.port : ""; textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap }
@@ -693,56 +893,62 @@ GlassPage {
 
         MenuItem {
             objectName: "ssh-parse-auto"
-            text: "自动检测解析"
-            enabled: selectedHexText !== ""
+            text: "立即解析"
+            enabled: parseableHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.Auto)
         }
         MenuItem {
             text: "按 DL/T 698 解析"
-            enabled: selectedHexText !== ""
+            enabled: parseableHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.DLT698)
         }
         MenuItem {
             text: "按 IEC 101 解析"
-            enabled: selectedHexText !== ""
+            enabled: parseableHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.IEC101)
         }
         MenuItem {
             text: "按 IEC 104 解析"
-            enabled: selectedHexText !== ""
+            enabled: parseableHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.IEC104)
         }
         MenuItem {
             text: "按 应用层消息 解析"
-            enabled: selectedHexText !== ""
+            enabled: parseableHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.AppMsg)
         }
         MenuItem {
             text: "按 模块消息 解析"
-            enabled: selectedHexText !== ""
+            enabled: parseableHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.ModuleMsg)
         }
         MenuItem {
             text: "按 Q/GDW 376.2 解析"
-            enabled: selectedHexText !== ""
+            enabled: parseableHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.GDW3762)
         }
         MenuItem {
             text: "按 DL/T 645 解析"
-            enabled: selectedHexText !== ""
+            enabled: parseableHexText !== ""
             onTriggered: parseSelectedHexWithProtocol(protocolId.DLT645)
         }
         MenuSeparator {}
         MenuItem {
+            objectName: "ssh-copy-selection"
+            text: "复制选中文字"
+            enabled: liveLogDialog.hasTextSelection
+            onTriggered: liveLogDialog.copyTextSelection()
+        }
+        MenuItem {
             text: "复制Hex串"
-            enabled: selectedHexText !== ""
+            enabled: parseableHexText !== ""
             onTriggered: copySelectedHexToClipboard()
         }
     }
 
     Shortcut {
-        enabled: liveLogDialog.visible
-        sequences: [StandardKey.Find]
+        enabled: liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
+        sequences: ["Ctrl+Shift+F"]
         onActivated: {
             findBarVisible = true;
             findInput.forceActiveFocus();
@@ -750,43 +956,33 @@ GlassPage {
         }
     }
     Shortcut {
-        enabled: liveLogDialog.visible
+        enabled: liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
         sequence: "F3"
         onActivated: jumpToSearch(true)
     }
     Shortcut {
-        enabled: liveLogDialog.visible
+        enabled: liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
         sequence: "Shift+F3"
         onActivated: jumpToSearch(false)
     }
     Shortcut {
-        enabled: liveLogDialog.visible
-        sequence: "Ctrl+L"
-        onActivated: sshTerminal.clearBuffer()
-    }
-    Shortcut {
-        enabled: liveLogDialog.visible
+        enabled: liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
         sequence: "Ctrl+Shift+C"
         onActivated: {
-            if (selectedLineIndex >= 0)
+            if (hasTextSelection) copyTextSelection();
+            else if (selectedLineIndex >= 0)
                 sshTerminal.copyLineToClipboard(selectedLineIndex);
         }
     }
     Shortcut {
-        enabled: liveLogDialog.visible
+        enabled: liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
         sequence: "Ctrl+Shift+A"
         onActivated: sshTerminal.copyBufferToClipboard()
     }
-    // #8 Ctrl+Shift+V 与 Ctrl+V 功能完全重复，已移除，保留下方 Ctrl+V 即可
     Shortcut {
-        enabled: liveLogDialog.visible
-        sequence: "Ctrl+V"
-        onActivated: {
-            if (!cmdInput)
-                return;
-            cmdInput.forceActiveFocus();
-            cmdInput.insert(cmdInput.cursorPosition, sshTerminal.clipboardText());
-        }
+        enabled: liveLogDialog.visible && sshTerminal.connected && liveLogDialog.Window.window && liveLogDialog.Window.window.active
+        sequences: [StandardKey.Paste, "Ctrl+Shift+V"]
+        onActivated: liveLogDialog.pasteTerminal()
     }
 
     readonly property color terminalBg: "#1a1d21"
@@ -822,6 +1018,7 @@ GlassPage {
 
     // ── 与主界面一致的控件样式组件 ────────────────────────────────
     component StyledTextField: Next.GlassTextField {
+        Layout.fillWidth: liveLogDialog.workspaceManaged
         implicitHeight: 36
         topPadding: 0
         bottomPadding: 0
@@ -835,6 +1032,7 @@ GlassPage {
     component StyledComboBox: Next.GlassComboBox {
         id: styledCbCtrl
         implicitHeight: 36
+        leftPadding: 8
 
         delegate: ItemDelegate {
             width: styledCbCtrl.width
@@ -858,6 +1056,7 @@ GlassPage {
             width: 12
             height: 8
             contextType: "2d"
+            onAvailableChanged: if (available) requestPaint()
             Connections {
                 target: styledCbCtrl
                 function onPressedChanged() {
@@ -871,18 +1070,21 @@ GlassPage {
                 }
             }
             onPaint: {
-                context.reset();
-                context.moveTo(0, 0);
-                context.lineTo(width, 0);
-                context.lineTo(width / 2, height);
-                context.closePath();
-                context.fillStyle = liveLogDialog.theme ? liveLogDialog.theme.text : "#333333";
-                context.fill();
+                if (!available) return;
+                const ctx = getContext("2d");
+                if (!ctx) return;
+                ctx.reset();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(width, 0);
+                ctx.lineTo(width / 2, height);
+                ctx.closePath();
+                ctx.fillStyle = liveLogDialog.theme ? liveLogDialog.theme.text : "#333333";
+                ctx.fill();
             }
         }
 
         contentItem: Text {
-            leftPadding: 10
+            leftPadding: 0
             rightPadding: styledCbCtrl.indicator.width + styledCbCtrl.spacing
             text: styledCbCtrl.displayText
             font: styledCbCtrl.font
@@ -930,6 +1132,307 @@ GlassPage {
     TextEdit {
         id: clipboardHelper
         visible: false
+        textFormat: TextEdit.PlainText
+    }
+
+    Window {
+        id: parseOutputWindow
+        objectName: "ssh-parse-window"
+        title: liveLogDialog.sessionName + " · 协议解析"
+        width: 880; height: 620
+        minimumWidth: 520; minimumHeight: 360
+        color: liveLogDialog.theme ? liveLogDialog.theme.background : "#282c33"
+        transientParent: liveLogDialog.ownerWindow && liveLogDialog.ownerWindow.visible ? liveLogDialog.ownerWindow : liveLogDialog.Window.window
+        visible: false
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                Label {
+                    text: liveLogDialog.sessionName + " · 协议解析"
+                    color: theme ? theme.text : "#333333"
+                    font.bold: true
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                StyledButton {
+                    text: "关闭"
+                                    implicitWidth: 72
+                    onClicked: parseOutputWindow.close()
+                }
+            }
+
+            Label {
+                text: "原始报文"
+                color: theme ? theme.subText : "#666666"
+            }
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 84
+                TextArea {
+                    id: parseFrameText
+                    objectName: "ssh-parse-frame"
+                    text: liveLogDialog.parsedHex
+                    textFormat: TextEdit.PlainText
+                    readOnly: true
+                    selectByMouse: true
+                    persistentSelection: true
+                    wrapMode: TextEdit.Wrap
+                    font.family: Next.PlatformFonts.monospaceFamily
+                    font.pixelSize: 13
+                    color: theme ? theme.accent : "#1976D2"
+                    selectionColor: theme ? theme.tableHighlight : "#446688"
+                    background: Rectangle { color: theme ? theme.controlBackground : "#f5f5f5"; radius: 6 }
+                    Accessible.name: "原始报文"
+                }
+            }
+            Connections {
+                target: liveLogDialog.backend
+                function onHighlightRange(start, end, modelId) {
+                    if (modelId === liveLogDialog.parseSessionId) parseFrameText.select(start, end);
+                }
+            }
+
+            Item {
+                id: parseHeaderContainer
+                Layout.fillWidth: true
+                Layout.preferredHeight: 30
+                clip: true
+
+                Row {
+                    x: -parseResultList.contentX
+                    height: parent.height
+
+                    Rectangle {
+                        width: popupCols.w1
+                        height: parent.height
+                        color: theme ? theme.controlBackground : "#f5f5f5"
+                        border.color: theme ? theme.controlBorder : "#cccccc"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "域/位域"
+                            font.bold: true
+                            color: theme ? theme.text : "#333333"
+                        }
+
+                        Rectangle {
+                            width: 4
+                            height: parent.height
+                            anchors.right: parent.right
+                            color: Qt.rgba(0, 0, 0, 0)
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.SplitHCursor
+                                property point lastPos
+
+                                onPressed: mouse => {
+                                    lastPos = mapToItem(parseHeaderContainer, mouse.x, mouse.y);
+                                }
+
+                                onPositionChanged: mouse => {
+                                    if (pressed) {
+                                        var curPos = mapToItem(parseHeaderContainer, mouse.x, mouse.y);
+                                        var delta = curPos.x - lastPos.x;
+                                        var deltaR = delta / popupCols.availableW;
+                                        var minR = 50 / popupCols.availableW;
+
+                                        if (popupCols.r1 + deltaR > minR && popupCols.r2 - deltaR > minR) {
+                                            popupCols.r1 += deltaR;
+                                            popupCols.r2 -= deltaR;
+                                            lastPos = curPos;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: popupCols.w2
+                        height: parent.height
+                        color: theme ? theme.controlBackground : "#f5f5f5"
+                        border.color: theme ? theme.controlBorder : "#cccccc"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "值"
+                            font.bold: true
+                            color: theme ? theme.text : "#333333"
+                        }
+
+                        Rectangle {
+                            width: 4
+                            height: parent.height
+                            anchors.right: parent.right
+                            color: Qt.rgba(0, 0, 0, 0)
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.SplitHCursor
+                                property point lastPos
+
+                                onPressed: mouse => {
+                                    lastPos = mapToItem(parseHeaderContainer, mouse.x, mouse.y);
+                                }
+
+                                onPositionChanged: mouse => {
+                                    if (pressed) {
+                                        var curPos = mapToItem(parseHeaderContainer, mouse.x, mouse.y);
+                                        var delta = curPos.x - lastPos.x;
+                                        var deltaR = delta / popupCols.availableW;
+                                        var minR = 50 / popupCols.availableW;
+
+                                        if (popupCols.r2 + deltaR > minR && (1 - popupCols.r1 - popupCols.r2) - deltaR > minR) {
+                                            popupCols.r2 += deltaR;
+                                            lastPos = curPos;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: popupCols.w3
+                        height: parent.height
+                        color: theme ? theme.controlBackground : "#f5f5f5"
+                        border.color: theme ? theme.controlBorder : "#cccccc"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "说明"
+                            font.bold: true
+                            color: theme ? theme.text : "#333333"
+                        }
+                    }
+                }
+            }
+
+            ListView {
+                id: parseResultList
+                objectName: "ssh-parse-results"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: popupCols.total
+                flickableDirection: Flickable.HorizontalAndVerticalFlick
+                model: liveLogDialog.parseResultModel
+
+                delegate: Rectangle {
+                    objectName: "ssh-parse-field-" + index
+                    width: popupCols.total
+                    height: model.isFrameSeparator ? 20 : 30
+                    color: model.isFrameSeparator ? (theme ? theme.tableHighlight : "#eeeeee") : (model.highlighted ? (theme ? theme.tableHighlight : "#d0e8ff") : (index % 2 === 0 ? Qt.rgba(0, 0, 0, 0) : (theme ? theme.rowAlt : "#fafafa")))
+
+                    MouseArea {
+                        anchors.fill: parent
+                        visible: !model.isFrameSeparator
+                        onClicked: {
+                            var link = "highlight:" + model.offset + "," + model.length;
+                            backend.handleLink(link, liveLogDialog.parseSessionId);
+                        }
+                    }
+
+                    Row {
+                        height: parent.height
+                        visible: !model.isFrameSeparator
+
+                        Item {
+                            width: popupCols.w1
+                            height: parent.height
+
+                            Text {
+                                x: 5 + (model.indent * 20)
+                                width: 16
+                                height: parent.height
+                                verticalAlignment: Text.AlignVCenter
+                                horizontalAlignment: Text.AlignHCenter
+                                text: model.hasChildren ? (model.expanded ? "▼" : "▶") : ""
+                                color: theme ? theme.subText : "#666666"
+                                font.pixelSize: 10
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: model.hasChildren
+                                    cursorShape: model.hasChildren ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: liveLogDialog.parseResultModel.toggleExpand(index)
+                                }
+                            }
+
+                            Text {
+                                anchors.fill: parent
+                                anchors.leftMargin: 25 + (model.indent * 20)
+                                verticalAlignment: Text.AlignVCenter
+                                text: model.name
+                                font.family: Next.PlatformFonts.monospaceFamily
+                                color: theme ? theme.text : "#333333"
+                                elide: Text.ElideRight
+                            }
+
+                            Rectangle {
+                                width: 1
+                                height: parent.height
+                                color: theme ? theme.controlBorder : "#cccccc"
+                                anchors.right: parent.right
+                            }
+                        }
+
+                        Item {
+                            width: popupCols.w2
+                            height: parent.height
+
+                            Text {
+                                anchors.fill: parent
+                                anchors.leftMargin: 5
+                                verticalAlignment: Text.AlignVCenter
+                                text: model.value
+                                font.family: Next.PlatformFonts.monospaceFamily
+                                color: theme ? theme.text : "#333333"
+                                elide: Text.ElideRight
+                            }
+
+                            Rectangle {
+                                width: 1
+                                height: parent.height
+                                color: theme ? theme.controlBorder : "#cccccc"
+                                anchors.right: parent.right
+                            }
+                        }
+
+                        Item {
+                            width: popupCols.w3
+                            height: parent.height
+
+                            Text {
+                                anchors.fill: parent
+                                anchors.leftMargin: 5
+                                verticalAlignment: Text.AlignVCenter
+                                text: model.description
+                                font.family: Next.PlatformFonts.monospaceFamily
+                                color: theme ? theme.text : "#333333"
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: theme ? theme.controlBorder : "#cccccc"
+                        anchors.bottom: parent.bottom
+                    }
+                }
+
+                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.horizontal: ScrollBar {}
+            }
+        }
     }
 
     QtObject {
@@ -944,8 +1447,8 @@ GlassPage {
         property int total: availableW
 
         function autoFit() {
-            if (backend && backend.popupResultModel && backend.popupResultModel.getColumnWidths) {
-                var widths = backend.popupResultModel.getColumnWidths(liveLogDialog.charWidth, 20);
+            if (liveLogDialog.parseResultModel && liveLogDialog.parseResultModel.getColumnWidths) {
+                var widths = liveLogDialog.parseResultModel.getColumnWidths(liveLogDialog.charWidth, 20);
                 if (widths.length >= 2) {
                     var w1 = widths[0];
                     var w2 = widths[1];
@@ -993,16 +1496,108 @@ GlassPage {
             ColumnLayout {
                 id: connectionRows
                 anchors.fill: parent; anchors.margins: 10; spacing: 8
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    StyledButton {
+                        objectName: "ssh-config-toggle"
+                        text: liveLogDialog.connectionConfigExpanded ? "▾ 收起配置" : "▸ 连接配置"
+                        Accessible.name: "连接配置"
+                        Accessible.description: liveLogDialog.connectionConfigExpanded ? "已展开" : "已折叠"
+                        onClicked: liveLogDialog.connectionConfigExpanded = !liveLogDialog.connectionConfigExpanded
+                    }
+                    Label {
+                        objectName: "ssh-target-summary"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        text: liveLogDialog.sessionName + " · " + (userInput.text.trim() || "用户") + "@" + (hostInput.text.trim() || "未设置主机") + ":" + portInput.text + " · " + encodingCombo.currentText
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        color: labelColor
+                        font.pixelSize: 12
+                    }
+                    StyledButton {
+                        objectName: "sshConnectAction"
+                        implicitWidth: 96
+                        enabled: !liveLogDialog.passwordOperationId
+                        palette.button: connBtnBg
+                        palette.mid: Qt.lighter(connBtnBg, 1.15)
+                        text: {
+                            if (liveLogDialog.pendingSshAction) return "取消等待";
+                            switch (sshTerminal.connectionState) {
+                            case SshTerminal.Connecting:
+                                return "连接中…";
+                            case SshTerminal.Reconnecting:
+                                return "重连中…";
+                            case SshTerminal.Connected:
+                                return "断开";
+                            default:
+                                return "连接";
+                            }
+                        }
+                        onClicked: liveLogDialog.connectAction()
+                    }
+
+                    StyledButton {
+                        objectName: "ssh-pause"
+                        text: autoScroll ? "暂停跟随" : "继续跟随"
+                        implicitWidth: 96
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: autoScroll ? "只停止自动滚动到底部，后台仍持续接收和更新日志。\n如需停止后台接收，请点击“停止刷屏”。"
+                            : "回到最新日志，恢复自动跟随和新日志规则监测。\n如已停止刷屏，需点击“恢复接收”才能收到新日志。"
+                        Accessible.description: ToolTip.text
+                        onClicked: {
+                            if (autoScroll) autoScroll = false;
+                            else resumeFollowing();
+                        }
+                    }
+
+                    StyledButton {
+                        objectName: "ssh-stop-reception"
+                        text: sshTerminal.receptionPaused ? "恢复接收" : "停止刷屏"
+                        implicitWidth: 96
+                        checked: sshTerminal.receptionPaused
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: sshTerminal.receptionPaused ? "恢复当前会话的后台日志读取，保留原来的跟随状态。\n远端或系统中积压的内容可能随后出现。"
+                            : "停止当前会话的后台日志读取，保留 SSH 连接。\n不再接收新日志，终端输入暂不可用；再次点击可恢复接收。"
+                        Accessible.description: ToolTip.text
+                        onClicked: sshTerminal.receptionPaused = !sshTerminal.receptionPaused
+                    }
+
+                    StyledButton {
+                        objectName: "ssh-clear"
+                        text: "清屏"
+                        implicitWidth: 96
+                        onClicked: { monitorHit = null; monitorNotice = null; sshTerminal.clearBuffer(); }
+                    }
+
+                    Next.GlassCheckBox {
+                        objectName: "ssh-copy-on-select"
+                        text: "选中即复制"
+                        checked: liveLogDialog.copyOnSelect
+                        onToggled: liveLogDialog.copyOnSelect = checked
+                        ToolTip.visible: hovered
+                        ToolTip.text: "拖动选中文字，松开鼠标后自动复制"
+                    }
+                }
                 Flickable {
                     id: connectionScroll
                     objectName: "ssh-connection-scroll"
+                    visible: liveLogDialog.connectionConfigExpanded
                     Layout.fillWidth: true
-                    Layout.preferredHeight: connectionFields.implicitHeight + (connectionScrollBar.visible ? connectionScrollBar.height : 0)
+                    Layout.preferredHeight: liveLogDialog.workspaceManaged
+                        ? Math.min(connectionFields.implicitHeight, liveLogDialog.height * 0.6)
+                        : connectionFields.implicitHeight + (connectionScrollBar.visible ? connectionScrollBar.height : 0)
                     contentWidth: connectionFields.width
                     contentHeight: connectionFields.height
-                    flickableDirection: Flickable.HorizontalFlick
+                    flickableDirection: liveLogDialog.workspaceManaged ? Flickable.VerticalFlick : Flickable.HorizontalFlick
                     boundsBehavior: Flickable.StopAtBounds
                     clip: true
+                    ScrollBar.vertical: ScrollBar {
+                        policy: liveLogDialog.workspaceManaged ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                    }
                     ScrollBar.horizontal: ScrollBar {
                         id: connectionScrollBar
                         policy: ScrollBar.AsNeeded
@@ -1013,16 +1608,32 @@ GlassPage {
                         function onActiveFocusItemChanged() {
                             const field = target.activeFocusItem
                             if (!field || field.parent !== connectionFields) return
+                            if (liveLogDialog.workspaceManaged) {
+                                if (field.y < connectionScroll.contentY) connectionScroll.contentY = field.y;
+                                else if (field.y + field.height > connectionScroll.contentY + connectionScroll.height)
+                                    connectionScroll.contentY = field.y + field.height - connectionScroll.height;
+                                return;
+                            }
                             if (field.x < connectionScroll.contentX)
                                 connectionScroll.contentX = field.x
                             else if (field.x + field.width > connectionScroll.contentX + connectionScroll.width)
                                 connectionScroll.contentX = field.x + field.width - connectionScroll.width
                         }
                     }
-                RowLayout {
+                GridLayout {
                     id: connectionFields
-                    width: Math.max(implicitWidth, connectionScroll.width)
-                    spacing: 8
+                    width: liveLogDialog.workspaceManaged ? connectionScroll.width : Math.max(implicitWidth, connectionScroll.width)
+                    columns: liveLogDialog.workspaceManaged ? (connectionScroll.width >= 800 ? 4 : 2) : 100
+                    columnSpacing: 8
+                    rowSpacing: 8
+                Label { text: "名称"; color: labelColor; font.pixelSize: 12 }
+                StyledTextField {
+                    objectName: "ssh-session-name"
+                    Layout.preferredWidth: 110
+                    text: liveLogDialog.sessionName
+                    onTextEdited: liveLogDialog.sessionName = text
+                    maximumLength: 80
+                }
                 Label {
                     text: "主机"
                     color: labelColor
@@ -1031,7 +1642,7 @@ GlassPage {
                 StyledTextField {
                     id: hostInput
                     objectName: "ssh-host"
-                    enabled: !liveLogDialog.secureCredentials || (!liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId)
+                    enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId
                     onTextEdited: liveLogDialog.targetEdited()
                     Layout.preferredWidth: 130
                     text: sshTerminal.host
@@ -1046,7 +1657,7 @@ GlassPage {
                 StyledTextField {
                     id: portInput
                     objectName: "ssh-port"
-                    enabled: !liveLogDialog.secureCredentials || (!liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId)
+                    enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId
                     onTextEdited: liveLogDialog.targetEdited()
                     Layout.preferredWidth: 52
                     text: sshTerminal.port
@@ -1064,7 +1675,7 @@ GlassPage {
                 StyledTextField {
                     id: userInput
                     objectName: "ssh-username"
-                    enabled: !liveLogDialog.secureCredentials || (!liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId)
+                    enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId
                     onTextEdited: liveLogDialog.targetEdited()
                     Layout.preferredWidth: 90
                     text: sshTerminal.username
@@ -1080,10 +1691,10 @@ GlassPage {
                     id: pwdInput
                     objectName: "ssh-password-draft"
                     Layout.preferredWidth: 140
-                    enabled: !liveLogDialog.secureCredentials || (!liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId)
+                    enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId
                     text: liveLogDialog.secureCredentials ? "" : sshTerminal.password
                     echoMode: TextInput.Password
-                    placeholderText: !liveLogDialog.secureCredentials ? "••••••••" : !liveLogDialog.targetMatchesBackend() ? "新目标密码" : sshTerminal.credentialBusy ? "正在核验凭据" : sshTerminal.hasSavedPassword ? "已保存；留空使用" : "输入本次密码"
+                    placeholderText: !liveLogDialog.secureCredentials ? "连接密码（随连接保存）" : !liveLogDialog.targetMatchesBackend() ? "新目标密码" : sshTerminal.credentialBusy ? "正在核验凭据" : sshTerminal.hasSavedPassword ? "已保存；留空使用" : "输入本次密码"
                     inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
                 }
 
@@ -1095,6 +1706,7 @@ GlassPage {
                 StyledComboBox {
                     id: encodingCombo
                     objectName: "ssh-encoding"
+                    Layout.fillWidth: liveLogDialog.workspaceManaged
                     Layout.minimumWidth: 112
                     Layout.preferredWidth: 112
                     model: ["UTF-8", "GB2312"]
@@ -1127,24 +1739,11 @@ GlassPage {
 
                 // 竖分隔
                 Rectangle {
+                    visible: !liveLogDialog.workspaceManaged
                     width: 1
                     height: 22
                     color: cardBorder
                     opacity: 0.7
-                }
-
-                Label {
-                    text: "自动重连"
-                    color: labelColor
-                    font.pixelSize: 12
-                }
-                Next.GlassSwitch {
-                    objectName: "ssh-auto-reconnect"
-                    checked: sshTerminal.autoReconnectEnabled
-                    onToggled: sshTerminal.autoReconnectEnabled = checked
-                    palette.button: liveLogDialog.theme ? liveLogDialog.theme.controlBackground : "#ffffff"
-                    palette.buttonText: liveLogDialog.theme ? liveLogDialog.theme.text : "#333333"
-                    palette.highlight: focusAccentColor
                 }
 
                 Label {
@@ -1187,85 +1786,84 @@ GlassPage {
                     opacity: enabled ? 1.0 : 0.4
                 }
 
+                Label {
+                    text: "自动重连"
+                    color: labelColor
+                    font.pixelSize: 12
+                }
+                Next.GlassSwitch {
+                    objectName: "ssh-auto-reconnect"
+                    checked: sshTerminal.autoReconnectEnabled
+                    onToggled: sshTerminal.autoReconnectEnabled = checked
+                    palette.button: liveLogDialog.theme ? liveLogDialog.theme.controlBackground : "#ffffff"
+                    palette.buttonText: liveLogDialog.theme ? liveLogDialog.theme.text : "#333333"
+                    palette.highlight: focusAccentColor
+                }
+
+                    Item { visible: !liveLogDialog.workspaceManaged; Layout.fillWidth: true }
+                }
+                }
+                RowLayout {
+                    visible: liveLogDialog.connectionConfigExpanded && liveLogDialog.secureCredentials
+                    Layout.fillWidth: true
+                    spacing: 8
+                    StyledButton {
+                        objectName: "ssh-save-password"; visible: liveLogDialog.secureCredentials; text: "保存密码"
+                        enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId && pwdInput.text.length > 0
+                        onClicked: liveLogDialog.beginSshAction("save")
+                    }
+                    StyledButton {
+                        objectName: "ssh-clear-password"; visible: liveLogDialog.secureCredentials; text: "清除已存密码"
+                        enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId && !sshTerminal.credentialBusy && liveLogDialog.targetMatchesBackend() && sshTerminal.hasSavedPassword
+                        onClicked: liveLogDialog.beginSshAction("clear")
+                    }
                     Item { Layout.fillWidth: true }
                 }
-                }
-                RowLayout { Layout.fillWidth: true; spacing: 8
-                StyledButton {
-                    objectName: "ssh-save-password"; visible: liveLogDialog.secureCredentials; text: "保存密码"
-                    enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId && pwdInput.text.length > 0
-                    onClicked: liveLogDialog.beginSshAction("save")
-                }
-                StyledButton {
-                    objectName: "ssh-clear-password"; visible: liveLogDialog.secureCredentials; text: "清除已存密码"
-                    enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId && !sshTerminal.credentialBusy && liveLogDialog.targetMatchesBackend() && sshTerminal.hasSavedPassword
-                    onClicked: liveLogDialog.beginSshAction("clear")
-                }
-                // 连接/断开按钮
-                Rectangle {
-                    width: 72
-                    height: 30
-                    radius: 8
-                    color: connectBtnArea.containsMouse ? Qt.lighter(connBtnBg, 1.15) : connBtnBg
-                    Behavior on color {
-                        ColorAnimation {
-                            duration: 120
-                        }
-                    }
+            }
+        }
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: {
-                            if (liveLogDialog.pendingSshAction) return "取消等待";
-                            switch (sshTerminal.connectionState) {
-                            case SshTerminal.Connecting:
-                                return "连接中…";
-                            case SshTerminal.Reconnecting:
-                                return "重连中…";
-                            case SshTerminal.Connected:
-                                return "断  开";
-                            default:
-                                return "连  接";
-                            }
-                        }
-                        color: "#ffffff"
-                        font.pixelSize: 13
-                        font.bold: true
-                    }
-
-                    MouseArea {
-                        id: connectBtnArea
-                        objectName: "sshConnectAction"
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        enabled: !liveLogDialog.passwordOperationId
-                        onClicked: liveLogDialog.connectAction()
-                    }
+        Rectangle {
+            objectName: "ssh-monitor-rule-bar"
+            visible: liveLogDialog.monitorRuleLibrary !== null
+            Layout.fillWidth: true; height: 44; radius: 6
+            color: monitorHit ? Qt.rgba(monitorHitColor.r, monitorHitColor.g, monitorHitColor.b, 0.18) : cardBg
+            border.color: monitorHit ? monitorHitColor : cardBorder
+            RowLayout {
+                anchors.fill: parent; anchors.margins: 6; spacing: 8
+                Next.GlassCheckBox {
+                    objectName: "ssh-monitor-enabled"; text: "启用规则监测"
+                    checked: monitorEnabled; onToggled: liveLogDialog.monitorEnabled = checked
                 }
-
-                StyledButton {
-                    text: autoScroll ? "⏸ 暂停" : "▶ 继续"
-                    implicitWidth: 78
+                Next.GlassButton {
+                    id: ruleSelectButton; objectName: "ssh-rule-select"
+                    text: "选择规则（" + selectedMonitorRules.length + "）▾"; implicitHeight: 32
                     onClicked: {
-                        autoScroll = !autoScroll;
-                        if (autoScroll)
-                            logListView.positionViewAtEnd();
+                        const point = mapToItem(rulePicker.parent, 0, height + 6);
+                        rulePicker.x = Math.max(8, Math.min(point.x, rulePicker.parent.width - rulePicker.width - 8));
+                        rulePicker.y = Math.max(8, Math.min(point.y, rulePicker.parent.height - rulePicker.implicitHeight - 8));
+                        rulePicker.open();
                     }
                 }
-
-                StyledButton {
-                    text: "清屏"
-                    implicitWidth: 56
-                    onClicked: sshTerminal.clearBuffer()
+                Label {
+                    objectName: "ssh-monitor-status"
+                    textFormat: Text.PlainText
+                    Layout.fillWidth: true; Layout.minimumWidth: 0; elide: Text.ElideRight
+                    text: monitorError || (!monitorEnabled ? "监测未开启 · 已选 " + selectedMonitorRules.length + " 条规则"
+                        : !selectedMonitorRules.length ? "请选择规则"
+                        : monitorHit ? "已命中：" + monitorHit.ruleName + " · " + monitorHit.time
+                        : sshTerminal.receptionPaused ? "接收已停止，恢复接收后继续监测"
+                        : !autoScroll ? "已暂停跟随，点击继续后监测新日志"
+                        : monitorNotice ? "最近命中（仅标记）：" + monitorNotice.ruleName : "监测中 · " + selectedMonitorRules.length + " 条规则")
+                    color: monitorHit && monitorHitColor.hslLightness >= 0.45 ? monitorHitColor : monitorError ? "#e8b76a" : labelColor; font.pixelSize: 12
+                    ToolTip.visible: statusMouse.containsMouse
+                    ToolTip.text: monitorEvent ? "点击查看命中原文；即使日志被缓存淘汰，仍保留本次快照。" : text
+                    MouseArea { id: statusMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: monitorEvent ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: if (monitorEvent) matchDetails.open() }
                 }
-
-                StyledButton {
-                    text: "复制全部"
-                    implicitWidth: 72
-                    onClicked: sshTerminal.copyBufferToClipboard()
-                }
-                    Item { Layout.fillWidth: true }
+                Label {
+                    visible: !!monitorHit && liveLogDialog.width > 920
+                    text: (sshTerminal.receptionPaused ? "接收已停止" : sshTerminal.connected ? "后台接收中" : "当前未连接")
+                        + " · +" + Math.max(0, liveSelectionId - (monitorHit ? monitorHit.receivedLineId : liveSelectionId)) + " 行"
+                    color: labelColor; font.pixelSize: 11
                 }
             }
         }
@@ -1334,8 +1932,8 @@ GlassPage {
                         findBarVisible = false;
                         searchKeyword = "";
                         refreshSearchResult();
-                        if (cmdInput)
-                            cmdInput.forceActiveFocus();
+                        if (terminalInput)
+                            terminalInput.forceActiveFocus();
                     }
                 }
             }
@@ -1344,6 +1942,7 @@ GlassPage {
         // ── 终端输出区域 ──────────────────────────────────────────
         Rectangle {
             id: terminalPane
+            objectName: "ssh-terminal-pane"
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: "transparent"
@@ -1365,20 +1964,13 @@ GlassPage {
                     clip: true
                     focus: true
 
-                    MouseArea {
-                        anchors.fill: parent
+                    TapHandler {
                         acceptedButtons: Qt.LeftButton
-                        onPressed: {
-                            if (liveLogDialog.cmdInput) {
-                                liveLogDialog.cmdInput.forceActiveFocus();
-                                liveLogDialog.cmdInput.cursorPosition = liveLogDialog.cmdInput.length;
-                            }
-                            mouse.accepted = false;
-                        }
+                        onTapped: terminalCapture.forceActiveFocus()
                     }
 
                     Keys.onPressed: function (event) {
-                        if (routeKeyToCmdInput(event))
+                        if (routeTerminalKey(event))
                             return;
                     }
 
@@ -1391,19 +1983,40 @@ GlassPage {
                         reuseItems: true
                         cacheBuffer: 80
                         spacing: 0
-                        bottomMargin: sshTerminal.connected ? 32 : 0
+                        bottomMargin: 0
+
+                        WheelHandler {
+                            target: null
+                            acceptedModifiers: Qt.platform.os === "osx" ? Qt.MetaModifier : Qt.ControlModifier
+                            onWheel: function(event) {
+                                if (!event.angleDelta.y) { event.accepted = false; return; }
+                                liveLogDialog.captureLogViewport();
+                                liveLogDialog.terminalFontSize = Math.max(8, Math.min(32,
+                                    liveLogDialog.terminalFontSize + (event.angleDelta.y > 0 ? 1 : -1)));
+                                logListView.forceLayout();
+                                Qt.callLater(liveLogDialog.applyLogViewport);
+                            }
+                        }
 
                         delegate: Rectangle {
                             id: lineItem
                             objectName: "ssh-log-line-" + stableId
                             property real stableId: model && model.lineId !== undefined ? model.lineId : -1
                             readonly property string displayText: model && model.lineText !== undefined ? model.lineText : ""
+                            readonly property color ruleColor: model && model.monitorColor ? model.monitorColor : "transparent"
                             property int rowIndex: index
                             onStableIdChanged: applyHexSelection()
                             onRowIndexChanged: applyHexSelection()
                             width: logListView.width
                             height: Math.max(charMeasurer.implicitHeight, lineText.implicitHeight, selectionLoader.item ? selectionLoader.item.implicitHeight : 0) + 4
-                            color: (searchKeyword !== "" && displayText.toLowerCase().indexOf(searchKeyword.toLowerCase()) >= 0) ? terminalMatchBg : "transparent"
+                            color: liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === stableId
+                                ? Qt.rgba(monitorHitColor.r, monitorHitColor.g, monitorHitColor.b, 0.3)
+                                : ruleColor.a > 0 ? Qt.rgba(ruleColor.r, ruleColor.g, ruleColor.b, 0.25)
+                                : (searchKeyword !== "" && displayText.toLowerCase().indexOf(searchKeyword.toLowerCase()) >= 0) ? terminalMatchBg : "transparent"
+                            Rectangle {
+                                width: 3; height: parent.height; color: lineItem.ruleColor.a > 0 ? lineItem.ruleColor : monitorHitColor
+                                visible: lineItem.ruleColor.a > 0 || liveLogDialog.monitorHit !== null && liveLogDialog.monitorHit.lineId === lineItem.stableId
+                            }
 
                             Text {
                                 id: lineText
@@ -1426,7 +2039,8 @@ GlassPage {
                                 id: selectionLoader
                                 anchors.fill: parent
                                 anchors.leftMargin: 10; anchors.rightMargin: 6
-                                active: lineItem.stableId === selectedLineId && selectedHexStart >= 0 && selectedHexEnd > selectedHexStart
+                                active: liveLogDialog.selectionContains(lineItem.stableId)
+                                    || lineItem.stableId === selectedLineId && selectedHexStart >= 0 && selectedHexEnd > selectedHexStart
                                 onLoaded: lineItem.applyHexSelection()
                                 sourceComponent: TextEdit {
                                     objectName: "ssh-selected-text"
@@ -1439,8 +2053,18 @@ GlassPage {
                                 }
                             }
 
+                            function selectionPosition(contentX, contentY) {
+                                if (!selectionLoader.active || !selectionLoader.item) return 0;
+                                const point = logListView.contentItem.mapToItem(selectionLoader.item, contentX, contentY);
+                                return selectionLoader.item.positionAt(point.x, point.y);
+                            }
+                            Connections {
+                                target: liveLogDialog
+                                function onTextSelectionRangeChanged() { lineItem.applyHexSelection(); }
+                            }
                             function applyHexSelection() {
                                 if (!sshTerminal || !selectionLoader || !selectionLoader.item || index < 0) return;
+                                if (liveLogDialog.applyTextSelection(selectionLoader.item, stableId)) return;
                                 const offset = sshTerminal.lineSegmentOffset(index);
                                 const start = Math.max(0, selectedHexStart - offset);
                                 const end = Math.min(selectionLoader.item.length, selectedHexEnd - offset);
@@ -1456,451 +2080,182 @@ GlassPage {
                                 anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            MouseArea {
+                        }
+
+                        footer: Item {
+                            width: logListView.width
+                            height: sshTerminal.connected || sshTerminal.liveLine !== "" ? charMeasurer.implicitHeight + 4 : 0
+                            property real cursorX: liveCursorMetrics.advanceWidth + sshTerminal.cursorPadding * liveLogDialog.charWidth
+                            property real offsetX: Math.max(0, cursorX - width + 24)
+                            property real caretX: 10 + cursorX - offsetX
+                            Rectangle {
+                                objectName: "ssh-monitor-live-hit"
                                 anchors.fill: parent
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                onPressed: function (mouse) {
-                                    selectLineAndExtractHex(index);
-                                    if (mouse.button === Qt.RightButton)
-                                        terminalContextMenu.popup();
+                                readonly property color markColor: sshTerminal.liveMonitorColor || (liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === liveSelectionId ? monitorHitColor : "transparent")
+                                visible: markColor.a > 0
+                                color: Qt.rgba(markColor.r, markColor.g, markColor.b, 0.3)
+                                Rectangle { width: 3; height: parent.height; color: parent.markColor }
+                            }
+                            TextMetrics {
+                                id: liveCursorMetrics
+                                font: charMeasurer.font
+                                text: sshTerminal.liveLine.slice(0, sshTerminal.cursorPosition)
+                            }
+                            function selectionPosition(contentX, contentY) {
+                                if (!liveSelectionLoader.active || !liveSelectionLoader.item) return 0;
+                                const point = logListView.contentItem.mapToItem(liveSelectionLoader.item, contentX, contentY);
+                                return liveSelectionLoader.item.positionAt(point.x, point.y);
+                            }
+                            Connections {
+                                target: liveLogDialog
+                                function onTextSelectionRangeChanged() {
+                                    liveLogDialog.applyTextSelection(liveSelectionLoader.item, liveLogDialog.liveSelectionId);
                                 }
-                                onDoubleClicked: sshTerminal.copyLineToClipboard(index)
+                            }
+                            Loader {
+                                id: liveSelectionLoader
+                                x: 10 - parent.offsetX; width: parent.width; height: parent.height
+                                active: liveLogDialog.selectionContains(liveLogDialog.liveSelectionId)
+                                onLoaded: liveLogDialog.applyTextSelection(item, liveLogDialog.liveSelectionId)
+                                sourceComponent: TextEdit {
+                                    objectName: "ssh-selected-live-text"
+                                    text: sshTerminal.liveLine; textFormat: TextEdit.PlainText
+                                    readOnly: true; selectByMouse: false; persistentSelection: true
+                                    font: charMeasurer.font; color: terminalText
+                                    selectedTextColor: terminalText; selectionColor: "#446688"
+                                    wrapMode: TextEdit.NoWrap
+                                }
+                            }
+                            Text {
+                                objectName: "ssh-terminal-live-line"
+                                visible: !liveSelectionLoader.active
+                                x: 10 - parent.offsetX
+                                text: sshTerminal.liveLine
+                                textFormat: Text.PlainText
+                                font: charMeasurer.font
+                                color: terminalText
+                            }
+                            Rectangle {
+                                x: parent.caretX; width: 2; height: charMeasurer.implicitHeight
+                                color: terminalText
+                                visible: sshTerminal.connected && terminalCapture.activeFocus && liveLogDialog.visible
+                                SequentialAnimation on opacity {
+                                    running: sshTerminal.connected && terminalCapture.activeFocus && liveLogDialog.visible
+                                    loops: Animation.Infinite
+                                    NumberAnimation { to: 0; duration: 600 }
+                                    NumberAnimation { to: 1; duration: 600 }
+                                }
                             }
                         }
 
-                        footer: sshTerminal.connected ? inputRowComponent : null
-                        footerPositioning: ListView.OverlayFooter
-
                         ScrollBar.vertical: ScrollBar {
+                            id: logVerticalBar
                             policy: ScrollBar.AsNeeded
                         }
                         ScrollBar.horizontal: ScrollBar {
+                            id: logHorizontalBar
                             policy: ScrollBar.AsNeeded
                         }
                     }
 
-                    Component {
-                        id: inputRowComponent
-
-                        Rectangle {
-                            width: logListView.width
-                            height: 28
-                            color: "transparent"
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 8
-                                spacing: 4
-
-                                Text {
-                                    text: ">"
-                                    color: theme ? theme.accent : "#2196F3"
-                                    font.family: Next.PlatformFonts.monospaceFamily
-                                    font.pixelSize: 14
-                                    font.bold: true
-                                }
-
-                                Next.GlassTextField {
-                                    id: terminalInput
-                                    Layout.fillWidth: true
-                                    font.family: Next.PlatformFonts.monospaceFamily
-                                    font.pixelSize: 13
-                                    color: terminalText
-                                    background: Item {}
-                                    placeholderText: ""
-                                    activeFocusOnTab: false
-
-                                    Component.onCompleted: liveLogDialog.cmdInput = terminalInput
-                                    Component.onDestruction: if (liveLogDialog.cmdInput === terminalInput)
-                                        liveLogDialog.cmdInput = null
-
-                                    function sendCmd() {
-                                        var cmd = terminalInput.text;
-                                        liveLogDialog.sendCommandAndTrackHistory(cmd);
-                                        terminalInput.text = "";
-                                    }
-
-                                    Keys.priority: Keys.BeforeItem
-                                    Keys.onReturnPressed: {
-                                        sendCmd();
-                                        event.accepted = true;
-                                    }
-                                    Keys.onEnterPressed: {
-                                        sendCmd();
-                                        event.accepted = true;
-                                    }
-                                    Keys.onPressed: function (event) {
-                                        if (liveLogDialog.handleCmdCtrlShortcut(event))
-                                            return;
-                                        if (event.key === Qt.Key_Up) {
-                                            var hist = liveLogDialog.cmdHistory;
-                                            if (hist.length === 0)
-                                                return;
-                                            if (liveLogDialog.historyIndex === -1) {
-                                                liveLogDialog.pendingInput = terminalInput.text;
-                                                liveLogDialog.historyIndex = hist.length;
-                                            }
-                                            if (liveLogDialog.historyIndex > 0) {
-                                                liveLogDialog.historyIndex--;
-                                                terminalInput.text = hist[liveLogDialog.historyIndex];
-                                                terminalInput.cursorPosition = terminalInput.text.length;
-                                            }
-                                            event.accepted = true;
-                                            return;
-                                        }
-                                        if (event.key === Qt.Key_Down) {
-                                            var hist2 = liveLogDialog.cmdHistory;
-                                            if (liveLogDialog.historyIndex === -1)
-                                                return;
-                                            if (liveLogDialog.historyIndex < hist2.length - 1) {
-                                                liveLogDialog.historyIndex++;
-                                                terminalInput.text = hist2[liveLogDialog.historyIndex];
-                                            } else {
-                                                liveLogDialog.historyIndex = -1;
-                                                terminalInput.text = liveLogDialog.pendingInput;
-                                            }
-                                            terminalInput.cursorPosition = terminalInput.text.length;
-                                            event.accepted = true;
-                                            return;
-                                        }
-                                        if (event.key === Qt.Key_Tab) {
-                                            sshTerminal.sendTabCompletion(terminalInput.text);
-                                            event.accepted = true;
-                                            return;
-                                        }
-                                        if (event.key === Qt.Key_Insert && (event.modifiers & Qt.ControlModifier)) {
-                                            if (selectedLineIndex >= 0)
-                                                sshTerminal.copyLineToClipboard(selectedLineIndex);
-                                            event.accepted = true;
-                                        }
-                                        if (event.key === Qt.Key_Insert && (event.modifiers & Qt.ShiftModifier)) {
-                                            terminalInput.insert(terminalInput.cursorPosition, sshTerminal.clipboardText());
-                                            event.accepted = true;
-                                        }
-                                    }
-
-                                    Connections {
-                                        target: sshTerminal
-                                        function onTabCompletionReady(completedText, candidates) {
-                                            if (completedText !== "") {
-                                                terminalInput.text = completedText;
-                                                terminalInput.cursorPosition = completedText.length;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    id: parsePanelSplitter
-                    Layout.preferredWidth: 6
-                    Layout.fillHeight: true
-                    visible: parseSidePanel.visible
-                    color: parsePanelDragArea.pressed ? (theme ? theme.splitHandlePressed : "#888888") : (parsePanelDragArea.containsMouse ? (theme ? theme.splitHandleHover : "#aaaaaa") : "transparent")
-
                     MouseArea {
-                        id: parsePanelDragArea
+                        id: selectionArea
+                        objectName: "ssh-text-selection-area"
                         anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.SplitHCursor
-                        property real startMouseX: 0
-                        property real startPanelWidth: 0
-
-                        onPressed: function (mouse) {
-                            startMouseX = mouse.x;
-                            startPanelWidth = parseSidePanel.width;
-                        }
-
-                        onPositionChanged: function (mouse) {
-                            if (!pressed)
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        preventStealing: true
+                        property bool hexDoubleClick: false
+                        onWheel: function(wheel) { wheel.accepted = false; }
+                        onPressed: function(mouse) {
+                            if (logVerticalBar.visible && mouse.x >= width - logVerticalBar.width
+                                    || logHorizontalBar.visible && mouse.y >= height - logHorizontalBar.height) {
+                                mouse.accepted = false;
                                 return;
-                            var delta = mouse.x - startMouseX;
-                            parsePanelWidth = clampParsePanelWidth(startPanelWidth - delta);
+                            }
+                            if (mouse.button === Qt.RightButton) {
+                                if (!liveLogDialog.hasTextSelection) {
+                                    const point = mapToItem(logListView.contentItem, mouse.x, mouse.y);
+                                    const row = logListView.indexAt(1, point.y);
+                                    if (row >= 0) liveLogDialog.selectLineAndExtractHex(row);
+                                }
+                                terminalContextMenu.popup();
+                                return;
+                            }
+                            hexDoubleClick = false;
+                            liveLogDialog.clearTextSelection();
+                            selectedLineId = -1; selectedLineIndex = -1;
+                            selectedHexStart = -1; selectedHexEnd = -1; selectedHexText = "";
+                            const point = liveLogDialog.selectionPoint(mouse.x, mouse.y);
+                            if (point) {
+                                liveLogDialog.textSelectionAnchor = point;
+                                liveLogDialog.textSelectionFocus = point;
+                                liveLogDialog.selectionPointerDown = true;
+                            }
+                        }
+                        onPositionChanged: if (liveLogDialog.selectionPointerDown) liveLogDialog.extendTextSelection()
+                        onReleased: function(mouse) {
+                            if (mouse.button === Qt.LeftButton && hexDoubleClick) {
+                                hexDoubleClick = false;
+                                liveLogDialog.selectionPointerDown = false;
+                                if (liveLogDialog.copyOnSelect && liveLogDialog.hasTextSelection) liveLogDialog.copyTextSelection();
+                                return;
+                            }
+                            if (mouse.button !== Qt.LeftButton || !liveLogDialog.selectionPointerDown) return;
+                            liveLogDialog.extendTextSelection();
+                            liveLogDialog.selectionPointerDown = false;
+                            if (liveLogDialog.hasTextSelection) {
+                                if (liveLogDialog.copyOnSelect) liveLogDialog.copyTextSelection();
+                            } else {
+                                const row = sshTerminal.indexForLineId(liveLogDialog.textSelectionAnchor.id);
+                                liveLogDialog.clearTextSelection();
+                                if (row >= 0) liveLogDialog.selectLineAndExtractHex(row);
+                            }
+                        }
+                        onCanceled: { liveLogDialog.selectionPointerDown = false; hexDoubleClick = false; }
+                        onDoubleClicked: function(mouse) {
+                            hexDoubleClick = true;
+                            liveLogDialog.selectHexAt(mouse.x, mouse.y);
                         }
                     }
+                    Timer {
+                        interval: 40; repeat: true
+                        running: liveLogDialog.selectionPointerDown && (selectionArea.mouseY < 0 || selectionArea.mouseY >= selectionArea.height)
+                        onTriggered: {
+                            const delta = selectionArea.mouseY < 0 ? -charMeasurer.implicitHeight : charMeasurer.implicitHeight;
+                            logListView.contentY = Math.max(logListView.originY, Math.min(
+                                logListView.originY + Math.max(0, logListView.contentHeight - logListView.height), logListView.contentY + delta));
+                            liveLogDialog.extendTextSelection();
+                        }
+                    }
+
+                    TextInput {
+                        id: terminalCapture
+                        objectName: "ssh-terminal-input"
+                        enabled: sshTerminal.connected && !sshTerminal.receptionPaused
+                        focus: true
+                        x: logListView.footerItem ? logListView.footerItem.caretX : 10
+                        y: Math.max(0, Math.min(terminalMainPane.height - height,
+                            logListView.footerItem ? logListView.footerItem.y - logListView.contentY : 0))
+                        width: Math.max(liveLogDialog.charWidth * 2, terminalMainPane.width - x - 10)
+                        height: charMeasurer.implicitHeight + 4
+                        font: charMeasurer.font
+                        color: terminalText
+                        cursorVisible: false
+                        clip: true
+                        activeFocusOnTab: false
+                        inputMethodHints: Qt.ImhNoPredictiveText
+                        Accessible.name: liveLogDialog.sessionName + " SSH 终端"
+                        onTextEdited: {
+                            const committed = text;
+                            clear();
+                            liveLogDialog.sendTerminalText(committed);
+                        }
+                        Keys.priority: Keys.BeforeItem
+                        Keys.onPressed: event => liveLogDialog.routeTerminalKey(event)
+                    }
+
                 }
 
-                Rectangle {
-                    id: parseSidePanel
-                    Layout.preferredWidth: clampParsePanelWidth(parsePanelWidth > 0 ? parsePanelWidth : Math.max(parsePanelMinWidth, terminalPane.width * 0.42))
-                    Layout.minimumWidth: parsePanelMinWidth
-                    Layout.maximumWidth: Math.max(parsePanelMinWidth, terminalPane.width * parsePanelMaxRatio)
-                    Layout.fillHeight: true
-                    // #7 使用 >0.01 避免浮点精度导致面板淡出后永远不被隐藏
-                    visible: parsePanelVisible || opacity > 0.01
-                    opacity: parsePanelVisible ? 1 : 0
-                    enabled: opacity > 0
-                    color: cardBg
-                    border.color: cardBorder
-                    radius: 6
-
-                    Behavior on opacity {
-                        NumberAnimation {
-                            duration: 180
-                        }
-                    }
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 6
-
-                        RowLayout {
-                            Layout.fillWidth: true
-
-                            Label {
-                                text: "协议解析输出"
-                                color: theme ? theme.text : "#333333"
-                                font.bold: true
-                            }
-
-                            Item {
-                                Layout.fillWidth: true
-                            }
-
-                            StyledButton {
-                                text: "关闭"
-                                implicitWidth: 56
-                                onClicked: parsePanelVisible = false
-                            }
-                        }
-
-                        Item {
-                            id: parseHeaderContainer
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 30
-                            clip: true
-
-                            Row {
-                                x: -parseResultList.contentX
-                                height: parent.height
-
-                                Rectangle {
-                                    width: popupCols.w1
-                                    height: parent.height
-                                    color: theme ? theme.controlBackground : "#f5f5f5"
-                                    border.color: theme ? theme.controlBorder : "#cccccc"
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "域/位域"
-                                        font.bold: true
-                                        color: theme ? theme.text : "#333333"
-                                    }
-
-                                    Rectangle {
-                                        width: 4
-                                        height: parent.height
-                                        anchors.right: parent.right
-                                        color: Qt.rgba(0, 0, 0, 0)
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.SplitHCursor
-                                            property point lastPos
-
-                                            onPressed: mouse => {
-                                                lastPos = mapToItem(parseHeaderContainer, mouse.x, mouse.y);
-                                            }
-
-                                            onPositionChanged: mouse => {
-                                                if (pressed) {
-                                                    var curPos = mapToItem(parseHeaderContainer, mouse.x, mouse.y);
-                                                    var delta = curPos.x - lastPos.x;
-                                                    var deltaR = delta / popupCols.availableW;
-                                                    var minR = 50 / popupCols.availableW;
-
-                                                    if (popupCols.r1 + deltaR > minR && popupCols.r2 - deltaR > minR) {
-                                                        popupCols.r1 += deltaR;
-                                                        popupCols.r2 -= deltaR;
-                                                        lastPos = curPos;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    width: popupCols.w2
-                                    height: parent.height
-                                    color: theme ? theme.controlBackground : "#f5f5f5"
-                                    border.color: theme ? theme.controlBorder : "#cccccc"
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "值"
-                                        font.bold: true
-                                        color: theme ? theme.text : "#333333"
-                                    }
-
-                                    Rectangle {
-                                        width: 4
-                                        height: parent.height
-                                        anchors.right: parent.right
-                                        color: Qt.rgba(0, 0, 0, 0)
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.SplitHCursor
-                                            property point lastPos
-
-                                            onPressed: mouse => {
-                                                lastPos = mapToItem(parseHeaderContainer, mouse.x, mouse.y);
-                                            }
-
-                                            onPositionChanged: mouse => {
-                                                if (pressed) {
-                                                    var curPos = mapToItem(parseHeaderContainer, mouse.x, mouse.y);
-                                                    var delta = curPos.x - lastPos.x;
-                                                    var deltaR = delta / popupCols.availableW;
-                                                    var minR = 50 / popupCols.availableW;
-
-                                                    if (popupCols.r2 + deltaR > minR && (1 - popupCols.r1 - popupCols.r2) - deltaR > minR) {
-                                                        popupCols.r2 += deltaR;
-                                                        lastPos = curPos;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    width: popupCols.w3
-                                    height: parent.height
-                                    color: theme ? theme.controlBackground : "#f5f5f5"
-                                    border.color: theme ? theme.controlBorder : "#cccccc"
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "说明"
-                                        font.bold: true
-                                        color: theme ? theme.text : "#333333"
-                                    }
-                                }
-                            }
-                        }
-
-                        ListView {
-                            id: parseResultList
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            clip: true
-                            contentWidth: popupCols.total
-                            flickableDirection: Flickable.HorizontalAndVerticalFlick
-                            model: backend ? backend.popupResultModel : null
-
-                            delegate: Rectangle {
-                                width: popupCols.total
-                                height: model.isFrameSeparator ? 20 : 30
-                                color: model.isFrameSeparator ? (theme ? theme.tableHighlight : "#eeeeee") : (model.highlighted ? (theme ? theme.tableHighlight : "#d0e8ff") : (index % 2 === 0 ? Qt.rgba(0, 0, 0, 0) : (theme ? theme.rowAlt : "#fafafa")))
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    visible: !model.isFrameSeparator
-                                    onClicked: {
-                                        var link = "highlight:" + model.offset + "," + model.length;
-                                        backend.handleLink(link, 3);
-                                    }
-                                }
-
-                                Row {
-                                    height: parent.height
-                                    visible: !model.isFrameSeparator
-
-                                    Item {
-                                        width: popupCols.w1
-                                        height: parent.height
-
-                                        Text {
-                                            x: 5 + (model.indent * 20)
-                                            width: 16
-                                            height: parent.height
-                                            verticalAlignment: Text.AlignVCenter
-                                            horizontalAlignment: Text.AlignHCenter
-                                            text: model.hasChildren ? (model.expanded ? "▼" : "▶") : ""
-                                            color: theme ? theme.subText : "#666666"
-                                            font.pixelSize: 10
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                enabled: model.hasChildren
-                                                cursorShape: model.hasChildren ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                                onClicked: backend.popupResultModel.toggleExpand(index)
-                                            }
-                                        }
-
-                                        Text {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 25 + (model.indent * 20)
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: model.name
-                                            font.family: Next.PlatformFonts.monospaceFamily
-                                            color: theme ? theme.text : "#333333"
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Rectangle {
-                                            width: 1
-                                            height: parent.height
-                                            color: theme ? theme.controlBorder : "#cccccc"
-                                            anchors.right: parent.right
-                                        }
-                                    }
-
-                                    Item {
-                                        width: popupCols.w2
-                                        height: parent.height
-
-                                        Text {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 5
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: model.value
-                                            font.family: Next.PlatformFonts.monospaceFamily
-                                            color: theme ? theme.text : "#333333"
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Rectangle {
-                                            width: 1
-                                            height: parent.height
-                                            color: theme ? theme.controlBorder : "#cccccc"
-                                            anchors.right: parent.right
-                                        }
-                                    }
-
-                                    Item {
-                                        width: popupCols.w3
-                                        height: parent.height
-
-                                        Text {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 5
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: model.description
-                                            font.family: Next.PlatformFonts.monospaceFamily
-                                            color: theme ? theme.text : "#333333"
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    width: parent.width
-                                    height: 1
-                                    color: theme ? theme.controlBorder : "#cccccc"
-                                    anchors.bottom: parent.bottom
-                                }
-                            }
-
-                            ScrollBar.vertical: ScrollBar {}
-                            ScrollBar.horizontal: ScrollBar {}
-                        }
-                    }
-                }
             }
         }
 
@@ -1963,6 +2318,50 @@ GlassPage {
             onClosed: liveLogDialog.customCmdPendingDeleteName = ""
         }
 
+        RowLayout {
+            objectName: "ssh-command-editor"
+            visible: liveLogDialog.commandManagementExpanded
+            Layout.fillWidth: true
+            spacing: 4
+
+            StyledTextField {
+                id: customCmdNameInput
+                objectName: "ssh-command-name"
+                Layout.preferredWidth: 92
+                placeholderText: "名称"
+                onAccepted: customCmdContentInput.forceActiveFocus()
+            }
+
+            StyledTextField {
+                id: customCmdContentInput
+                objectName: "ssh-command-content"
+                Layout.preferredWidth: 150
+                placeholderText: "命令内容"
+                onAccepted: {
+                    liveLogDialog.addCustomCommand(customCmdNameInput.text, customCmdContentInput.text);
+                    customCmdNameInput.text = "";
+                    customCmdContentInput.text = "";
+                    if (liveLogDialog.terminalInput)
+                        liveLogDialog.terminalInput.forceActiveFocus();
+                }
+            }
+
+            StyledButton {
+                objectName: "ssh-command-add"
+                text: "添加"
+                implicitWidth: 72
+                onClicked: {
+                    liveLogDialog.addCustomCommand(customCmdNameInput.text, customCmdContentInput.text);
+                    customCmdNameInput.text = "";
+                    customCmdContentInput.text = "";
+                    if (liveLogDialog.terminalInput)
+                        liveLogDialog.terminalInput.forceActiveFocus();
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+        }
+
         // ── 底部工具栏 ────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
@@ -1970,6 +2369,8 @@ GlassPage {
 
             // 自定义命令区
             RowLayout {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 spacing: 4
 
                 Label {
@@ -1978,39 +2379,16 @@ GlassPage {
                     font.pixelSize: 12
                 }
 
-                StyledTextField {
-                    id: customCmdNameInput
-                    Layout.preferredWidth: 92
-                    placeholderText: "名称"
-                    onAccepted: customCmdContentInput.forceActiveFocus()
-                }
-
-                StyledTextField {
-                    id: customCmdContentInput
-                    Layout.preferredWidth: 150
-                    placeholderText: "命令内容"
-                    onAccepted: {
-                        liveLogDialog.addCustomCommand(customCmdNameInput.text, customCmdContentInput.text);
-                        customCmdNameInput.text = "";
-                        customCmdContentInput.text = "";
-                        if (liveLogDialog.cmdInput)
-                            liveLogDialog.cmdInput.forceActiveFocus();
-                    }
-                }
-
                 StyledButton {
-                    text: "添加"
-                    implicitWidth: 52
-                    onClicked: {
-                        liveLogDialog.addCustomCommand(customCmdNameInput.text, customCmdContentInput.text);
-                        customCmdNameInput.text = "";
-                        customCmdContentInput.text = "";
-                        if (liveLogDialog.cmdInput)
-                            liveLogDialog.cmdInput.forceActiveFocus();
-                    }
+                    objectName: "ssh-command-management-toggle"
+                    text: liveLogDialog.commandManagementExpanded ? "▾ 收起管理" : "▸ 管理"
+                    Accessible.name: "快捷命令管理"
+                    Accessible.description: liveLogDialog.commandManagementExpanded ? "已展开" : "已折叠"
+                    onClicked: liveLogDialog.commandManagementExpanded = !liveLogDialog.commandManagementExpanded
                 }
 
                 Flickable {
+                    objectName: "ssh-command-buttons"
                     Layout.preferredWidth: 280
                     Layout.fillWidth: true
                     Layout.preferredHeight: 30
@@ -2032,14 +2410,17 @@ GlassPage {
 
                                 StyledButton {
                                     id: customCmdBtn
+                                    objectName: "ssh-command-run-" + index
                                     anchors.fill: parent
                                     text: modelData.name
-                                    implicitWidth: Math.max(60, Math.min(130, modelData.name.length * 14 + 18))
-                                    enabled: sshTerminal.connected
-                                    onClicked: liveLogDialog.sendCommandAndTrackHistory(modelData.command)
+                                    implicitWidth: Math.max(60, Math.min(160, modelData.name.length * 14 + 32))
+                                    enabled: sshTerminal.connected && !sshTerminal.receptionPaused
+                                    onClicked: liveLogDialog.sendQuickCommand(modelData.command)
                                 }
 
                                 Rectangle {
+                                    objectName: "ssh-command-delete-" + index
+                                    visible: liveLogDialog.commandManagementExpanded
                                     width: 14
                                     height: 14
                                     radius: 7
@@ -2078,14 +2459,10 @@ GlassPage {
 
                 Text {
                     visible: liveLogDialog.customCommands.length === 0
-                    text: "先添加常用命令按钮"
+                    text: "点击「管理」添加常用命令"
                     color: theme ? theme.subText : "#888888"
                     font.pixelSize: 12
                 }
-            }
-
-            Item {
-                Layout.fillWidth: true
             }
 
             // 状态指示器
@@ -2183,7 +2560,7 @@ GlassPage {
         }
 
         Label {
-            objectName: "ssh-credential-status"; visible: liveLogDialog.secureCredentials; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+            objectName: "ssh-credential-status"; visible: liveLogDialog.secureCredentials || liveLogDialog.passwordNotice !== ""; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
             text: liveLogDialog.passwordNotice || sshTerminal.credentialError || (sshTerminal.credentialBusy ? "正在核验安全凭据…" : !liveLogDialog.targetMatchesBackend() ? "目标已修改，将重新核验凭据。" : sshTerminal.hasSavedPassword ? "当前目标已保存密码，不回显原密码。" : "当前目标未保存密码。")
             color: liveLogDialog.passwordNoticeError || sshTerminal.credentialError ? errorColor : (theme ? theme.subText : "#888888")
         }
@@ -2192,7 +2569,7 @@ GlassPage {
         Label {
             id: statusHint
             Layout.fillWidth: true
-            text: sshTerminal.connected ? "Ctrl+F 查找  ·  F3 / Shift+F3 跳转  ·  Ctrl+Shift+C 复制行  ·  Ctrl+Shift+A 复制全部  ·  Ctrl+L 清屏" : "尚未连接  —  填写连接参数后点击「连接」"
+            text: sshTerminal.connected ? "点击终端直接输入，按键发送到远端  ·  Ctrl+Shift+F 查找  ·  Ctrl+Shift+C 复制行  ·  Ctrl+Shift+A 复制全部" : "尚未连接  —  填写连接参数后点击「连接」"
             color: theme ? theme.subText : "#888"
             font.pixelSize: 11
             elide: Text.ElideRight
