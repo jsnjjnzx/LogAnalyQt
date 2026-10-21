@@ -2,15 +2,14 @@
 import os
 from pathlib import Path
 import shutil
-import subprocess
-import sys
 import tempfile
-from prot698_qml_tests import module
+from prot698_qml_tests import arguments, module, run_logged
 
 
 def main():
     source = Path(__file__).resolve().parents[1]
-    runner = sys.argv[1] if len(sys.argv) > 1 else shutil.which("qmltestrunner")
+    args = arguments()
+    runner = args.runner or shutil.which("qmltestrunner")
     runner = runner or "/opt/homebrew/opt/qtdeclarative/bin/qmltestrunner"
     with tempfile.TemporaryDirectory(prefix="loganalyqt-stage10-qml-") as temporary:
         imports = Path(temporary)
@@ -27,15 +26,19 @@ def main():
         environment = os.environ.copy()
         environment["QT_QUICK_CONTROLS_STYLE"] = "Basic"
         environment["QML_DISABLE_DISK_CACHE"] = "1"
-        result = subprocess.run([runner, "-input", str(source / "tests/qml-stage10"), "-import", str(imports), "-platform", "offscreen"],
-                                cwd=source, env=environment, capture_output=True, text=True, timeout=90)
-        output = result.stdout + result.stderr
-        print(output, end="")
-        warnings = [line for line in output.splitlines()
-                    if any(level in line for level in ("QWARN", "QFATAL", "QCRITICAL"))
-                    and "Populating font family aliases" not in line
-                    and not line.endswith("This plugin does not support raise()")]
-        return result.returncode or (1 if warnings else 0)
+        for number in range(args.repeat):
+            print(f"SSH QML iteration {number + 1}/{args.repeat}", flush=True)
+            command = [runner, "-input", str(source / "tests/qml-stage10"), "-import", str(imports), "-platform", "offscreen"]
+            if args.filter:
+                command.append(args.filter)
+            result = run_logged(command, cwd=source, env=environment, log_name=f"qml-stage10-{number + 1}.log")
+            warnings = [line for line in result.stdout.splitlines()
+                        if any(level in line for level in ("QWARN", "QFATAL", "QCRITICAL"))
+                        and "Populating font family aliases" not in line
+                        and not line.endswith("This plugin does not support raise()")]
+            if result.returncode or warnings:
+                return result.returncode or 1
+        return 0
 
 
 if __name__ == "__main__":

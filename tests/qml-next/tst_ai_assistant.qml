@@ -209,16 +209,20 @@ Item {
             }
             compare(page.conversationModel.count,38)
             const view = item("ai-work-panel")
-            page.framingDraft = "response while reading history"; page.submitRequest(); wait(30)
-            mouseWheel(view,40,100,0,240); wait(100)
-            verify(!view.followTail)
+            page.framingDraft = "response while reading history"; page.submitRequest()
+            view.forceLayout(); verify(waitForPolish(view)); renderPage()
+            tryCompare(view,"atYEnd",true)
+            mouseWheel(view,40,100,0,240)
+            tryCompare(view,"followTail",false)
+            tryVerify(() => !view.moving && !view.flicking)
+            verify(waitForPolish(view)); renderPage()
             const readingPosition = view.contentY
-            control.ask(); wait(30)
+            control.ask(); view.forceLayout(); verify(waitForPolish(view)); renderPage()
             verify(Math.abs(view.contentY - readingPosition) < 2)
             page.cancelRequest(); wait(20)
-            view.followTail = false; view.positionViewAtBeginning(); wait(20)
+            view.followTail = false; view.positionViewAtBeginning(); verify(waitForPolish(view)); renderPage()
             const before = view.contentY
-            page.height = 632; page.width = 920; renderPage(); wait(20)
+            page.height = 632; page.width = 920; verify(waitForPolish(view)); renderPage()
             verify(Math.abs(view.contentY - before) < 2)
             mouseClick(item("ai-scroll-bottom")); tryCompare(view,"atYEnd",true)
             for(const name of ["ai-preview-submit","ai-composer","ai-work-panel"]) {

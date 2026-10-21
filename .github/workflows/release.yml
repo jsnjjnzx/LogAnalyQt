@@ -1,0 +1,62 @@
+name: Publish validated version
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  release:
+    name: Publish verified packages without rebuilding
+    runs-on: ubuntu-latest
+    timeout-minutes: 190
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require successful build of the identical main commit
+        id: verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/ci/find_validated_build.py --repository "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" --output "$GITHUB_OUTPUT"
+      - name: Download verified Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: LogAnalyQt-Windows-x64
+          path: release_package
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.verified.outputs.build_run_id }}
+      - name: Download verified macOS packages
+        uses: actions/download-artifact@v4
+        with:
+          name: LogAnalyQt-macOS-arm64
+          path: release_package
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.verified.outputs.build_run_id }}
+      - name: Verify version, checksums and publish complete Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release/github_release.py --directory release_package --tag "$GITHUB_REF_NAME"
+
+  verify-update:
+    name: Verify published update
+    needs: release
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      tag: ${{ github.ref_name }}

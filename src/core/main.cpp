@@ -5,6 +5,7 @@
 #include "mqtt/MqttController.h"
 #include "config/ConfigManager.h"
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include "../common/AppPaths.h"
 #include <QDateTime>
 #include <QDir>
@@ -248,23 +249,51 @@ Button { text: "关闭"; onClicked: Qt.quit() }
   if (!engine.rootObjects().isEmpty() && updateRestart) {
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     auto rendered = std::make_shared<bool>(false);
+    auto ready = std::make_shared<bool>(false);
+    auto elapsed = std::make_shared<QElapsedTimer>();
+    elapsed->start();
+    // Test-only fault injection verifies slow readiness and a real timeout without skipping either check.
+    const int delay = qBound(0, qEnvironmentVariableIntValue("LOGANALYQT_TEST_READY_DELAY_MS"), 9000);
+    const int timeout = qEnvironmentVariableIsSet("LOGANALYQT_TEST_READY_TIMEOUT_MS")
+        ? qBound(100, qEnvironmentVariableIntValue("LOGANALYQT_TEST_READY_TIMEOUT_MS"), 10000) : 10000;
     const bool nativeMac = app.platformName() == QStringLiteral("cocoa");
-    const auto recordRestart = [window, rendered, nativeMac] {
-      if (!*rendered || !window->isVisible() || (nativeMac && !window->isActive())) return;
+    const auto state = [window, rendered, elapsed] {
+      return QJsonObject{{"rendered", *rendered}, {"visible", window->isVisible()},
+          {"active", window->isActive()}, {"visibility", int(window->visibility())}, {"elapsedMs", elapsed->elapsed()}};
+    };
+    const auto recordRestart = [window, rendered, ready, elapsed, delay, timeout, nativeMac] {
+      if (*ready || elapsed->elapsed() < delay || elapsed->elapsed() >= timeout
+          || !*rendered || !window->isVisible() || (nativeMac && !window->isActive())) return;
       QSaveFile marker(qEnvironmentVariable("LOGANALYQT_UPDATE_TEST_RESULT"));
       if (!marker.open(QIODevice::WriteOnly)) { QCoreApplication::exit(7); return; }
       marker.write(QJsonDocument(QJsonObject{{"version", QStringLiteral(APP_VERSION)},
           {"executable", QCoreApplication::applicationFilePath()},
           {"pid", QCoreApplication::applicationPid()},
+          {"rendered", *rendered}, {"readyElapsedMs", elapsed->elapsed()},
           {"visible", window->isVisible()},
           {"active", window->isActive()}}).toJson());
-      if (!marker.commit()) QCoreApplication::exit(7);
+      if (!marker.commit()) { QCoreApplication::exit(7); return; }
+      *ready = true;
+      qInfo() << "WINDOW_READY_SUCCESS" << elapsed->elapsed();
     };
     QObject::connect(window, &QQuickWindow::frameSwapped, &app, [rendered, recordRestart] {
       *rendered = true;
       recordRestart();
     }, Qt::SingleShotConnection);
     QObject::connect(window, &QQuickWindow::activeChanged, &app, recordRestart);
+    auto *waitReady = new QTimer(&app);
+    waitReady->setInterval(50);
+    QObject::connect(waitReady, &QTimer::timeout, &app, [window, ready, elapsed, timeout, recordRestart, state, waitReady] {
+      recordRestart();
+      if (*ready) { waitReady->stop(); QCoreApplication::exit(0); return; }
+      if (elapsed->elapsed() < timeout) return;
+      qCritical().noquote() << "WINDOW_READY_TIMEOUT" << QJsonDocument(state()).toJson(QJsonDocument::Compact);
+      const auto evidence = qEnvironmentVariable("LOGANALYQT_DIAGNOSTICS_DIR");
+      if (!evidence.isEmpty() && QDir().mkpath(evidence))
+        window->grabWindow().save(QDir(evidence).filePath("window-ready-timeout.png"));
+      waitReady->stop(); QCoreApplication::exit(8);
+    });
+    waitReady->start();
   }
   if (updateTest && !engine.rootObjects().isEmpty()) {
     QTimer::singleShot(0, &app, [&engine] {
@@ -272,7 +301,7 @@ Button { text: "关闭"; onClicked: Qt.quit() }
     });
   }
   // Smoke captures use an isolated build directory and never check for updates.
-  if (uiSmokeMode && !updateTest && !app.arguments().contains(QStringLiteral("--interactive")) && !engine.rootObjects().isEmpty()) {
+  if (uiSmokeMode && !updateTest && !updateRestart && !app.arguments().contains(QStringLiteral("--interactive")) && !engine.rootObjects().isEmpty()) {
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     const QStringList args = app.arguments();
     const int sizeArg = args.indexOf(QStringLiteral("--size"));

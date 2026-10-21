@@ -3,13 +3,18 @@ name: Build Windows and macOS
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
+  LOGANALYQT_DIAGNOSTICS_DIR: ${{ github.workspace }}/diagnostics
+  PYTHONUNBUFFERED: '1'
   PYTHONUTF8: '1'
 
 jobs:
@@ -31,7 +36,7 @@ jobs:
           Write-Host "Available logical CPUs: $([Environment]::ProcessorCount)"
           python scripts/ci/check_build.py
           if ($LASTEXITCODE -ne 0) { throw 'Version validation failed' }
-          python -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release -v
+          python -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release tests.test_ci_workflow -v
           if ($LASTEXITCODE -ne 0) { throw 'Release tooling tests failed' }
       - name: Install Qt test tools and MinGW
         uses: jurplel/install-qt-action@v4
@@ -49,10 +54,13 @@ jobs:
           $Mingw = Get-ChildItem "$env:IQTA_TOOLS" -Directory -Filter 'mingw1310*' | Select-Object -First 1
           if (-not $Mingw) { throw 'MinGW 13.1 not installed' }
           "MINGW_DIR=$($Mingw.FullName)" >> $env:GITHUB_ENV
-      - name: Check QML test tools
+          "$($Mingw.FullName)/bin" >> $env:GITHUB_PATH
+      - name: QML preflight and scroll stability (10 runs)
         run: |
           python tests/prot698_qml_tests.py
           if ($LASTEXITCODE -ne 0) { throw 'QML test tools failed' }
+          python tests/prot698_qml_tests.py --filter AiAssistantWorkflow::test_longConversationScrollAndCompactBounds --repeat 10
+          if ($LASTEXITCODE -ne 0) { throw 'QML scroll stability failed' }
       - name: Cache static MQTT OpenSSL
         id: mqtt-openssl-cache
         uses: actions/cache/restore@v4
@@ -92,10 +100,24 @@ jobs:
         with:
           path: ${{ env.QT_STATIC_DIR }}
           key: ${{ steps.qt-cache.outputs.cache-primary-key }}
-      - name: Build, test and package
+      - name: Configure and compile application
         shell: pwsh
         run: |
-          ./scripts/package_single.ps1 -BuildTests
+          ./scripts/package_single.ps1 -BuildTests -Phase Build
+          if ($LASTEXITCODE -ne 0) { throw 'Windows compilation failed' }
+      - name: Unit and integration tests
+        run: |
+          New-Item -ItemType Directory -Force diagnostics | Out-Null
+          ctest --test-dir build_release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-general.log -E '^(prot698_qml_tests|stage10_qml_tests|ui_migration_runtime|macos_window_activation)$'
+          if ($LASTEXITCODE -ne 0) { throw 'Unit or integration tests failed' }
+      - name: Application UI runtime tests
+        run: |
+          ctest --test-dir build_release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-ui.log -R '^(ui_migration_runtime|macos_window_activation)$'
+          if ($LASTEXITCODE -ne 0) { throw 'Application UI tests failed' }
+      - name: Package and validate Windows executable
+        shell: pwsh
+        run: |
+          ./scripts/package_single.ps1 -BuildTests -Phase Package
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
           python scripts/ci/check_build.py --packages release_package --platform windows
           if ($LASTEXITCODE -ne 0) { throw 'Windows package validation failed' }
@@ -129,6 +151,17 @@ jobs:
               Move-Item -LiteralPath $HiddenQt[$QtDirectory] -Destination $QtDirectory
             }
           }
+      - name: Preserve test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CI-diagnostics-${{ runner.os }}
+          path: |
+            diagnostics/
+            build_release/Testing/Temporary/
+            build/macos-release/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: LogAnalyQt-Windows-x64
@@ -137,40 +170,6 @@ jobs:
             release_package/*_Windows_x64.exe.sha256
           if-no-files-found: error
           retention-days: 7
-
-  release:
-    name: Publish version tag
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, macos]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    concurrency:
-      group: release-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: LogAnalyQt-*
-          path: release_package
-          merge-multiple: true
-      - name: Verify and publish complete Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/release/github_release.py --directory release_package --tag "$GITHUB_REF_NAME"
-
-  verify-update:
-    name: Verify published update
-    needs: release
-    uses: ./.github/workflows/verify-release.yml
-    with:
-      tag: ${{ github.ref_name }}
 
   macos:
     name: macOS arm64
@@ -186,17 +185,35 @@ jobs:
       - name: Check version and release tooling
         run: |
           python3 scripts/ci/check_build.py
-          python3 -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release -v
+          python3 -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release tests.test_ci_workflow -v
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.11.1'
           arch: clang_64
           cache: 'true'
           setup-python: 'false'
-      - name: Build, test and package
+      - name: QML preflight and interaction stability (10 runs)
+        run: |
+          python3 tests/prot698_qml_tests.py
+          python3 tests/stage10_qml_tests.py
+          python3 tests/prot698_qml_tests.py --filter AiAssistantWorkflow::test_longConversationScrollAndCompactBounds --repeat 10
+          python3 tests/stage10_qml_tests.py --filter SshMonitorWorkspace::test_monitorRuleEditorAndPicker --repeat 10
+          python3 tests/stage10_qml_tests.py --filter SshMonitorWorkspace::test_followAndReceptionPauseHaveDistinctHoverHelp --repeat 10
+          python3 tests/stage10_qml_tests.py --filter RemoteSecurityViews::test_sshConfigFoldPreservesDraftsAndReleasesSpace --repeat 10
+      - name: Configure and compile application
         run: |
           test "$(uname -m)" = arm64
-          RUN_TESTS=1 scripts/package_macos.sh
+          RUN_TESTS=1 scripts/package_macos.sh "" build
+      - name: Unit and integration tests
+        run: |
+          mkdir -p diagnostics
+          ctest --test-dir build/macos-release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-general.log -E '^(prot698_qml_tests|stage10_qml_tests|ui_migration_runtime|macos_window_activation)$'
+      - name: Application UI and native activation tests (10 runs)
+        run: |
+          ctest --test-dir build/macos-release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-ui.log -R '^(ui_migration_runtime|macos_window_activation)$'
+      - name: Package and validate macOS application
+        run: |
+          RUN_TESTS=1 scripts/package_macos.sh "" package
           python3 scripts/ci/check_build.py --macos-bundle build/macos-release/package/通联工坊.app
           python3 scripts/ci/check_build.py --packages release_package --platform macos
           hdiutil verify release_package/*.dmg
@@ -209,6 +226,17 @@ jobs:
             python3 tests/test_ui_migration_runtime.py build/macos-release/package/通联工坊.app/Contents/MacOS/appLogAnalyQt
           env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
             python3 tests/test_github_update.py build/macos-release/package/通联工坊.app/Contents/MacOS/appLogAnalyQt --probe
+      - name: Preserve test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CI-diagnostics-${{ runner.os }}
+          path: |
+            diagnostics/
+            build_release/Testing/Temporary/
+            build/macos-release/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: LogAnalyQt-macOS-arm64

@@ -5,7 +5,9 @@ param(
     [string]$OpenSSLDir = $env:LOGANALYQT_MQTT_OPENSSL_DIR,
     [string]$BuildDir = "build_release",
     [string]$ReleaseDir = "release_package",
-    [switch]$BuildTests
+    [switch]$BuildTests,
+    [ValidateSet("All", "Build", "Package")]
+    [string]$Phase = "All"
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,45 +54,55 @@ if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
 # Add MinGW to PATH
 $env:PATH = "$MingwDir/bin;$env:PATH"
 
-if ([string]::IsNullOrWhiteSpace($OpenSSLDir)) {
-    $OpenSSLDir = Join-Path $RootDir "build/mqtt-openssl-3.5.9"
+if ($Phase -ne "Package") {
+    if ([string]::IsNullOrWhiteSpace($OpenSSLDir)) {
+        $OpenSSLDir = Join-Path $RootDir "build/mqtt-openssl-3.5.9"
+    }
+    & "$RootDir/scripts/ci/build_mqtt_openssl.ps1" -InstallDir $OpenSSLDir -MingwDir $MingwDir
+    if ($LASTEXITCODE -ne 0) { throw "MQTT OpenSSL preparation failed" }
+
+    Write-Host "Starting static packaging process for $AppName v$Version..."
+    $TestsOption = if ($BuildTests) { "ON" } else { "OFF" }
+
+    # Clean Build Directory
+    if (Test-Path $BuildDir) {
+        Write-Host "Cleaning build directory..."
+        Remove-Item -Recurse -Force $BuildDir
+    }
+    New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+
+    # Configure
+    Write-Host "Configuring CMake (Release) with Static Qt..."
+    # 使用 CMakeLists.txt 中新定义的 QT_STATIC_DIR 变量
+    cmake -S "$RootDir" -B $BuildDir -G "MinGW Makefiles" `
+        -DCMAKE_BUILD_TYPE=Release `
+        -DQT_STATIC_DIR="$QtDir" `
+        -DOPENSSL_ROOT_DIR="$OpenSSLDir" `
+        -DAPP_VERSION_STR="$Version" `
+        -DLOGANALYQT_BUILD_PROTOCOL_TESTS="$TestsOption" `
+        -DCMAKE_CXX_COMPILER="$MingwDir/bin/g++.exe" `
+        -DCMAKE_C_COMPILER="$MingwDir/bin/gcc.exe"
+
+    if ($LASTEXITCODE -ne 0) { Write-Error "Configuration failed"; exit 1 }
+
+    # Build
+    Write-Host "Building project with $MaxThreads threads..."
+    cmake --build $BuildDir --parallel $MaxThreads
+
+    if ($LASTEXITCODE -ne 0) { Write-Error "Build failed"; exit 1 }
+
+    if ($BuildTests -and $Phase -eq "All") {
+        ctest --test-dir $BuildDir --output-on-failure --no-tests=error
+        if ($LASTEXITCODE -ne 0) { Write-Error "Tests failed"; exit 1 }
+    }
+
+    if ($Phase -eq "Build") { exit 0 }
 }
-& "$RootDir/scripts/ci/build_mqtt_openssl.ps1" -InstallDir $OpenSSLDir -MingwDir $MingwDir
-if ($LASTEXITCODE -ne 0) { throw "MQTT OpenSSL preparation failed" }
-
-Write-Host "Starting static packaging process for $AppName v$Version..."
-$TestsOption = if ($BuildTests) { "ON" } else { "OFF" }
-
-# Clean Build Directory
-if (Test-Path $BuildDir) {
-    Write-Host "Cleaning build directory..."
-    Remove-Item -Recurse -Force $BuildDir
-}
-New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
-
-# Configure
-Write-Host "Configuring CMake (Release) with Static Qt..."
-# 使用 CMakeLists.txt 中新定义的 QT_STATIC_DIR 变量
-cmake -S "$RootDir" -B $BuildDir -G "MinGW Makefiles" `
-    -DCMAKE_BUILD_TYPE=Release `
-    -DQT_STATIC_DIR="$QtDir" `
-    -DOPENSSL_ROOT_DIR="$OpenSSLDir" `
-    -DAPP_VERSION_STR="$Version" `
-    -DLOGANALYQT_BUILD_PROTOCOL_TESTS="$TestsOption" `
-    -DCMAKE_CXX_COMPILER="$MingwDir/bin/g++.exe" `
-    -DCMAKE_C_COMPILER="$MingwDir/bin/gcc.exe"
-
-if ($LASTEXITCODE -ne 0) { Write-Error "Configuration failed"; exit 1 }
-
-# Build
-Write-Host "Building project with $MaxThreads threads..."
-cmake --build $BuildDir --parallel $MaxThreads
-
-if ($LASTEXITCODE -ne 0) { Write-Error "Build failed"; exit 1 }
-
-if ($BuildTests) {
-    ctest --test-dir $BuildDir --output-on-failure
-    if ($LASTEXITCODE -ne 0) { Write-Error "Tests failed"; exit 1 }
+else {
+    $Cache = Get-Content -LiteralPath "$BuildDir/CMakeCache.txt" -Raw
+    if ($Cache -notmatch "(?m)^APP_VERSION_STR:[^=]+=$([regex]::Escape($Version))\r?$") {
+        throw "Compiled version does not match package version $Version"
+    }
 }
 
 # Prepare Release Package Directory

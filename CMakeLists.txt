@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 4.8.0 LANGUAGES CXX)
+project(LogAnalyQt VERSION 4.9.0 LANGUAGES CXX)
 if(NOT WIN32)
     find_package(Iconv REQUIRED)
 endif()
@@ -305,8 +305,8 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     if(APPLE)
         add_test(NAME macos_window_activation
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_macos_window_activation.py
-                    $<TARGET_FILE:appLogAnalyQt>)
-        set_tests_properties(macos_window_activation PROPERTIES RUN_SERIAL TRUE TIMEOUT 90)
+                    $<TARGET_FILE:appLogAnalyQt> --repeat 10)
+        set_tests_properties(macos_window_activation PROPERTIES RUN_SERIAL TRUE TIMEOUT 240)
     endif()
     set(PROT698_TEST_ENGINE_SOURCES
         src/protocols/698_prot/Prot698DataEncoder.cpp

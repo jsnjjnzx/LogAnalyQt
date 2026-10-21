@@ -148,7 +148,7 @@ Item {
             compare(item("ssh-encoding").currentText, "GB2312")
             edit("ssh-host", "very-long-monitor-hostname-".repeat(8) + ".example")
             page.width = 900
-            mouseClick(item("ssh-config-toggle")); wait(30)
+            mouseClick(item("ssh-config-toggle")); verify(waitForPolish(page))
             const summary = item("ssh-target-summary")
             verify(summary.truncated)
             const summaryRight = summary.mapToItem(page, summary.width, 0).x

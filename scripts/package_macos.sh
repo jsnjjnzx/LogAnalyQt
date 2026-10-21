@@ -12,6 +12,12 @@ if [[ ! "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
   exit 1
 fi
 
+PHASE=${2:-all}
+if [[ "$PHASE" != "all" && "$PHASE" != "build" && "$PHASE" != "package" ]]; then
+  print -u2 "打包阶段必须为 all、build 或 package：$PHASE"
+  exit 1
+fi
+
 ARCH=$(uname -m)
 BUILD_DIR="$ROOT_DIR/build/macos-release"
 BUILD_APP="$BUILD_DIR/appLogAnalyQt.app"
@@ -38,19 +44,33 @@ if [[ "$REQUIRE_DISTRIBUTION" == "1" ]]; then
   fi
 fi
 
-rm -rf "$BUILD_APP" "$PACKAGE_DIR" "$DMG_ROOT"
-TESTS_OPTION=OFF
-if [[ "${RUN_TESTS:-0}" == "1" ]]; then
-  TESTS_OPTION=ON
-fi
-cmake --preset macos-release \
-  -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR:-/opt/homebrew/opt/qtbase}" \
-  -DAPP_VERSION_STR="$VERSION" \
-  -DLOGANALYQT_BUILD_PROTOCOL_TESTS="$TESTS_OPTION"
-cmake --build --preset macos-release
+if [[ "$PHASE" != "package" ]]; then
+  rm -rf "$BUILD_APP" "$PACKAGE_DIR" "$DMG_ROOT"
+  TESTS_OPTION=OFF
+  if [[ "${RUN_TESTS:-0}" == "1" ]]; then
+    TESTS_OPTION=ON
+  fi
+  cmake --preset macos-release \
+    -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR:-/opt/homebrew/opt/qtbase}" \
+    -DAPP_VERSION_STR="$VERSION" \
+    -DLOGANALYQT_BUILD_PROTOCOL_TESTS="$TESTS_OPTION"
+  cmake --build --preset macos-release
 
-if [[ "$TESTS_OPTION" == "ON" ]]; then
-  ctest --test-dir "$BUILD_DIR" --output-on-failure
+  if [[ "$TESTS_OPTION" == "ON" && "$PHASE" == "all" ]]; then
+    ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error
+  fi
+
+  if [[ "$PHASE" == "build" ]]; then exit 0; fi
+else
+  if [[ ! -x "$BUILD_APP/Contents/MacOS/appLogAnalyQt" ]]; then
+    print -u2 "应用尚未编译，无法打包：$BUILD_APP"
+    exit 1
+  fi
+  rm -rf "$PACKAGE_DIR" "$DMG_ROOT"
+fi
+if [[ "$(plutil -extract CFBundleShortVersionString raw "$BUILD_APP/Contents/Info.plist")" != "$VERSION" ]]; then
+  print -u2 "应用版本与打包版本不一致"
+  exit 1
 fi
 
 mkdir -p "$PACKAGE_DIR"
@@ -64,14 +84,20 @@ fi
 "$MACDEPLOYQT" "$APP_BUNDLE" \
   -qmldir="$ROOT_DIR/qml" \
   -always-overwrite \
-  -verbose=0 \
-  -no-codesign >/dev/null 2>&1
+  -verbose=1 \
+  -no-codesign
 
 # Homebrew Qt 的 macdeployqt 可能把部署工作交给子进程；等待其释放目录。
 sleep 1
-while lsof -c macdeploy 2>/dev/null | grep -F "$ROOT_DIR" >/dev/null; do
+for ((attempt = 0; attempt < 180; attempt++)); do
+  if ! lsof -c macdeploy 2>/dev/null | grep -F "$ROOT_DIR" >/dev/null; then break; fi
+  if (( attempt % 10 == 0 )); then print "等待 Qt 依赖部署完成（${attempt} 秒）"; fi
   sleep 1
 done
+if (( attempt == 180 )); then
+  print -u2 "Qt 依赖部署在 180 秒内未结束"
+  exit 1
+fi
 
 # 应用不使用这些数据库驱动，它们依赖构建机上未随包部署的数据库库。
 rm -f "$APP_BUNDLE/Contents/PlugIns/sqldrivers/libqsqlodbc.dylib" \
