@@ -155,7 +155,8 @@ Item {
             const connectLeft = item("sshConnectAction").mapToItem(page, 0, 0).x
             verify(summaryRight <= connectLeft, "summary must not overlap connection actions")
             const copy = item("ssh-copy-on-select")
-            verify(copy.mapToItem(page, copy.width, 0).x <= page.width)
+            tryVerify(function() { return copy.mapToItem(page, copy.width, 0).x <= page.width }, 5000,
+                      "copy control must fit after the layout settles")
             for (const name of ["ssh-config-toggle", "ssh-pause", "ssh-clear", "ssh-copy-on-select"])
                 verify(!item(name).contentItem.truncated, name + " text must fit")
         }
