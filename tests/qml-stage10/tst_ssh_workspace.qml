@@ -215,8 +215,8 @@ Item {
             verify(item(editor, "ssh-rule-pause-on-match").checked)
             mouseClick(item(editor, "ssh-rule-pause-on-match"))
             const swatch = visualItem(editor.contentItem, "ssh-rule-color-80b9ff")
-            verify(swatch !== null); mouseClick(swatch); wait(160)
-            verify(item(editor, "ssh-rule-save").enabled)
+            verify(swatch !== null); mouseClick(swatch)
+            tryCompare(item(editor, "ssh-rule-save"), "enabled", true)
             item(editor, "ssh-rule-sample").text = "设备 12 超时"
             mouseClick(item(editor, "ssh-rule-test")); wait(20)
             compare(item(editor, "ssh-rule-sample").selectedText, "设备 12 超时")
