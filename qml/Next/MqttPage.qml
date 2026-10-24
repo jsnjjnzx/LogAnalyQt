@@ -8,6 +8,9 @@ import QtQuick.Dialogs as Dialogs
 Item {
     id: root
     required property var theme
+    required property var backend
+    property int parseSessionId: -1
+    property string parsedHex: ""
     signal requestConfigManagement()
     property alias controller: mqtt
     property int mode: 0
@@ -32,6 +35,18 @@ Item {
     property var exportOwner: null
 
     MqttController { id: mqtt; objectName: "mqttController" }
+    function parseSelectedHex(protocolType) {
+        if (!backend || receiveMenu.hexText === "") return
+        if (parseSessionId < 4) parseSessionId = backend.createParseSession()
+        if (parseSessionId < 4) return
+        parsedHex = receiveMenu.hexText
+        parseOutputWindow.resetSelection()
+        backend.parseHex(parsedHex, "UTF-8", parseSessionId, protocolType)
+        parseOutputWindow.show()
+        parseOutputWindow.raise()
+        parseOutputWindow.requestActivate()
+        Qt.callLater(function() { parseOutputWindow.autoFit() })
+    }
     function showResult(result) {
         actionMessage = result && !result.ok ? result.message : ""
         return result && result.ok
@@ -105,7 +120,8 @@ Item {
         }
     }
     function updateMessages() {
-        if (followLatest && !session.paused && session.messageCount > 0)
+        if (followLatest && !session.paused && session.messageCount > 0
+                && receivedPayload.selectedText.length === 0 && !receiveMenu.visible)
             selectedMessageId = session.idAt(session.messageCount - 1)
         refreshDetail()
         if (autoScroll.checked && !session.paused) messageList.positionViewAtEnd()
@@ -116,10 +132,68 @@ Item {
     onHeightChanged: if (ready) Qt.callLater(updateSplit)
     onFocusedPaneChanged: if (ready) Qt.callLater(updateSplit)
     Component.onCompleted: { ready = true; loadDraft(); Qt.callLater(updateSplit) }
-    Component.onDestruction: saveDraft()
+    Component.onDestruction: {
+        saveDraft()
+        if (backend && parseSessionId >= 4) backend.closeParseSession(parseSessionId)
+    }
     Timer { id: draftSave; interval: 350; onTriggered: root.saveDraft() }
     Timer { id: filterTimer; interval: 250; onTriggered: root.applyFilter() }
     Connections { target: root.session; function onMessagesChanged() { Qt.callLater(root.updateMessages) } }
+    Next.ParseResultWindow {
+        id: parseOutputWindow
+        namePrefix: "mqtt-parse"
+        sessionName: "MQTT"
+        backend: root.backend
+        theme: root.theme
+        parseSessionId: root.parseSessionId
+        parsedHex: root.parsedHex
+        transientParent: root.Window.window
+    }
+    Next.GlassMenu {
+        id: receiveMenu
+        objectName: "mqtt-receive-menu"
+        property string hexText: ""
+        onAboutToShow: {
+            // Keep the selected bytes stable while incoming messages continue.
+            const selected = receivedPayload.selectedText
+            const compact = selected.replace(/\s/g, "")
+            hexText = receiveFormat.currentText === "Hex" && /^[0-9a-fA-F]{2}(?:\s*[0-9a-fA-F]{2})*$/.test(selected.trim())
+                ? compact.toUpperCase().match(/../g).join(" ") : ""
+        }
+        Next.GlassMenuItem {
+            objectName: "mqtt-parse-auto"
+            text: "解析选中 Hex"
+            enabled: receiveMenu.hexText !== ""
+            onTriggered: root.parseSelectedHex(0)
+        }
+        Next.GlassMenu {
+            title: "按协议解析"
+            enabled: receiveMenu.hexText !== ""
+            Next.GlassMenuItem { text: "DL/T 698"; onTriggered: root.parseSelectedHex(1) }
+            Next.GlassMenuItem { text: "IEC 101"; onTriggered: root.parseSelectedHex(2) }
+            Next.GlassMenuItem { objectName: "mqtt-parse-104"; text: "IEC 104"; onTriggered: root.parseSelectedHex(3) }
+            Next.GlassMenuItem { text: "应用层消息"; onTriggered: root.parseSelectedHex(4) }
+            Next.GlassMenuItem { text: "模块消息"; onTriggered: root.parseSelectedHex(5) }
+            Next.GlassMenuItem { text: "Q/GDW 376.2"; onTriggered: root.parseSelectedHex(6) }
+            Next.GlassMenuItem { text: "DL/T 645"; onTriggered: root.parseSelectedHex(7) }
+        }
+        Next.GlassMenuSeparator {}
+        Next.GlassMenuItem {
+            text: "复制选中内容"
+            enabled: receivedPayload.selectedText.length > 0
+            onTriggered: receivedPayload.copy()
+        }
+        Next.GlassMenuItem {
+            text: "复制完整消息"
+            enabled: !!root.selectedMessage.id
+            onTriggered: root.session.copyMessage(root.selectedMessageId, receiveFormat.currentText)
+        }
+        Next.GlassMenuItem {
+            text: "全选"
+            enabled: receivedPayload.length > 0
+            onTriggered: receivedPayload.selectAll()
+        }
+    }
     Shortcut { sequences: ["Ctrl+Return", "Meta+Return"]; enabled: root.visible && root.session.connected && !sidePanel.visible && !connectionDialog.visible && !brokerDialog.visible && !exportDialog.visible && !licensesDialog.visible && !deleteDialog.visible; onActivated: root.send() }
 
     ColumnLayout {
@@ -314,9 +388,9 @@ Item {
                                     }
                                     Next.GlassMenu {
                                         id: subscriptionMenu
-                                        MenuItem { text: "编辑主题 / 颜色"; onTriggered: root.editSubscription(subscriptionRow.modelData) }
-                                        MenuItem { text: subscriptionRow.modelData.enabled ? "停用订阅" : "启用订阅"; onTriggered: root.showResult(root.session.saveSubscription(subscriptionRow.modelData.topic, subscriptionRow.modelData.qos, !subscriptionRow.modelData.enabled)) }
-                                        MenuItem { text: "取消订阅并删除"; onTriggered: root.showResult(root.session.removeSubscription(subscriptionRow.modelData.topic)) }
+                                        Next.GlassMenuItem { text: "编辑主题 / 颜色"; onTriggered: root.editSubscription(subscriptionRow.modelData) }
+                                        Next.GlassMenuItem { text: subscriptionRow.modelData.enabled ? "停用订阅" : "启用订阅"; onTriggered: root.showResult(root.session.saveSubscription(subscriptionRow.modelData.topic, subscriptionRow.modelData.qos, !subscriptionRow.modelData.enabled)) }
+                                        Next.GlassMenuItem { text: "取消订阅并删除"; onTriggered: root.showResult(root.session.removeSubscription(subscriptionRow.modelData.topic)) }
                                     }
                                     Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: root.theme.separator }
                                 }
@@ -383,7 +457,7 @@ Item {
                                 Layout.leftMargin: 12; Layout.rightMargin: 10
                                 Label { textFormat: Text.PlainText; text: root.selectedMessage.received === false ? "↑" : "↓"; color: root.selectedMessage.received === false ? root.theme.accent : root.theme.success }
                                 Label { objectName: "mqtt-received-topic"; textFormat: Text.PlainText; Layout.fillWidth: true; text: root.selectedMessage.topic || "完整消息内容"; color: root.selectedMessage.topicColor || root.theme.text; elide: Text.ElideMiddle; font.pixelSize: 12; font.family: Next.PlatformFonts.monospaceFamily }
-                                Next.GlassComboBox { id: receiveFormat; implicitWidth: 90; implicitHeight: 28; model: ["Text", "JSON", "Hex"]; currentIndex: 1; font.pixelSize: 11; onActivated: root.refreshDetail() }
+                                Next.GlassComboBox { id: receiveFormat; objectName: "mqtt-receive-format"; implicitWidth: 90; implicitHeight: 28; model: ["Text", "JSON", "Hex"]; currentIndex: 1; font.pixelSize: 11; onActivated: root.refreshDetail() }
                                 Next.GlassButton { text: "复制"; implicitHeight: 28; implicitWidth: 56; font.pixelSize: 11; enabled: !!root.selectedMessage.id; onClicked: root.session.copyMessage(root.selectedMessageId, receiveFormat.currentText) }
                             }
                             ScrollView {
@@ -392,10 +466,17 @@ Item {
                                 Layout.fillWidth: true; Layout.fillHeight: true
                                 clip: true
                                 TextArea {
+                                    id: receivedPayload
                                     objectName: "mqtt-received-payload"
                                     Accessible.name: "接收消息内容"
                                     text: root.selectedMessage.payload || ""
                                     readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText
+                                    persistentSelection: true
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        acceptedButtons: Qt.RightButton
+                                        onClicked: mouse => receiveMenu.popup(receivedPayload, mouse.x, mouse.y)
+                                    }
                                     color: root.theme.text; padding: 14
                                     font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 13
                                     wrapMode: TextEdit.WrapAnywhere

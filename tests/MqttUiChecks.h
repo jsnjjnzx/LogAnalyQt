@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/mqtt/MqttController.h"
+#include "core/LogBackend.h"
 #include "common/AppPaths.h"
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -50,14 +51,81 @@ inline QString checkMqttUi(QQuickWindow *window, const QString &screenshot, bool
             window->update(); loop.exec();
             require(frame, "MQTT frame not rendered");
         };
-        auto click = [&](QQuickItem *target) {
+        auto click = [&](QQuickItem *target, Qt::MouseButton button = Qt::LeftButton) {
             require(target && target->isVisible() && target->isEnabled(), "MQTT click target unavailable");
             const QPointF point = target->mapToScene({target->width() / 2, target->height() / 2});
-            QMouseEvent down(QEvent::MouseButtonPress, point, window->mapToGlobal(point.toPoint()), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-            QMouseEvent up(QEvent::MouseButtonRelease, point, window->mapToGlobal(point.toPoint()), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QMouseEvent down(QEvent::MouseButtonPress, point, window->mapToGlobal(point.toPoint()), button, button, Qt::NoModifier);
+            QMouseEvent up(QEvent::MouseButtonRelease, point, window->mapToGlobal(point.toPoint()), button, Qt::NoButton, Qt::NoModifier);
             QCoreApplication::sendEvent(window, &down); QCoreApplication::sendEvent(window, &up);
             settle();
         };
+        // Verify selection/parser UI without requiring a network listener.
+        auto *filter = qobject_cast<QSortFilterProxyModel *>(controller->remote()->messages());
+        auto *messages = filter ? qobject_cast<MqttMessageModel *>(filter->sourceModel()) : nullptr;
+        require(messages, "MQTT source model missing");
+        messages->append({{9001, QDateTime::currentDateTime(), "test/hex", QByteArray("{\"value\": 1}"), 0, false, true, ""}});
+        QMetaObject::invokeMethod(page, "updateMessages"); settle();
+        auto *payload = item("mqtt-received-payload");
+        auto *format = item("mqtt-receive-format");
+        auto *menu = page->findChild<QObject *>("mqtt-receive-menu");
+        require(menu, "MQTT receive context menu missing");
+        auto openReceiveMenu = [&] { click(payload, Qt::RightButton); require(menu->property("visible").toBool(), "MQTT right-click menu did not open"); };
+        auto closeReceiveMenu = [&] { QMetaObject::invokeMethod(menu, "close"); settle(); };
+        QMetaObject::invokeMethod(payload, "selectAll");
+        openReceiveMenu();
+        require(!item("mqtt-parse-auto")->isEnabled(), "JSON selection must not enable HEX parsing");
+        closeReceiveMenu();
+        page->setProperty("followLatest", true);
+        QMetaObject::invokeMethod(payload, "deselect");
+        const QString hex = "FF 68 04 07 00 00 00 EE";
+        messages->append({{9002, QDateTime::currentDateTime(), "test/hex", QByteArray::fromHex("FF680407000000EE"), 0, false, true, ""}});
+        QMetaObject::invokeMethod(page, "updateMessages");
+        format->setProperty("currentIndex", 2);
+        QMetaObject::invokeMethod(page, "refreshDetail"); settle();
+        require(payload->property("text").toString() == hex, "HEX receive format changed raw bytes");
+        QMetaObject::invokeMethod(payload, "deselect");
+        openReceiveMenu();
+        require(!item("mqtt-parse-auto")->isEnabled(), "empty selection must not enable parsing");
+        closeReceiveMenu();
+        QMetaObject::invokeMethod(payload, "select", Q_ARG(int, 3), Q_ARG(int, 4));
+        openReceiveMenu();
+        require(!item("mqtt-parse-auto")->isEnabled(), "odd HEX digit count must not enable parsing");
+        closeReceiveMenu();
+        QMetaObject::invokeMethod(payload, "select", Q_ARG(int, 4), Q_ARG(int, 10));
+        openReceiveMenu();
+        require(!item("mqtt-parse-auto")->isEnabled(), "selection cutting through bytes must not enable parsing");
+        closeReceiveMenu();
+        QMetaObject::invokeMethod(payload, "select", Q_ARG(int, 3), Q_ARG(int, 20));
+        openReceiveMenu();
+        require(item("mqtt-parse-auto")->isEnabled() && payload->property("selectedText").toString() == "68 04 07 00 00 00", "right-click lost the selected HEX range");
+        messages->append({{9003, QDateTime::currentDateTime(), "test/hex", QByteArray::fromHex("01020304"), 0, false, true, ""}});
+        QMetaObject::invokeMethod(page, "updateMessages"); settle();
+        require(payload->property("selectedText").toString() == "68 04 07 00 00 00", "incoming message replaced selected HEX");
+        if (!screenshot.isEmpty()) require(window->grabWindow().save(screenshot + ".menu.png"), "MQTT menu screenshot failed");
+        click(item("mqtt-parse-auto"));
+        auto *parserWindow = page->findChild<QQuickWindow *>("mqtt-parse-window");
+        auto *backend = qvariant_cast<LogBackend *>(page->property("backend"));
+        const int parseId = page->property("parseSessionId").toInt();
+        require(parserWindow && parserWindow->isVisible() && backend && parseId >= 4, "MQTT parser window/session missing");
+        auto *model = backend->parseModel(parseId);
+        require(model && model->rowCount() > 2, "MQTT auto parsing produced no real fields");
+        auto *frame = findItem(parserWindow->contentItem(), "mqtt-parse-frame");
+        require(frame && frame->property("text").toString() == "68 04 07 00 00 00", "MQTT parser used the whole message instead of selection");
+        if (!screenshot.isEmpty()) require(parserWindow->grabWindow().save(screenshot + ".parse.png"), "MQTT parse screenshot failed");
+        parserWindow->close();
+        openReceiveMenu();
+        auto *explicit104 = page->findChild<QObject *>("mqtt-parse-104");
+        require(explicit104 && QMetaObject::invokeMethod(explicit104, "triggered"), "MQTT explicit protocol action missing");
+        require(parserWindow->isVisible() && page->property("parseSessionId").toInt() == parseId && model->rowCount() > 2, "explicit protocol parsing did not reuse the isolated session");
+        parserWindow->close(); closeReceiveMenu();
+        format->setProperty("currentIndex", 1);
+        page->setProperty("followLatest", true);
+        controller->remote()->clearMessages();
+        if (QCoreApplication::arguments().contains("--mqtt-parse-only")) {
+            qInfo("MQTT_UI_CHECK_PASSED");
+            return {};
+        }
+
         QTcpServer available;
         require(available.listen(QHostAddress::LocalHost, 0), "Could not allocate MQTT UI test port");
         const int port = available.serverPort(); available.close();

@@ -1231,15 +1231,15 @@ ApplicationWindow {
                         property string rowValue: ""
                         property string rowDescription: ""
 
-                        QQC2.MenuItem {
+                        Next.GlassMenuItem {
                             text: "复制域/位域"
                             onTriggered: backend.copyToClipboard(rowContextMenu.rowName)
                         }
-                        QQC2.MenuItem {
+                        Next.GlassMenuItem {
                             text: "复制数据"
                             onTriggered: backend.copyToClipboard(rowContextMenu.rowValue)
                         }
-                        QQC2.MenuItem {
+                        Next.GlassMenuItem {
                             text: "复制说明"
                             onTriggered: backend.copyToClipboard(rowContextMenu.rowDescription)
                         }
@@ -1460,6 +1460,7 @@ ApplicationWindow {
     }
     Next.MqttPage {
         id: mqttPage
+        backend: mainWindow.analysisBackend
         onRequestConfigManagement: { mainWindow.navigate(9); systemSettingsPage.section = 2 }
         objectName: "page-15"
         parent: pageDeck; anchors.fill: parent
@@ -1984,7 +1985,7 @@ ApplicationWindow {
 
                             Next.GlassMenu {
                                 id: contextMenu
-                                QQC2.MenuItem {
+                                Next.GlassMenuItem {
                                     text: "返回日志并高亮"
                                     onTriggered: {
                                         var range = backend.getLineRange(model.lineNumber);

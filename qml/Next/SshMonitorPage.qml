@@ -497,20 +497,20 @@ GlassPage {
                             Next.GlassMenu {
                                 id: sessionMenu
                                 objectName: "ssh-session-options-" + sessionRow.modelData.sessionId
-                                MenuItem {
+                                Next.GlassMenuItem {
                                     objectName: "ssh-session-detach-" + sessionRow.modelData.sessionId
                                     text: sessionRow.modelData.detached ? "定位独立窗口" : "独立窗口"
                                     onTriggered: sessionRow.modelData.detached ? root.locateSession(sessionRow.modelData) : root.detachSession(sessionRow.modelData)
                                 }
-                                MenuItem {
+                                Next.GlassMenuItem {
                                     objectName: "ssh-session-dock-" + sessionRow.modelData.sessionId
                                     visible: sessionRow.modelData.detached
                                     height: visible ? implicitHeight : 0
                                     text: "收回主窗口"
                                     onTriggered: root.dockSession(sessionRow.modelData)
                                 }
-                                MenuSeparator {}
-                                MenuItem {
+                                Next.GlassMenuSeparator {}
+                                Next.GlassMenuItem {
                                     objectName: "ssh-session-remove-" + sessionRow.modelData.sessionId
                                     text: "删除会话…"
                                     onTriggered: root.requestCloseSession(sessionRow.modelData)

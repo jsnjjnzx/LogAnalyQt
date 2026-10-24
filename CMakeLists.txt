@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 4.9.0 LANGUAGES CXX)
+project(LogAnalyQt VERSION 4.9.1 LANGUAGES CXX)
 if(NOT WIN32)
     find_package(Iconv REQUIRED)
 endif()
@@ -302,6 +302,9 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     add_test(NAME ui_migration_runtime
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_migration_runtime.py
                 $<TARGET_FILE:appLogAnalyQt>)
+    add_test(NAME ui_mqtt_parse_runtime
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_migration_runtime.py
+                $<TARGET_FILE:appLogAnalyQt> --mqtt-parse-only)
     if(APPLE)
         add_test(NAME macos_window_activation
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_macos_window_activation.py

@@ -54,6 +54,14 @@ def main():
                 print(arguments, result.stdout, result.stderr, "\n".join(dict.fromkeys(diagnostics)), sep="\n")
                 raise SystemExit(result.returncode or 1)
 
+        if "--mqtt-parse-only" in sys.argv:
+            run("--migration-action", "confirm")
+            capture = os.environ.get("LOGANALYQT_MQTT_UI_SCREENSHOT")
+            run("--mqtt-checks", "--mqtt-parse-only", "--size", "1200", "800",
+                *(["--screenshot", capture] if capture else []))
+            print("PASS: MQTT HEX selection, context menu and isolated protocol parser")
+            return
+
         original = (data_root / "LogAnalyQt.ini").read_bytes()
         run("--migration-action", "cancel")
         assert (data_root / "LogAnalyQt.ini").read_bytes() == original and not (data_root / "settings.json").exists(), "cancel must not write or delete configuration"
