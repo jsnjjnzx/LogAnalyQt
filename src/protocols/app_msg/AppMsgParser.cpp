@@ -758,6 +758,9 @@ QList<AppMsgField> AppMsgParser::parseToFields(const QByteArray &data) {
 
     fields.append(AppMsgField(field.name, field.rawHex.toUpper(), descStr,
                               field.offset, field.length, indent));
+    fields.last().summary = field.valueStr.isEmpty() ? field.description : field.valueStr;
+    if (!field.valueStr.isEmpty() && field.description != field.valueStr)
+      fields.last().detail = field.description;
 
     for (const auto &child : field.children) {
       addPayloadField(child, indent + 1);

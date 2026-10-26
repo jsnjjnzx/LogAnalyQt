@@ -130,6 +130,23 @@ QVariant ParseResultModel::data(const QModelIndex &index, int role) const {
     return item->value;
   case DescriptionRole:
     return item->description;
+  case DescriptionSummaryRole:
+    return item->summary.isEmpty() ? item->description : item->summary;
+  case DescriptionDetailRole:
+    return item->detail;
+  case HasParentRole:
+    return m_parentRows[item->sourceRow] >= 0;
+  case BranchContinuesRole:
+    return m_nextSiblingRows[item->sourceRow] >= 0;
+  case TreeGuidesRole: {
+    QVariantList guides;
+    for (int parent = m_parentRows[item->sourceRow]; parent >= 0;
+         parent = m_parentRows[parent]) {
+      if (m_allItems[parent]->indent > 0 && m_nextSiblingRows[parent] >= 0)
+        guides.append(m_allItems[parent]->indent);
+    }
+    return guides;
+  }
   case IndentRole:
     return item->indent;
   case OffsetRole:
@@ -231,6 +248,11 @@ QHash<int, QByteArray> ParseResultModel::roleNames() const {
   roles[SubtreeExpandedRole] = "subtreeExpanded";
   roles[SubtreeStateRole] = "subtreeState";
   roles[FrameSeparatorRole] = "isFrameSeparator";
+  roles[DescriptionSummaryRole] = "descriptionSummary";
+  roles[DescriptionDetailRole] = "descriptionDetail";
+  roles[TreeGuidesRole] = "treeGuides";
+  roles[HasParentRole] = "hasParent";
+  roles[BranchContinuesRole] = "branchContinues";
   return roles;
 }
 
@@ -239,69 +261,46 @@ void ParseResultModel::clear() {
   qDeleteAll(m_allItems);
   m_allItems.clear();
   m_visibleItems.clear();
+  m_parentRows.clear();
+  m_nextSiblingRows.clear();
+  m_openRows.clear();
   endResetModel();
 }
 
 void ParseResultModel::addItem(const ParseResultItem &item) {
-  ParseResultItem *newItem = new ParseResultItem(item);
-
-  // Check if previous item is a parent
-  if (!m_allItems.isEmpty()) {
-    ParseResultItem *last = m_allItems.last();
-    if (newItem->indent > last->indent) {
-      if (!last->hasChildren) {
-        last->hasChildren = true;
-        // Notify view if last item is visible
-        // Optimization: If last item is visible, it must be the last one in
-        // m_visibleItems
-        if (!m_visibleItems.isEmpty() && m_visibleItems.last() == last) {
-          int row = m_visibleItems.count() - 1;
-          emit dataChanged(index(row), index(row), {HasChildrenRole});
-        }
-      }
-    }
+  auto *newItem = new ParseResultItem(item);
+  newItem->sourceRow = m_allItems.size();
+  int previousSibling = -1;
+  if (item.isFrameSeparator) m_openRows.clear();
+  while (!m_openRows.isEmpty() && m_allItems[m_openRows.last()]->indent >= item.indent) {
+    const int previous = m_openRows.takeLast();
+    if (m_allItems[previous]->indent == item.indent) previousSibling = previous;
   }
-
+  const int parent = m_openRows.isEmpty() ? -1 : m_openRows.last();
+  m_parentRows.append(parent);
+  m_nextSiblingRows.append(-1);
   m_allItems.append(newItem);
+  if (!item.isFrameSeparator) m_openRows.append(newItem->sourceRow);
 
-  // Determine visibility
-  // Simple logic: if parent is not expanded, this is not visible.
-  // But finding parent in a flat list requires searching backwards.
-  bool isVisible = true;
-  if (newItem->indent > 0) {
-    // Look backwards for parent
-    for (int i = m_allItems.count() - 2; i >= 0; --i) {
-      ParseResultItem *ancestor = m_allItems[i];
-      if (ancestor->indent < newItem->indent) {
-        // This is the parent (or an ancestor if we skipped levels, but usually
-        // parent) Actually we need to check all ancestors up the chain? No, if
-        // the immediate parent is visible and expanded, we are visible. Wait,
-        // if the grandparent is collapsed, the parent is not visible, so we
-        // shouldn't be either. So we just need to check if the parent is
-        // effectively visible and expanded.
-
-        // Easier approach: Check if we are currently in a "collapsed" state
-        // based on the last added item? Since we add sequentially: If the last
-        // item added to m_visibleItems has indent < newItem->indent, and that
-        // last item is NOT expanded, then we are hidden. But that's not quite
-        // right.
-
-        // Let's use the rebuild logic for simplicity or just assume expanded by
-        // default. Since default expanded = true, everything is visible
-        // initially.
-        break;
-      }
+  if (parent >= 0 && !m_allItems[parent]->hasChildren) {
+    m_allItems[parent]->hasChildren = true;
+    if (!m_visibleItems.isEmpty() && m_visibleItems.last() == m_allItems[parent])
+      emit dataChanged(index(m_visibleItems.size() - 1), index(m_visibleItems.size() - 1), {HasChildrenRole});
+  }
+  if (previousSibling >= 0) {
+    m_nextSiblingRows[previousSibling] = newItem->sourceRow;
+    // Parsers append a whole frame synchronously; refresh old guides once per batch.
+    if (!m_treeUpdatePending) {
+      m_treeUpdatePending = true;
+      QTimer::singleShot(0, this, [this] {
+        m_treeUpdatePending = false;
+        if (!m_visibleItems.isEmpty())
+          emit dataChanged(index(0), index(m_visibleItems.size() - 1),
+                           {TreeGuidesRole, BranchContinuesRole});
+      });
     }
   }
-
-  // Since default is expanded=true, we can just append to visible items
-  // UNLESS we support adding items to a model that already has collapsed nodes.
-  // For now, we assume addItem is called during initial load where everything
-  // is expanded. If we want to support dynamic addition, we need better logic.
-  // But for this app, we clear() then addAll.
-
-  beginInsertRows(QModelIndex(), m_visibleItems.count(),
-                  m_visibleItems.count());
+  beginInsertRows(QModelIndex(), m_visibleItems.size(), m_visibleItems.size());
   m_visibleItems.append(newItem);
   endInsertRows();
 }
@@ -1563,6 +1562,8 @@ bool LogBackend::parseSingleFrame(const QByteArray &data,
         item.name = f.name;
         item.value = f.value;
         item.description = f.description;
+        item.summary = f.summary;
+        item.detail = f.detail;
         item.indent = f.indent;
         item.offset = (f.offset >= 0) ? f.offset + offsetAdjustment : -1;
         item.length = f.length;
@@ -1652,6 +1653,8 @@ bool LogBackend::parseSingleFrame(const QByteArray &data,
         item.name = f.name;
         item.value = f.value;
         item.description = f.description;
+        item.summary = f.summary;
+        item.detail = f.detail;
         item.indent = f.indent;
         item.offset = (f.offset >= 0) ? f.offset + offsetAdjustment : -1;
         item.length = f.length;
@@ -1672,6 +1675,8 @@ bool LogBackend::parseSingleFrame(const QByteArray &data,
         item.name = f.name;
         item.value = f.value;
         item.description = f.description;
+        item.summary = f.summary;
+        item.detail = f.detail;
         item.indent = f.indent;
         item.offset = (f.offset >= 0) ? f.offset + offsetAdjustment : -1;
         item.length = f.length;
@@ -1712,6 +1717,8 @@ void LogBackend::parsePopupApdu(const QString &apduHex) {
     item.name = f.name;
     item.value = f.value;
     item.description = f.description;
+    item.summary = f.summary;
+    item.detail = f.detail;
     item.indent = f.indent;
     item.offset = f.offset;
     item.length = f.length;

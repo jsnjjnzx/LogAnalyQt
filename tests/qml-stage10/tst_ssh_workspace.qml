@@ -50,7 +50,8 @@ Item {
         function parseHex(text, encoding, id, protocol) {
             models[id].clear();
             models[id].append({name: "frame", value: text, description: "protocol " + protocol, isFrameSeparator: false,
-                highlighted: false, indent: 0, hasChildren: false, expanded: false, offset: 0, length: 1});
+                descriptionSummary: "protocol " + protocol, descriptionDetail: "", treeGuides: [], hasParent: false, branchContinues: false,
+                highlighted: false, isDiff: false, indent: 0, hasChildren: false, expanded: false, offset: 0, length: 1});
         }
     }
     TestCase {

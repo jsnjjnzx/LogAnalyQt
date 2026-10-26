@@ -327,7 +327,10 @@ Button { text: "关闭"; onClicked: Qt.quit() }
       if (window && args.contains(QStringLiteral("--with-fixture"))) {
         auto *backend = window->findChild<LogBackend *>("analysisBackend");
         if (backend) {
-          const QString frame = backend->buildFullFrame("05 01 01 40 00 02 00 00", {{"serverAddrHex", "000000000001"}, {"prm", true}, {"funcCode", 3}});
+          const QString apdu = args.contains("--parse-table-fixture")
+              ? "85 03 03 31 06 02 00 05 00 20 22 02 00 00 20 1E 02 00 00 20 20 02 00 00 20 24 02 00 00 33 09 02 06 01 01 06 00 00 00 02 1C 07 E1 08 1D 15 34 34 1C 07 E1 08 1D 15 38 17 16 01 04 08 80 00 00"
+              : "05 01 01 40 00 02 00 00";
+          const QString frame = backend->buildFullFrame(apdu, {{"serverAddrHex", "000000000001"}, {"prm", true}, {"funcCode", 3}});
           const QString log = "10:24:16.182  [INFO]  本地界面验证日志\n10:24:16.204  [TX]    " + frame + "\n10:24:17.002  [INFO]  报文已加载\n";
           auto *editor = window->findChild<QObject *>("logText");
           if (editor) editor->setProperty("text", log);
@@ -335,7 +338,7 @@ Button { text: "关闭"; onClicked: Qt.quit() }
           window->setProperty("selectedLogStart", log.indexOf(frame));
           backend->setProtocolType(1);
           QMetaObject::invokeMethod(window, "performParse", Q_ARG(QVariant, frame), Q_ARG(QVariant, 1));
-          const QString otherFrame = backend->buildFullFrame("05 01 01 40 00 02 00 00", {{"serverAddrHex", "000000000002"}, {"prm", true}, {"funcCode", 3}});
+          const QString otherFrame = backend->buildFullFrame(apdu, {{"serverAddrHex", "000000000002"}, {"prm", true}, {"funcCode", 3}});
           QMetaObject::invokeMethod(window, "performParse", Q_ARG(QVariant, otherFrame), Q_ARG(QVariant, 2));
         }
       }
@@ -347,6 +350,14 @@ Button { text: "关闭"; onClicked: Qt.quit() }
       }
     });
     QTimer::singleShot(1500, &app, [&, window, args, pageArg, screenshotArg] {
+      if (args.contains("--parse-table-fixture")) {
+        const QString error = checkParseResultTableView(window, window->property("currentPage").toInt() == 2);
+        if (!error.isEmpty()) {
+          fprintf(stderr, "PARSE TABLE CHECK FAILED: %s\n", qPrintable(error));
+          app.exit(4);
+          return;
+        }
+      }
       if (args.contains(QStringLiteral("--mqtt-checks"))) {
         const QString path = screenshotArg >= 0 && screenshotArg + 1 < args.size() ? args[screenshotArg + 1] : QString();
         const QString error = checkMqttUi(window, path, args.contains(QStringLiteral("--mqtt-broker-view")));

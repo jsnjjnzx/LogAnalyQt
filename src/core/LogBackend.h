@@ -35,6 +35,9 @@ struct ParseResultItem {
   bool expanded = true;
   bool hasChildren = false;
   bool isFrameSeparator = false; // 帧分隔符标识
+  QString summary;
+  QString detail;
+  int sourceRow = -1;
 };
 
 // 全局预览概要信息结构
@@ -65,7 +68,12 @@ public:
     HasChildrenRole,
     SubtreeExpandedRole,
     SubtreeStateRole,
-    FrameSeparatorRole // 帧分隔符角色
+    FrameSeparatorRole, // 帧分隔符角色
+    DescriptionSummaryRole,
+    DescriptionDetailRole,
+    TreeGuidesRole,
+    HasParentRole,
+    BranchContinuesRole
   };
 
   explicit ParseResultModel(QObject *parent = nullptr);
@@ -90,6 +98,10 @@ private:
 
   QList<ParseResultItem *> m_allItems;
   QList<ParseResultItem *> m_visibleItems;
+  QList<int> m_parentRows;
+  QList<int> m_nextSiblingRows;
+  QList<int> m_openRows;
+  bool m_treeUpdatePending = false;
 };
 
 // 全局预览数据模型

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LogBackend.h"
+#include "ParseResultChecks.h"
 #include "LogMerger.h"
 #include "SshTerminal.h"
 #include "csg_upstream_test_support.h"
@@ -66,6 +67,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     if (!ok) throw QString::fromUtf8(message);
   };
   try {
+    checkParseResultPresentation();
     if (auto *screen = window->screen())
       window->setPosition(screen->availableGeometry().topLeft());
     require(QGuiApplication::applicationDisplayName() == QString::fromUtf8("通联工坊"), "application display name is incorrect");
@@ -641,6 +643,8 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       parsedModelIds.append(modelId);
       auto *pane = uiItem(QString("session-pane-%1").arg(modelId));
       require(pane && pane->isVisible(), "new parse pane is missing");
+      auto *table = uiItem(QString("parse-table-%1").arg(modelId));
+      require(table && !table->property("differenceMode").toBool(), "multi-parse tab inherited comparison-only row behavior");
       require(QMetaObject::invokeMethod(sessionProtocol, "activated", Q_ARG(int, tab % 2 ? 0 : 3)), "protocol selector failed");
       require(QMetaObject::invokeMethod(sessionEncoding, "activated", Q_ARG(int, tab % 4)), "encoding selector failed");
       const QString hex = tab % 2 ? "68 04 0B 00 00 00" : "68 04 07 00 00 00";

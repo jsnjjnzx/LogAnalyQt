@@ -2,9 +2,15 @@
 
 通信开发与调试工作台
 
-**当前项目版本：** v4.9.1 — see `CHANGELOG.md`
+**当前项目版本：** v5.0.0 — see `CHANGELOG.md`
 
 一个功能强大的多协议报文分析与日志查看工具，专为分析 16 进制数据和调试通讯协议而设计。
+
+## v5.0.0：共用解析表格与可读性优化
+
+统一日志、手动解析、差异对比和 SSH/MQTT 独立窗口的结果表格，清晰展示报文字段层级、主要解析结果及补充说明，并保留原始字节联动和完整内容查看。
+
+本轮需求、任务、关键决策、测试和审查记录分别见 [spec.md](spec.md)、[backlog.md](backlog.md)、[notes.md](notes.md)、[test-report.md](test-report.md)、[review-record.md](review-record.md)；协作流程见 [AGENTS.md](AGENTS.md)。
 
 ## v4.9.1：MQTT 选区报文解析
 

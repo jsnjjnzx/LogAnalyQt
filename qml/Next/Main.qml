@@ -622,6 +622,7 @@ ApplicationWindow {
     }
 
     component ParsePane: ColumnLayout {
+        id: parsePane
         property string frameText: mainWindow.selectedLogHex
         property string titlePrefix: ""
         property string settingsPrefix: ""
@@ -632,19 +633,19 @@ ApplicationWindow {
         property string lastParsedText: ""
         property int lastParsedProtocol: 0
         property int lastParsedEncoding: 0
-        property alias columnRatio1: cols.r1
-        property alias columnRatio2: cols.r2
+        property alias columnRatio1: parseTable.columnRatio1
+        property alias columnRatio2: parseTable.columnRatio2
         onProtocolIndexChanged: mainWindow.scheduleParseWorkspaceSave()
         onEncodingIndexChanged: mainWindow.scheduleParseWorkspaceSave()
         property bool showInput: true
-        property alias listView: resultListView
+        property alias listView: parseTable.listView
         property alias manualParseInput: manualParseInput
         // 是否锁定列宽（禁用自动调整）
         property bool autoFitLocked: false
         property bool paneSettingsReady: false
 
         function autoFitCols() {
-            cols.autoFit();
+            parseTable.autoFit();
         }
 
         function clearInput() {
@@ -678,11 +679,11 @@ ApplicationWindow {
 
             autoFitLocked = !!backend.getUiSetting(paneSettingKey("autoFitLocked"), false);
 
-            var savedR1 = Number(backend.getUiSetting(paneSettingKey("colsR1"), cols.r1));
-            var savedR2 = Number(backend.getUiSetting(paneSettingKey("colsR2"), cols.r2));
+            var savedR1 = Number(backend.getUiSetting(paneSettingKey("colsR1"), parseTable.columnRatio1));
+            var savedR2 = Number(backend.getUiSetting(paneSettingKey("colsR2"), parseTable.columnRatio2));
             if (!isNaN(savedR1) && !isNaN(savedR2) && savedR1 > 0.05 && savedR2 > 0.05 && (savedR1 + savedR2) < 0.95) {
-                cols.r1 = savedR1;
-                cols.r2 = savedR2;
+                parseTable.columnRatio1 = savedR1;
+                parseTable.columnRatio2 = savedR2;
             }
 
             presetCategoryCombo.loadPresetMessages();
@@ -944,7 +945,7 @@ ApplicationWindow {
                                 if (autoFitLocked) {
                                     // 解锁并执行自适应
                                     autoFitLocked = false;
-                                    cols.autoFit();
+                                    parseTable.autoFit();
                                 } else {
                                     // 锁定当前列宽
                                     autoFitLocked = true;
@@ -976,403 +977,24 @@ ApplicationWindow {
                 }
                 Connections { target: backend; function onHighlightRange(start, end, modelId) { if (!showInput && modelId === targetModelId) selectedFrameText.select(start,end); } }
             }
-            QtObject {
-                id: cols
-                property real r1: 0.4
-                property real r2: 0.3
-                onR1Changed: savePaneSetting("colsR1", r1)
-                onR2Changed: savePaneSetting("colsR2", r2)
-                // r3 is remainder
-
-                property real minTotal: 400 // Reduced min width for split view
-                property real availableW: Math.max(headerContainer.width, minTotal)
-
-                property int w1: Math.floor(availableW * r1)
-                property int w2: Math.floor(availableW * r2)
-                property int w3: availableW - w1 - w2
-                property int total: availableW
-
-                function autoFit() {
-                    // 使用动态测量的字符宽度，20px 为缩进宽度
-                    if (resultModel && resultModel.getColumnWidths) {
-                        var widths = resultModel.getColumnWidths(mainWindow.charWidth, 20);
-                        if (widths.length >= 2) {
-                            var w1 = widths[0];
-                            var w2 = widths[1];
-
-                            var total = cols.availableW;
-                            if (total <= 0)
-                                return;
-
-                            var newR1 = w1 / total;
-                            var newR2 = w2 / total;
-
-                            // Constraints
-                            if (newR1 < 0.1)
-                                newR1 = 0.1;
-                            if (newR1 > 0.6)
-                                newR1 = 0.6;
-
-                            if (newR2 < 0.1)
-                                newR2 = 0.1;
-                            if (newR2 > 0.8)
-                                newR2 = 0.8;
-
-                            if (newR1 + newR2 > 0.9) {
-                                var factor = 0.9 / (newR1 + newR2);
-                                newR1 *= factor;
-                                newR2 *= factor;
-                            }
-
-                            cols.r1 = newR1;
-                            cols.r2 = newR2;
-                        }
-                    }
-                }
-            }
-
-            // Header Container
-            Item {
-                id: headerContainer
+            Next.ParseResultTable {
+                id: parseTable
+                objectName: "parse-table-" + targetModelId
                 anchors.top: showInput ? parent.top : selectedFrame.bottom
                 anchors.topMargin: showInput ? 42 : 8
-                anchors.left: parent.left
-                anchors.leftMargin: 10
-                anchors.right: parent.right
-                anchors.rightMargin: 10
-                height: 30
-                clip: true
-                z: 2
-
-                Row {
-                    x: -resultListView.contentX
-                    height: parent.height
-
-                    // Col 1
-                    Rectangle {
-                        width: cols.w1
-                        height: parent.height
-                        color: theme.controlBackground
-                        border.color: theme.controlBorder
-                        Text {
-                            anchors.centerIn: parent
-                            text: "域/位域"
-                            font.bold: true
-                            color: theme.text
-                        }
-                        // Resizer
-                        Rectangle {
-                            width: 4
-                            height: parent.height
-                            anchors.right: parent.right
-                            color: Qt.rgba(0, 0, 0, 0)
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.SplitHCursor
-                                property point lastPos
-                                onPressed: mouse => {
-                                    lastPos = mapToItem(headerContainer, mouse.x, mouse.y);
-                                }
-                                onPositionChanged: mouse => {
-                                    if (pressed) {
-                                        var curPos = mapToItem(headerContainer, mouse.x, mouse.y);
-                                        var delta = curPos.x - lastPos.x;
-                                        var deltaR = delta / cols.availableW;
-                                        var minR = 50 / cols.availableW;
-
-                                        if (cols.r1 + deltaR > minR && cols.r2 - deltaR > minR) {
-                                            cols.r1 += deltaR;
-                                            cols.r2 -= deltaR;
-                                            lastPos = curPos;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Col 2
-                    Rectangle {
-                        width: cols.w2
-                        height: parent.height
-                        color: theme.controlBackground
-                        border.color: theme.controlBorder
-                        Text {
-                            anchors.centerIn: parent
-                            text: "数据"
-                            font.bold: true
-                            color: theme.text
-                        }
-                        // Resizer
-                        Rectangle {
-                            width: 4
-                            height: parent.height
-                            anchors.right: parent.right
-                            color: Qt.rgba(0, 0, 0, 0)
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.SplitHCursor
-                                property point lastPos
-                                onPressed: mouse => {
-                                    lastPos = mapToItem(headerContainer, mouse.x, mouse.y);
-                                }
-                                onPositionChanged: mouse => {
-                                    if (pressed) {
-                                        var curPos = mapToItem(headerContainer, mouse.x, mouse.y);
-                                        var delta = curPos.x - lastPos.x;
-                                        var deltaR = delta / cols.availableW;
-                                        var minR = 50 / cols.availableW;
-                                        var currentR3 = 1.0 - cols.r1 - cols.r2;
-
-                                        if (cols.r2 + deltaR > minR && currentR3 - deltaR > minR) {
-                                            cols.r2 += deltaR;
-                                            lastPos = curPos;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Col 3
-                    Rectangle {
-                        width: cols.w3
-                        height: parent.height
-                        color: theme.controlBackground
-                        border.color: theme.controlBorder
-                        Text {
-                            anchors.centerIn: parent
-                            text: "说明"
-                            font.bold: true
-                            color: theme.text
-                        }
-                    }
+                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                anchors.leftMargin: 10; anchors.rightMargin: 10; anchors.bottomMargin: 10
+                backend: mainWindow.analysisBackend
+                theme: mainWindow.uiTheme
+                resultModel: parsePane.resultModel
+                targetModelId: parsePane.targetModelId
+                namePrefix: "parse-" + targetModelId
+                differenceMode: mainWindow.currentPage === 2 && targetModelId <= 2
+                onColumnRatio1Changed: savePaneSetting("colsR1", columnRatio1)
+                onColumnRatio2Changed: savePaneSetting("colsR2", columnRatio2)
+                onFieldDoubleClicked: (name, value) => {
+                    if (name === "明文数据单元") mainWindow.inspectApdu(value);
                 }
-            }
-
-            ListView {
-                id: resultListView
-                anchors.top: headerContainer.bottom
-                anchors.left: parent.left
-                anchors.leftMargin: 10
-                anchors.right: parent.right
-                anchors.rightMargin: 10
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 10
-                clip: true
-
-                contentWidth: cols.total
-                flickableDirection: Flickable.HorizontalAndVerticalFlick
-
-                model: resultModel
-
-                delegate: Rectangle {
-                    width: cols.total
-                    height: model.isFrameSeparator ? 20 : 30
-                    color: model.isFrameSeparator ? theme.tableHighlight : (model.isDiff ? Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.28) : (model.highlighted ? theme.tableHighlight : (index % 2 == 0 ? Qt.rgba(0, 0, 0, 0) : theme.rowAlt)))
-
-                    // 分隔符显示
-                    Item {
-                        anchors.fill: parent
-                        visible: model.isFrameSeparator
-
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: parent.width - 40
-                            height: 2
-                            color: theme.accent
-                            opacity: 0.5
-                        }
-
-                        Rectangle {
-                            anchors.centerIn: parent
-                            color: theme.background
-                            width: separatorText.width + 10
-                            height: separatorText.height + 4
-
-                            Text {
-                                id: separatorText
-                                anchors.centerIn: parent
-                                text: model.name
-                                font.family: Next.PlatformFonts.monospaceFamily
-                                font.bold: true
-                                font.pixelSize: 11
-                                color: theme.accent
-                            }
-                        }
-                    }
-
-                    // 常规字段显示
-                    MouseArea {
-                        anchors.fill: parent
-                        visible: !model.isFrameSeparator
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        onClicked: mouse => {
-                            if (mouse.button === Qt.RightButton) {
-                                rowContextMenu.rowName = model.name;
-                                rowContextMenu.rowValue = model.value;
-                                rowContextMenu.rowDescription = model.description;
-                                rowContextMenu.popup();
-                            } else {
-                                var link = "highlight:" + model.offset + "," + model.length;
-                                backend.handleLink(link, targetModelId);
-                            }
-                        }
-                        onDoubleClicked: {
-                            if (model.name === "明文数据单元") {
-                                mainWindow.inspectApdu(model.value);
-                            }
-                        }
-                    }
-
-                    Next.GlassMenu {
-                        id: rowContextMenu
-                        property string rowName: ""
-                        property string rowValue: ""
-                        property string rowDescription: ""
-
-                        Next.GlassMenuItem {
-                            text: "复制域/位域"
-                            onTriggered: backend.copyToClipboard(rowContextMenu.rowName)
-                        }
-                        Next.GlassMenuItem {
-                            text: "复制数据"
-                            onTriggered: backend.copyToClipboard(rowContextMenu.rowValue)
-                        }
-                        Next.GlassMenuItem {
-                            text: "复制说明"
-                            onTriggered: backend.copyToClipboard(rowContextMenu.rowDescription)
-                        }
-                    }
-
-                    Row {
-                        height: parent.height
-                        visible: !model.isFrameSeparator
-
-                        // Field Name
-                        Item {
-                            width: cols.w1
-                            height: parent.height
-
-                            Text {
-                                id: expander
-                                x: 5 + (model.indent * 20)
-                                width: 16
-                                height: parent.height
-                                verticalAlignment: Text.AlignVCenter
-                                horizontalAlignment: Text.AlignHCenter
-                                text: model.hasChildren ? (model.expanded ? "▼" : "▶") : ""
-                                color: theme.subText
-                                font.pixelSize: 10
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    enabled: model.hasChildren
-                                    cursorShape: model.hasChildren ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: resultModel.toggleExpand(index)
-                                }
-                            }
-
-                            Rectangle {
-                                id: subtreeToggle
-                                anchors.left: expander.right
-                                anchors.leftMargin: model.hasChildren ? 2 : 0
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: model.hasChildren ? 8 : 0
-                                height: model.hasChildren ? 8 : 0
-                                radius: width / 2
-                                color: model.subtreeState === 0 ? Qt.rgba(0, 0.63, 0, 1) : (model.subtreeState === 2 ? Qt.rgba(0.75, 0, 0, 1) : Qt.rgba(0.55, 0.55, 0.55, 1))
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    enabled: model.hasChildren
-                                    preventStealing: true
-                                    propagateComposedEvents: false
-                                    cursorShape: model.hasChildren ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onPressed: function (mouse) {
-                                        mouse.accepted = true;
-                                    }
-                                    onReleased: function (mouse) {
-                                        mouse.accepted = true;
-                                    }
-                                    onClicked: {
-                                        resultModel.toggleSubtree(index);
-                                    }
-                                }
-                            }
-
-                            Text {
-                                anchors.left: subtreeToggle.right
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                anchors.leftMargin: 4
-                                verticalAlignment: Text.AlignVCenter
-                                text: model.name
-                                font.family: Next.PlatformFonts.monospaceFamily
-                                color: theme.text
-                                elide: Text.ElideRight
-                            }
-
-                            Rectangle {
-                                width: 1
-                                height: parent.height
-                                color: theme.controlBorder
-                                anchors.right: parent.right
-                            }
-                        }
-
-                        // Value
-                        Item {
-                            width: cols.w2
-                            height: parent.height
-
-                            Text {
-                                anchors.fill: parent
-                                anchors.leftMargin: 5
-                                verticalAlignment: Text.AlignVCenter
-                                text: model.value
-                                font.family: Next.PlatformFonts.monospaceFamily
-                                color: theme.text
-                                elide: Text.ElideRight
-                            }
-
-                            Rectangle {
-                                width: 1
-                                height: parent.height
-                                color: theme.controlBorder
-                                anchors.right: parent.right
-                            }
-                        }
-
-                        // Description
-                        Item {
-                            width: cols.w3
-                            height: parent.height
-
-                            Text {
-                                anchors.fill: parent
-                                anchors.leftMargin: 5
-                                verticalAlignment: Text.AlignVCenter
-                                text: model.description
-                                font.family: Next.PlatformFonts.monospaceFamily
-                                color: theme.text
-                                elide: Text.ElideRight
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: theme.controlBorder
-                        anchors.bottom: parent.bottom
-                        visible: true
-                    }
-                }
-
-                ScrollBar.vertical: ScrollBar {}
-                ScrollBar.horizontal: ScrollBar {}
             }
         }
     }

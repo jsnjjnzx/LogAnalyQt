@@ -54,6 +54,15 @@ def main():
                 print(arguments, result.stdout, result.stderr, "\n".join(dict.fromkeys(diagnostics)), sep="\n")
                 raise SystemExit(result.returncode or 1)
 
+        if "--parse-table-only" in sys.argv:
+            run("--migration-action", "confirm")
+            capture = os.environ.get("LOGANALYQT_PARSE_TABLE_SCREENSHOT")
+            for page, name in [(1, "manual"), (0, "log"), (2, "diff")]:
+                run("--with-fixture", "--parse-table-fixture", "--page", str(page), "--size", "1280", "900",
+                    *(["--screenshot", capture + "." + name + ".png"] if capture else []))
+            print("PASS: shared parse table, complex frame hierarchy, primary/secondary descriptions, byte selection, narrow panes and fixed diff row heights")
+            return
+
         if "--mqtt-parse-only" in sys.argv:
             run("--migration-action", "confirm")
             capture = os.environ.get("LOGANALYQT_MQTT_UI_SCREENSHOT")

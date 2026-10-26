@@ -1200,6 +1200,10 @@ void Prot698Parser::parseData(const QByteArray &data, int &offset,
         newDesc += " (" + def->name + ")";
       }
       tagField.description = newDesc;
+      tagField.summary = valField.summary.isEmpty() ? valField.description : valField.summary;
+      tagField.detail = typeName;
+      if (!valField.detail.isEmpty()) tagField.detail += " · " + valField.detail;
+      if (def && !def->name.isEmpty()) tagField.detail += " · " + def->name;
     }
   }
 }
@@ -2259,6 +2263,9 @@ QList<Prot698Field> Prot698Parser::parse(const QByteArray &data) {
 
   fields.append(Prot698Field("控制域 C", QString::asprintf("%02X", ctrl.val),
                              ctrlDesc, offset, 1));
+  fields.last().summary = QString("%1 · %2")
+      .arg(ctrl.bits.dir ? "服务器→客户机" : "客户机→服务器", funcDesc);
+  fields.last().detail = ctrlDesc;
   offset++;
 
   // 4. 地址域 A (SA + CA)
@@ -2507,6 +2514,8 @@ Prot698AttrDef *Prot698Parser::parseOAD(const QByteArray &data, int &offset,
     QString oiStr = QString("%1").arg(oi, 4, 16, QChar('0')).toUpper();
     QString desc =
         QString("OI:%1, Attr:%2, Idx:%3").arg(oiStr).arg(attr).arg(idx);
+    QString summary;
+    QString detail;
 
     // Lookup
     def = Prot698OadManager::instance().getAttrDef(oiStr, attr);
@@ -2521,21 +2530,29 @@ Prot698AttrDef *Prot698Parser::parseOAD(const QByteArray &data, int &offset,
       }
 
       // Also check Object Name?
+      detail = desc;
       Prot698ObjDef *obj = Prot698OadManager::instance().getObjDef(oiStr);
       if (obj) {
+        summary = obj->name;
+        if (!def->name.isEmpty() && def->name != obj->name) detail = def->name + " · " + detail;
         desc = obj->name + " - " + def->name + " (" + desc + ")";
       } else {
+        summary = def->name;
         desc += " (" + def->name + ")";
       }
     } else {
       Prot698ObjDef *obj = Prot698OadManager::instance().getObjDef(oiStr);
       if (obj) {
+        summary = obj->name;
+        detail = desc;
         desc = obj->name + " (" + desc + ")";
       }
     }
 
     fields.append(Prot698Field("OAD", QString(oad.toHex().toUpper()), desc,
                                offset, 4, indent));
+    fields.last().summary = summary;
+    fields.last().detail = detail;
     offset += 4;
   }
   return def;

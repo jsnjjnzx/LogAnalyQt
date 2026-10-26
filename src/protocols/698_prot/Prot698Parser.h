@@ -17,6 +17,8 @@ struct Prot698Field {
   int offset;
   int length;
   int indent = 0;
+  QString summary;
+  QString detail;
 
   Prot698Field() {}
   Prot698Field(const QString &n, const QString &v, const QString &d, int o,

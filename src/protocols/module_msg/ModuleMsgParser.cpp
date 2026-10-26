@@ -723,6 +723,8 @@ QList<ModuleMsgField> ModuleMsgParser::parseToFields(const QByteArray &data) {
 
     fields.append(
         ModuleMsgField(f.name, val, desc, f.offset, f.length, indent));
+    fields.last().summary = f.valueStr.isEmpty() ? desc : f.valueStr;
+    if (!f.valueStr.isEmpty() && desc != f.valueStr) fields.last().detail = desc;
 
     // 递归处理子字段
     for (const auto &child : f.children) {

@@ -94,6 +94,8 @@ struct AppMsgField {
   int offset = -1;     // 字节偏移
   int length = -1;     // 字节长度
   int indent = 0;      // 缩进层级
+  QString summary;
+  QString detail;
 
   AppMsgField() = default;
   AppMsgField(const QString &n, const QString &v, const QString &d, int o = -1,
