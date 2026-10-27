@@ -127,3 +127,9 @@
 - 用户已明确授权当前改动提交、远端推送及正式 Release 发布。复用 build.yml / release.yml / verify-release.yml，先验证 main 相同提交，后推送标签，不绕过产物来源、摘要或公开更新门禁。
 - 当前发布范围包含快捷命令编辑、按 SSH 会话记录/导出日志与批量写入、长行显示和已确认的监控交互修正。CHANGELOG 只提主要功能与重要修复，细小样式调整不单列。
 - 当前本地源码审查与回归执行状态记入 test-report.md / review-record.md；CI 未完成前不声明双平台或正式发布通过。远端产物与本地验收附件不混入唯一验证应用目录；个人配置及 .local-backup 不纳入提交。
+
+### T25 发布结果与后续边界
+
+v5.0.1 已于 2026-10-27 正式公开并设为 latest。发行标签固定在 `6352f434210f075a0a2c65482feb6a6687657c0b`；双平台构建 [40437509782](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40437509782)、发布及公开更新 [40438953030](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40438953030) 均成功。最终补记单独提交，仅记录已有证据，不移动发行标签或改变已验收的程序。
+
+[正式下载页](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.1) 包含 EXE、DMG、自动更新 ZIP、对应摘要和 update.json。本地验证应用仍直接位于 release_package/通联工坊.app，验收 JSON 与日志统一放构建目录，不在交付目录堆放附件。macOS ad-hoc/未经公证及真实设备未验证的边界保持明确。

@@ -234,4 +234,28 @@
 
 最初误将独立性能工程的 ssh_success_session_tests 作为主工程 target，Ninja 提示 unknown target；移除该不存在的目标后重新构建成功，未将该独立网络测试记为本轮已运行。
 
-证据：/tmp/loganalyqt-v501-tooling.log、/tmp/loganalyqt-v501-qml.log、/tmp/loganalyqt-v501-build.log、/tmp/loganalyqt-v501-native.log。当前本机构建尚未替换唯一验证应用；远端 Windows/macOS 构建、成品启动和公开更新验收必须使用本次提交的 GitHub 工作流结果，未完成前不记为通过。真实设备与 SSD 物理写入未验证。
+证据：/tmp/loganalyqt-v501-tooling.log、/tmp/loganalyqt-v501-qml.log、/tmp/loganalyqt-v501-build.log、/tmp/loganalyqt-v501-native.log。本次源码提交时，本机构建尚未替换唯一验证应用；远端 Windows/macOS 构建、成品启动和公开更新验收必须使用本次提交的 GitHub 工作流结果，未完成前不记为通过。真实设备与 SSD 物理写入未验证。
+
+### T25 本地 5.0.1 成品补充验收
+
+- 复用现有 macOS 部署步骤，暂存于 build/macos-debug/deploy-v501；macdeployqt 在沙箱内停滞，结束该进程后在允许原生工具的环境中部署完成。原生部署路径使用已安装的 /opt/homebrew/bin/macdeployqt，最初不存在的 /opt/homebrew/opt/qt/bin 路径未作为成功执行。按项目脚本移除未用 SQL 驱动并修正 dylib IDs。
+- 首次成品离屏运行失败，原因是 macdeployqt 默认只部署 Cocoa 插件。补入当前 Qt 的 offscreen 插件后重新签名，114 个 Mach-O 的 arm64/随包依赖检查、codesign deep strict 通过。
+- 清理 Qt/QML/DYLD 环境变量后，在临时个人数据目录中运行 tests/test_ui_migration_runtime.py，全套通过：配置迁移与冲突保护、11 个独立页签和重启保留、监控规则持久化、MQTT 本机收发及 Broker 清理；未使用真实设备。证据：/tmp/loganalyqt-v501-packaged-runtime.log。
+- 已直接更新 release_package/通联工坊.app；版本 5.0.1，主程序 SHA256 为 1b77e7a807330eb9784c749d87c0eec7a8efeddc75c8f979b715824fe19dd3d3；最终签名和暂存/交付摘要一致。目录中只保留应用，清除 Finder 自动生成的 .DS_Store；不创建 ZIP 或旧应用备份。结构化本地验收记录位于 build/macos-debug/v5.0.1-local-verification.json。
+
+本地交付为 Debug/ad-hoc，非 Apple 公证版；不等同于 GitHub Release 的跨平台发行验收。
+
+### T25 远端构建、正式发行与公开更新最终验收
+
+| 范围 | 实际证据 | 结果 |
+|---|---|---|
+| 同一提交双平台构建 | [40437509782](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40437509782)，head 6352f434210f075a0a2c65482feb6a6687657c0b | 总体 success；Windows 常规 CTest 25/25、UI 1/1；macOS 常规 CTest 28/28、UI/原生激活 2/2，两个平台预检/稳定性、打包、独立启动及 HTTPS 更新探测通过 |
+| 产物来源门禁 | 运行 find_validated_build.py --repository jsnjjnzx/LogAnalyQt --commit 6352f434210f075a0a2c65482feb6a6687657c0b | 通过；选择 40437509782，两个平台成功、两份产物未过期且同仓库同提交，随后才推送 v5.0.1 标签 |
+| 正式发行 | [v5.0.1](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.1)、[40438953030](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40438953030) | 发布任务 success；非草稿/非预发布且 latest；7 个附件名称完整，说明来源于 CHANGELOG |
+| 元数据与摘要 | 保存远端 release.json，下载 update.json 后通过 Python assert 检查 | update.json 实际 SHA256 与 GitHub digest 一致；清单 6 项附件的名称、大小、摘要、下载地址与远端元数据完全一致；公开前上传摘要门禁由现有发布脚本完成 |
+| Windows/macOS 公开更新 | 同一发布 run 的两个 Verify published update 任务，生产客户端与 tests/test_github_update.py | 均 success；真实公开下载、SHA256、保存/替换、重启至 5.0.1、主窗口可见（macOS 激活）、工作区草稿和便携数据保留均通过 |
+| 六份流程文档与交付 | spec/backlog/AGENTS/notes/test-report/review-record、固定本地应用、git diff --check | 已逐一核对；历史记录与最新发行结果区分明确，不将生成物或个人配置纳入源码提交 |
+
+最终证据位于 `build/v5.0.1-release-evidence/`：verification.json、release.json、update.json、update-verification.log。公开来源以对应 Actions 和 Release 链接为准；本地应用证据见上一节。
+
+验证边界：CI 使用受控运行器与合成数据，不代表实体 Windows 电脑、用户企业网络或真实 SSH 设备验收。macOS 仍为 ad-hoc 签名，未经 Apple 公证；未测 SSD 物理写入量。

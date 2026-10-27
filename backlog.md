@@ -96,4 +96,12 @@
 
 | 任务 | 对应需求 | 当前记录与验收 |
 |---|---|---|
-| T25 提交当前改动并发布 v5.0.1 | RELEASE-04、05、PROCESS-01 | 进行中：核对六份流程文档、更新版本与主要说明，执行提交前回归及自审；随后推送 main、等待相同提交双平台构建、推送标签并验收正式 Release。最终证据见本节后续执行记录及 GitHub 工作流，不以计划代替成功 |
+| T25 提交当前改动并发布 v5.0.1 | RELEASE-04、05、PROCESS-01 | 已完成：源码提交 6352f43 已推送 main，v5.0.1 标签指向同一提交；双平台构建、7 个 Release 附件、公开自动更新均通过；本地唯一验证应用已更新 5.0.1。执行链接与证据见下方记录 |
+
+### T25 发布完成记录
+
+- 发行源码提交：`6352f434210f075a0a2c65482feb6a6687657c0b`，已推送 origin/main；标签 `v5.0.1` 指向同一提交。
+- [双平台构建 40437509782](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40437509782)：Windows x64、macOS arm64 均成功；既有 find_validated_build.py 校验相同提交及两份未过期产物来源通过。
+- [正式 Release v5.0.1](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.1)：2026-10-27 10:32（Asia/Shanghai）公开，非草稿、非预发布，已确认为 latest。EXE、DMG、更新 ZIP、3 个 SHA256 文件及 update.json 共 7 个附件完整，说明与本版 CHANGELOG 一致。
+- [发布与公开更新验收 40438953030](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40438953030)：发布任务及 Windows/macOS 公开更新均成功；真实下载、摘要验证、替换、重启至 5.0.1 和工作区/便携数据保留通过。
+- 本地 `release_package/通联工坊.app` 为已验证 5.0.1 Debug/ad-hoc 应用；交付目录只保留应用。最终结构化证据 `build/v5.0.1-release-evidence/verification.json`，本地成品证据 `build/macos-debug/v5.0.1-local-verification.json`。未把 CI 等同于实体 Windows、真实 SSH 设备或 Apple 公证验收。
