@@ -1,5 +1,6 @@
 import LogAnalyQt.Next as Next
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -36,6 +37,10 @@ Rectangle {
         z: 1
         width: parent.width; height: nav.nativeWindowControls ? 46 : 18
         onPressed: if (nav.targetWindow) nav.targetWindow.startSystemMove()
+        onDoubleClicked: if (nav.nativeWindowControls && nav.targetWindow.visibility !== Window.FullScreen) {
+            if (nav.targetWindow.visibility === Window.Maximized) nav.targetWindow.showNormal();
+            else nav.targetWindow.showMaximized();
+        }
     }
     Flickable {
         objectName: "nav-menu"

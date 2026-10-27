@@ -156,3 +156,21 @@
 - [正式 Release v5.0.2](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.2)：2026-10-27 12:25（Asia/Shanghai）公开，非草稿/非预发布且 latest，EXE、DMG、更新 ZIP、3 个摘要和 update.json 共 7 个附件齐全。
 - [发布与公开更新 40449577483](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40449577483)：发布及 Windows/macOS 公开更新均 success；真实下载、SHA256、替换、重启至 5.0.2、工作区草稿/便携数据保留通过。
 - 结构化证据：`build/v5.0.2-release-evidence/verification.json`；本地 5.0.2 Debug/ad-hoc 成品记录：`build/macos-debug/v5.0.2-local-verification.json`。本地 `release_package/通联工坊.app` 已更新，交付目录只放应用。
+
+## macOS 顶栏双击（2026-10-27）
+
+| 任务 | 对应需求 | 当前记录与验收 |
+|---|---|---|
+| T33 修复主窗口顶栏双击最大化 | MACWIN-01、LOCAL-05 | 已完成：侧栏顶区及右侧顶部安全空白支持最大化/还原；89 项 QML、真实 Cocoa 双击 3 轮、原生按钮/全屏、完整成品 Cocoa UI/MQTT 与依赖/签名通过，唯一测试应用已更新；未提交或发布 |
+
+## 紧凑连接配置（2026-10-27）
+
+| 任务 | 对应需求 | 当前记录与验收 |
+|---|---|---|
+| T34 增加收起按钮并改为四组参数一行 | SSHUI-12、13、LOCAL-05 | 已完成：标题右侧“收起配置”，四组参数并排、30 像素/12 字号；109 项 QML、正常/最小宽度预览、草稿/连接/日志保留、极窄焦点滚动和独立窗口通过；完整成品 Cocoa UI/MQTT、114 个 Mach-O 与签名通过，唯一测试应用已更新；未提交或发布 |
+
+## v5.0.3 发布（2026-10-27）
+
+| 任务 | 对应需求 | 当前记录与验收 |
+|---|---|---|
+| T35 提交推送并正式发布 v5.0.3 | RELEASE-08、09、PROCESS-01、LOCAL-05 | 进行中：统一版本与说明，执行本地回归/自审；推送 main，待同提交双平台通过后创建标签，验收正式 Release 和公开更新 |

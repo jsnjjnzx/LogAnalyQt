@@ -781,6 +781,47 @@ Item {
                 parent = originalParent
             }
         }
+        function test_visibleConfigCloseKeepsDraftsConnectionAndLogging() {
+            make()
+            const a = page.activeSession
+            item(a, "ssh-host").text = "draft.example"
+            item(a, "ssh-port").text = "2222"
+            item(a, "ssh-password-draft").text = "synthetic-draft"
+            connected(a); a.terminal.logging = true
+            const before = a.connectionConfiguration()
+            const connects = a.terminal.connectCalls, disconnects = a.terminal.disconnectCalls
+            const close = item(a, "ssh-config-close")
+            verify(close.visible && close.text === "收起配置")
+            verify(waitForPolish(a)); wait(20)
+            const grid = item(a, "ssh-connection-fields")
+            verify(close.mapToItem(a, 0, close.height).y <= grid.mapToItem(a, 0, 0).y)
+            const scroll = item(a, "ssh-connection-scroll")
+            for (const width of [940, 1180]) {
+                page.width = width; verify(waitForPolish(page)); wait(20)
+                verify(scroll.contentWidth <= scroll.width + 1, "four groups must fit the normal main window")
+                const firstRow = ["ssh-session-name", "ssh-host", "ssh-port", "ssh-username"]
+                const first = item(a, firstRow[0])
+                for (const name of firstRow) {
+                    const field = item(a, name)
+                    compare(field.y, first.y); compare(field.height, 30)
+                    verify(field.x + field.width <= scroll.width + 1)
+                }
+            }
+            mouseClick(close); wait(20)
+            verify(!a.connectionConfigExpanded && !item(a, "ssh-connection-scroll").visible)
+            verify(a.terminal.connected && a.terminal.logging)
+            compare(a.terminal.connectCalls, connects); compare(a.terminal.disconnectCalls, disconnects)
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            mouseClick(item(scene.Window.window.contentItem, "ssh-session-config-" + a.sessionId)); wait(20)
+            verify(a.connectionConfigExpanded && close.visible)
+            const after = a.connectionConfiguration()
+            compare(after.host, before.host); compare(after.port, before.port); compare(after.password, before.password)
+            verify(page.detachSession(a)); a.connectionConfigExpanded = true; wait(30)
+            verify(close.visible && !item(a, "ssh-config-toggle").visible)
+            close.forceActiveFocus(); keyClick(Qt.Key_Space); wait(20)
+            verify(!a.connectionConfigExpanded && item(a, "ssh-config-toggle").visible)
+            verify(a.terminal.connected && a.terminal.logging)
+        }
         function test_removedSummaryLeavesNoEmptyPanelButKeepsConfigErrorsAndLogging() {
             make()
             const a = page.activeSession

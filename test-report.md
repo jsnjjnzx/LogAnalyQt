@@ -352,3 +352,53 @@
 最终证据位于 `build/v5.0.2-release-evidence/`：verification.json、release.json、update.json、update-verification.log。正式远端结果以所链接的 Actions 和 Release 为准。
 
 限制：偶发首次 SSH 粉红提示仍未定位，本次未改 SSH 连接逻辑；受控 CI/合成数据不代表实体 Windows、企业网络或真实 SSH 设备验收。macOS 为 ad-hoc 签名，未经 Apple 公证。
+
+## 2026-10-27 macOS 顶栏双击最大化（T33）
+
+| 范围 | 执行方式 | 实际结果 |
+|---|---|---|
+| 修复前复现 | 新增 NativeNavigationChrome 双击用例，修复前运行 | 失败：预期 Maximized（4），实际 Windowed（2）；当时 nav-window-drag 确实无双击处理 |
+| 完整 QML | QT_QPA_PLATFORM=offscreen python3 tests/prot698_qml_tests.py | 最终 89 passed / 0 failed，4.361 秒；覆盖连续最大化/还原、单击仍调用拖动、全屏保持、非原生侧栏行为、真实 QQuickWindow 及原有标题栏/解析/通用控件 |
+| 真实 Cocoa 双击 | 同一测试入口，NativeNavigationChrome::test_doubleClickOnARealWindowMaximizesAndRestores --repeat 3 | 3 轮均通过，每轮使用 Qt 标准双击序列在真实 Cocoa 窗口加载生产 Navigation，完成两次最大化/还原并恢复原尺寸；系统输入法 CFMessagePort 提示未造成用例失败，不作为输入法验收 |
+| 原生控件与全屏 | QT_QPA_PLATFORM=cocoa ctest -R '^mac_backdrop_tests$' --verbose --output-on-failure | 1/1 通过，7.31 秒；原生材质、红黄绿、最小化/恢复、缩放、两次全屏往返及清理正常 |
+| 主窗口处理与 UI | QT_QPA_PLATFORM=cocoa python3 tests/test_ui_migration_runtime.py build/macos-debug/appLogAnalyQt.app/Contents/MacOS/appLogAnalyQt | 最终完整通过；主窗口两处生产 QML 双击信号处理各执行两轮最大化/还原，检查原生窗口状态和完整几何恢复、顶部区域不侵入页面；配置迁移/重启恢复、会话/规则和 MQTT 本机收发正常。这里验证处理函数，不冒称 C++ 手工事件等同真实鼠标序列 |
+| 构建与部署 | cmake --build build/macos-debug --target bundle_mqtt_broker mac_backdrop_tests -j 4；更新内嵌 CHANGELOG 后增量构建；随包依赖/签名 | 成功，114 个 Mach-O 的 arm64/系统及随包依赖通过，codesign deep strict 通过，仅既有重复 OpenSSL 链接提示 |
+| 最终独立成品 Cocoa | 清理 Qt/QML/DYLD 环境，使用临时配置运行 tests/test_ui_migration_runtime.py build/macos-debug/title-doubleclick/通联工坊.app/Contents/MacOS/appLogAnalyQt | 完整 UI/MQTT 通过，含新增主窗口处理及几何断言；通过后更新唯一 release_package/通联工坊.app，摘要/签名一致 |
+
+调试失败未记为通过：首版测试夹具 theme 同名引用自身产生 TypeError，改为独立 testTheme。C++ 手工 MouseButtonDblClick 投递未触发主窗口 QML 链路，直接信号诊断能正常最大化，转用 Qt 标准双击序列做手势验收并单独验证生产主窗口处理。一次完整 Cocoa 回归在 MQTT Broker 配置控件定位失败；独立复测、随后串行完整复测和最终独立成品回归均通过，未改动 MQTT 或放宽其断言，失败原因未确认。
+
+证据：/tmp/loganalyqt-title-doubleclick-before.log、/tmp/loganalyqt-title-doubleclick-qml.log、/tmp/loganalyqt-title-doubleclick-real-window.log、/tmp/loganalyqt-title-doubleclick-cocoa.log、/tmp/loganalyqt-title-doubleclick-native-ui.log、/tmp/loganalyqt-title-doubleclick-packaged.log。结构化记录：build/macos-debug/title-doubleclick-verification.json。最终主程序 SHA256：e626f8e9a4dbcd1f7eb29c0225f34b888ac260d5ec1413f30d0a61f1960fdadf。
+
+六份流程文档和 git diff --check 已核对。未连接真实 SSH 设备，未重跑后端协议专项或 Windows 实机验收；未做人工鼠标/多显示器长期验收。版本保持 5.0.2 本地 Debug/ad-hoc，修复列入未发布 CHANGELOG，本轮未提交或发布。
+
+## 2026-10-27 明确收起入口与四组参数表单（T34）
+
+| 范围 | 执行方式 | 实际结果 |
+|---|---|---|
+| 真实 QML 回归 | python3 tests/stage10_qml_tests.py | 最终 109 passed / 0 failed，24.927 秒；主区/独立窗口鼠标及 Space 收起、菜单重开、草稿/连接/持续记录保留；四组同排、30 像素字段、编码完整、校验/只读/重连与原监控/命令/全局提示回归通过 |
+| 正常/窄区域 | 工作区宽度 940/1180、单会话 560/902/1160/1600 的布局及焦点检查 | 正常和主窗口最小宽度四组完整可见；极窄区域水平滚动，键盘焦点可将字段带入视口，收起按钮始终位于滚动区外 |
+| 渲染专项 | 临时测试副本捕获普通和主窗口最小宽度图，人工查看 | 3 passed / 0 failed，0.543 秒；标题右侧按钮明确，首两行各四组参数、末行余下两组，无重叠或空白占位；截图 /tmp/loganalyqt-compact-config.png、/tmp/loganalyqt-compact-config-min-width.png |
+| 构建 | cmake --build build/macos-debug --target bundle_mqtt_broker -j 4，README 更新后资源增量构建 | 成功；只有既有重复 OpenSSL 链接提示，未增加依赖 |
+| Cocoa 原始成品 | 临时配置下运行 tests/test_ui_migration_runtime.py | 完整 UI/MQTT 通过；包含上一轮 macOS 顶栏处理与几何断言，配置迁移、工作区/会话重启恢复及 MQTT 本机收发正常 |
+| 最终随包验收 | 114 个 Mach-O 架构/依赖、codesign deep strict；清理 Qt/QML/DYLD 环境后对 build/macos-debug/compact-config/通联工坊.app 运行同一 Cocoa 完整回归 | 均通过；确认独立应用可运行，主题/全局样式与本轮表单共同生效 |
+| 唯一交付与流程 | 更新 release_package/通联工坊.app，源/目标摘要、签名、目录与六份流程文件核对 | 一致；目录只放应用，无 ZIP 或旧应用备份，git diff --check 通过 |
+
+最初保留的旧“所有参数单行”断言按新需求失败，随后替换为四组参数/三行、窄区域和焦点可达性检查，保留编码激活、完整显示和配置行为验证；未把失败写作通过。
+
+最终主程序 SHA256：0bbc01585c323bbc31486afd8695d97550af9051755eea87660a97d869ed91a2。结构化记录：build/macos-debug/compact-config-verification.json。日志：/tmp/loganalyqt-compact-config-qml.log、/tmp/loganalyqt-compact-config-build.log、/tmp/loganalyqt-compact-config-visual.log、/tmp/loganalyqt-compact-config-native-ui.log、/tmp/loganalyqt-compact-config-packaged.log。
+
+未改后端/协议/持久化格式，未重复 SSH 后端专项或 Windows 实机验收；保留之前 macOS 顶栏修复。版本仍为 5.0.2 本地 Debug/ad-hoc，未提交、推送或发布。
+
+## 2026-10-27 v5.0.3 提交前回归（T35）
+
+| 范围 | 实际执行 | 结果 |
+|---|---|---|
+| 版本/格式 | check_build.py、CMake/README/CHANGELOG、git diff --check | 5.0.3 一致，格式通过，主要说明两项 |
+| 监控/配置/全局提示 | python3 tests/stage10_qml_tests.py | 109 passed / 0 failed，23.862 秒 |
+| 窗口/解析/通用控件 | QT_QPA_PLATFORM=offscreen python3 tests/prot698_qml_tests.py | 89 passed / 0 failed，4.218 秒；macOS 真实 Cocoa 历史结果见 T33，未将本次 offscreen 写成 Cocoa |
+| 发布工具 | python3 -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release tests.test_ci_workflow -v | 38/38 通过，2.163 秒；临时 HTTP 服务仅监听 127.0.0.1 |
+| 本机构建 | cmake --build build/macos-debug --target bundle_mqtt_broker -j 4 | 成功，主程序/Broker 重新生成；仅既有重复 OpenSSL 链接提示 |
+
+日志：/tmp/loganalyqt-v503-qml.log、/tmp/loganalyqt-v503-parser.log、/tmp/loganalyqt-v503-tooling.log、/tmp/loganalyqt-v503-build.log。提交前逐一核对六份流程文档，发布范围为 T33/T34，后端和持久化格式未变。
+
+本次提交时，远端同提交构建、正式附件和公开更新尚待执行，本地固定应用也须后续更新为 5.0.3；不得把 T33/T34 或上一版本结果替代本次发行验收。

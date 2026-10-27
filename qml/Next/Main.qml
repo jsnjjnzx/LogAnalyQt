@@ -1087,6 +1087,17 @@ ApplicationWindow {
         anchors.right: parent.right; anchors.bottom: parent.bottom
         anchors.margins: mainWindow.currentPage === 15 ? 12 : 18
     }
+    MouseArea {
+        objectName: "mac-titlebar-drag"
+        visible: mainWindow.nativeTitleBar && mainWindow.visibility !== Window.FullScreen
+        anchors.top: parent.top; anchors.left: navigation.right; anchors.right: parent.right
+        height: pageDeck.anchors.topMargin
+        onPressed: mainWindow.startSystemMove()
+        onDoubleClicked: {
+            if (mainWindow.visibility === Window.Maximized) mainWindow.showNormal();
+            else mainWindow.showMaximized();
+        }
+    }
     Next.MqttPage {
         id: mqttPage
         backend: mainWindow.analysisBackend

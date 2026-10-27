@@ -127,7 +127,7 @@ Item {
             const terminal = item("ssh-terminal-pane")
             const expandedHeight = terminal.height
             const disconnects = ssh.disconnectCalls
-            mouseClick(item("ssh-config-toggle"))
+            mouseClick(item("ssh-config-close"))
             tryCompare(item("ssh-connection-scroll"), "visible", false)
             verify(!item("ssh-save-password").visible)
             verify(!item("ssh-clear-password").visible)
@@ -148,7 +148,7 @@ Item {
             compare(item("ssh-encoding").currentText, "GB2312")
             edit("ssh-host", "very-long-monitor-hostname-".repeat(8) + ".example")
             page.width = 900
-            mouseClick(item("ssh-config-toggle")); verify(waitForPolish(page))
+            mouseClick(item("ssh-config-close")); verify(waitForPolish(page))
             verify(findChild(page, "ssh-target-summary") === null)
             const connect = item("sshConnectAction")
             verify(connect.mapToItem(page, connect.width, 0).x <= page.width)
@@ -160,7 +160,7 @@ Item {
             make(nextSsh)
             const ssh = item("ssh-terminal-backend")
             edit("ssh-password-draft", "connect-fold-draft")
-            mouseClick(item("ssh-config-toggle"))
+            mouseClick(item("ssh-config-close"))
             mouseClick(item("sshConnectAction")); tryCompare(ssh, "connectCalls", 1)
             verify(!page.connectionConfigExpanded)
             ssh.connectionState = 2; ssh.connected = true
@@ -169,7 +169,7 @@ Item {
             page.selectLineAndExtractHex(0)
             page.searchKeyword = "RX"; page.refreshSearchResult()
             page.parseWindowVisible = true
-            mouseClick(item("ssh-config-toggle")); mouseClick(item("ssh-config-toggle"))
+            mouseClick(item("ssh-config-toggle")); mouseClick(item("ssh-config-close"))
             compare(ssh.currentLineCount, 2)
             compare(page.selectedLineIndex, 0)
             compare(page.selectedHexText.replace(/ /g, ""), "680407000000")
@@ -316,41 +316,44 @@ Item {
             compare(item("ssh-selected-text").text, text)
             compare(item("ssh-selected-text").selectedText.replace(/ /g, ""), "680407000000")
         }
-        function test_sshConnectionOptionsStayOnOneScrollableRow() {
+        function test_sshConnectionOptionsHaveFourCompactParameterGroups() {
             make(nextSsh)
             item("ssh-terminal-backend").autoReconnectEnabled = true
-            const scroll = item("ssh-connection-scroll")
+            const scroll = item("ssh-connection-scroll"), grid = item("ssh-connection-fields")
             const encoding = item("ssh-encoding")
-            const fields = [item("ssh-host"), encoding, item("ssh-buffer-lines"),
-                            item("ssh-reconnect-count"), item("ssh-reconnect-interval"), item("ssh-auto-reconnect")]
-            for (const width of [902, 1160, 1600]) {
-                page.width = width
-                wait(30)
-                for (const field of fields) {
-                    compare(field.parent, fields[0].parent, "all connection options must share one row")
-                    verify(Math.abs(field.y + field.height / 2 - fields[0].y - fields[0].height / 2) < 1)
-                    verify(field.width > 0 && field.y + field.height <= scroll.height)
+            const rows = [["ssh-session-name", "ssh-host", "ssh-port", "ssh-username"],
+                          ["ssh-password-draft", "ssh-encoding", "ssh-buffer-lines", "ssh-reconnect-count"],
+                          ["ssh-reconnect-interval", "ssh-auto-reconnect"]]
+            for (const width of [560, 902, 1160, 1600]) {
+                page.width = width; verify(waitForPolish(page)); wait(20)
+                compare(grid.columns, 8)
+                for (let row = 0; row < rows.length; ++row) {
+                    const first = item(rows[row][0])
+                    for (let column = 0; column < rows[row].length; ++column) {
+                        const field = item(rows[row][column])
+                        compare(field.parent, grid)
+                        verify(Math.abs(field.y + field.height / 2 - first.y - first.height / 2) < 1)
+                        compare(field.height, 30)
+                        verify(field.width > 0 && field.x + field.width <= grid.width + 1)
+                        if (column) verify(field.x > item(rows[row][column - 1]).x)
+                    }
+                    if (row) verify(first.y > item(rows[row - 1][0]).y)
                 }
                 for (const index of [0, 1]) {
-                    encoding.currentIndex = index
-                    encoding.activated(index)
-                    wait(10)
-                    verify(!encoding.contentItem.truncated, encoding.currentText + " must fit at width " + width)
+                    encoding.currentIndex = index; encoding.activated(index); wait(10)
+                    verify(!encoding.contentItem.truncated, encoding.currentText + " must fit")
                     compare(item("ssh-terminal-backend").encoding, encoding.currentText)
                 }
                 compare(scroll.ScrollBar.horizontal.visible, scroll.contentWidth > scroll.width)
-                if (width === 902) {
+                if (width === 560) {
                     verify(scroll.contentWidth > scroll.width)
                     scroll.contentX = scroll.contentWidth - scroll.width
-                    const last = fields[fields.length - 1]
-                    const right = last.mapToItem(scroll, last.width, 0).x
-                    verify(right <= scroll.width && right > 0, "horizontal scrolling must reveal automatic reconnect at the end")
-                    fields[0].forceActiveFocus()
-                    tryCompare(scroll, "contentX", fields[0].x)
-                    last.forceActiveFocus()
-                    wait(20)
-                    verify(last.mapToItem(scroll, last.width, 0).x <= scroll.width,
-                           "keyboard focus must scroll the active field into view")
+                    const first = item("ssh-session-name"), last = item("ssh-username")
+                    first.forceActiveFocus(); wait(20)
+                    verify(first.mapToItem(scroll, 0, 0).x >= 0)
+                    last.forceActiveFocus(); wait(20)
+                    verify(last.mapToItem(scroll, last.width, 0).x <= scroll.width + 1)
+                    verify(item("ssh-config-close").visible)
                 }
             }
         }

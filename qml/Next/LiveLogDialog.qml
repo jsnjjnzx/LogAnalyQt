@@ -1279,6 +1279,13 @@ GlassPage {
         placeholderTextColor: liveLogDialog.theme ? liveLogDialog.theme.placeholderText : "#aaaaaa"
     }
 
+    component ConnectionField: StyledTextField {
+        implicitHeight: 30
+        font.pixelSize: 12
+        Layout.fillWidth: true
+        Layout.minimumWidth: 64
+    }
+
     component StyledComboBox: Next.GlassComboBox {
         id: styledCbCtrl
         implicitHeight: 36
@@ -1413,7 +1420,28 @@ GlassPage {
             color: cardBg; border.color: cardBorder; radius: 10
             ColumnLayout {
                 id: connectionRows
-                anchors.fill: parent; anchors.margins: 10; spacing: 8
+                anchors.fill: parent; anchors.margins: 10; spacing: 6
+                RowLayout {
+                    objectName: "ssh-config-heading"
+                    visible: liveLogDialog.connectionConfigExpanded
+                    Layout.fillWidth: true
+                    Label {
+                        text: "连接配置"
+                        color: liveLogDialog.theme ? liveLogDialog.theme.text : liveLogDialog.labelColor
+                        font.pixelSize: 13; font.weight: Font.DemiBold
+                    }
+                    Item { Layout.fillWidth: true }
+                    StyledButton {
+                        objectName: "ssh-config-close"
+                        text: "收起配置"
+                        implicitWidth: 96; implicitHeight: 28
+                        padding: 4; horizontalPadding: 10; font.pixelSize: 12
+                        Accessible.name: "收起连接配置"
+                        ToolTip.visible: hovered
+                        ToolTip.text: "收起连接配置，保留已填写内容"
+                        onClicked: liveLogDialog.connectionConfigExpanded = false
+                    }
+                }
                 RowLayout {
                     id: connectionActions
                     visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached
@@ -1421,7 +1449,7 @@ GlassPage {
                     spacing: 8
                     StyledButton {
                         objectName: "ssh-config-toggle"
-                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached
+                        visible: (!liveLogDialog.workspaceManaged || liveLogDialog.detached) && !liveLogDialog.connectionConfigExpanded
                         text: liveLogDialog.connectionConfigExpanded ? "▾ 收起配置" : "▸ 连接配置"
                         Accessible.name: "连接配置"
                         Accessible.description: liveLogDialog.connectionConfigExpanded ? "已展开" : "已折叠"
@@ -1535,11 +1563,11 @@ GlassPage {
                     visible: liveLogDialog.connectionConfigExpanded
                     Layout.fillWidth: true
                     Layout.preferredHeight: liveLogDialog.workspaceManaged
-                        ? Math.min(connectionFields.implicitHeight, liveLogDialog.height * 0.6)
+                        ? Math.min(connectionFields.implicitHeight + (connectionScrollBar.visible ? connectionScrollBar.height : 0), liveLogDialog.height * 0.6)
                         : connectionFields.implicitHeight + (connectionScrollBar.visible ? connectionScrollBar.height : 0)
                     contentWidth: connectionFields.width
                     contentHeight: connectionFields.height
-                    flickableDirection: liveLogDialog.workspaceManaged ? Flickable.VerticalFlick : Flickable.HorizontalFlick
+                    flickableDirection: Flickable.AutoFlickDirection
                     boundsBehavior: Flickable.StopAtBounds
                     clip: true
                     ScrollBar.vertical: ScrollBar {
@@ -1559,7 +1587,6 @@ GlassPage {
                                 if (field.y < connectionScroll.contentY) connectionScroll.contentY = field.y;
                                 else if (field.y + field.height > connectionScroll.contentY + connectionScroll.height)
                                     connectionScroll.contentY = field.y + field.height - connectionScroll.height;
-                                return;
                             }
                             if (field.x < connectionScroll.contentX)
                                 connectionScroll.contentX = field.x
@@ -1569,12 +1596,13 @@ GlassPage {
                     }
                 GridLayout {
                     id: connectionFields
-                    width: liveLogDialog.workspaceManaged ? connectionScroll.width : Math.max(implicitWidth, connectionScroll.width)
-                    columns: liveLogDialog.workspaceManaged ? (connectionScroll.width >= 800 ? 4 : 2) : 100
-                    columnSpacing: 8
-                    rowSpacing: 8
+                    objectName: "ssh-connection-fields"
+                    width: Math.max(620, connectionScroll.width)
+                    columns: 8
+                    columnSpacing: 6
+                    rowSpacing: 6
                 Label { text: "名称"; color: labelColor; font.pixelSize: 12 }
-                StyledTextField {
+                ConnectionField {
                     objectName: "ssh-session-name"
                     Layout.preferredWidth: 110
                     text: liveLogDialog.sessionName
@@ -1586,7 +1614,7 @@ GlassPage {
                     color: labelColor
                     font.pixelSize: 12
                 }
-                StyledTextField {
+                ConnectionField {
                     id: hostInput
                     objectName: "ssh-host"
                     enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId
@@ -1601,7 +1629,7 @@ GlassPage {
                     color: labelColor
                     font.pixelSize: 12
                 }
-                StyledTextField {
+                ConnectionField {
                     id: portInput
                     objectName: "ssh-port"
                     enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId
@@ -1619,7 +1647,7 @@ GlassPage {
                     color: labelColor
                     font.pixelSize: 12
                 }
-                StyledTextField {
+                ConnectionField {
                     id: userInput
                     objectName: "ssh-username"
                     enabled: !liveLogDialog.sessionActive && !liveLogDialog.pendingSshAction && !liveLogDialog.passwordOperationId
@@ -1634,7 +1662,7 @@ GlassPage {
                     color: labelColor
                     font.pixelSize: 12
                 }
-                StyledTextField {
+                ConnectionField {
                     id: pwdInput
                     objectName: "ssh-password-draft"
                     Layout.preferredWidth: 140
@@ -1654,7 +1682,8 @@ GlassPage {
                     id: encodingCombo
                     objectName: "ssh-encoding"
                     Layout.fillWidth: liveLogDialog.workspaceManaged
-                    Layout.minimumWidth: 112
+                    implicitHeight: 30; font.pixelSize: 12
+                    Layout.minimumWidth: 96
                     Layout.preferredWidth: 112
                     model: ["UTF-8", "GB2312"]
                     Component.onCompleted: {
@@ -1670,7 +1699,7 @@ GlassPage {
                     color: labelColor
                     font.pixelSize: 12
                 }
-                StyledTextField {
+                ConnectionField {
                     id: maxLinesInput
                     objectName: "ssh-buffer-lines"
                     Layout.preferredWidth: 72
@@ -1684,22 +1713,13 @@ GlassPage {
                     }
                 }
 
-                // 竖分隔
-                Rectangle {
-                    visible: !liveLogDialog.workspaceManaged
-                    width: 1
-                    height: 22
-                    color: cardBorder
-                    opacity: 0.7
-                }
-
                 Label {
                     text: "次数"
                     color: labelColor
                     font.pixelSize: 12
                     opacity: sshTerminal.autoReconnectEnabled ? 1.0 : 0.4
                 }
-                StyledTextField {
+                ConnectionField {
                     id: reconnectCountInput
                     objectName: "ssh-reconnect-count"
                     Layout.preferredWidth: 46
@@ -1719,7 +1739,7 @@ GlassPage {
                     font.pixelSize: 12
                     opacity: sshTerminal.autoReconnectEnabled ? 1.0 : 0.4
                 }
-                StyledTextField {
+                ConnectionField {
                     id: reconnectIntervalInput
                     objectName: "ssh-reconnect-interval"
                     Layout.preferredWidth: 68
@@ -1740,6 +1760,9 @@ GlassPage {
                 }
                 Next.GlassSwitch {
                     objectName: "ssh-auto-reconnect"
+                    implicitHeight: 30
+                    topPadding: 1; bottomPadding: 1; leftPadding: 0; rightPadding: 0
+                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
                     checked: sshTerminal.autoReconnectEnabled
                     onToggled: sshTerminal.autoReconnectEnabled = checked
                     palette.button: liveLogDialog.theme ? liveLogDialog.theme.controlBackground : "#ffffff"
@@ -1747,7 +1770,6 @@ GlassPage {
                     palette.highlight: focusAccentColor
                 }
 
-                    Item { visible: !liveLogDialog.workspaceManaged; Layout.fillWidth: true }
                 }
                 }
                 RowLayout {

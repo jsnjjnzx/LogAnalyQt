@@ -154,6 +154,24 @@ inline QString checkMigratedUi(QQuickWindow *window) {
             "sidebar heading overlaps native window controls");
     require(uiItem("nav-window-drag") && uiItem("nav-window-drag")->height() == 46,
             "sidebar must retain a drag area around native controls");
+    trace("native titlebar maximize/restore handlers");
+    const QRect normalChromeGeometry = window->geometry();
+    for (const auto *name : {"nav-window-drag", "mac-titlebar-drag"}) {
+      auto *area = uiItem(name);
+      require(area && area->isVisible(), "native titlebar input area is missing");
+      if (QString::fromLatin1(name) == QStringLiteral("mac-titlebar-drag"))
+        require(area->height() == pageDeck->mapToScene(QPointF()).y(), "native top drag area overlaps page controls");
+      for (int cycle = 0; cycle < 2; ++cycle) {
+        for (const auto expected : {QWindow::Maximized, QWindow::Windowed}) {
+          QQmlExpression doubleClick(qmlContext(area), area, "doubleClicked(null)");
+          doubleClick.evaluate();
+          require(!doubleClick.hasError(), "native titlebar handler invocation failed");
+          settle();
+          require(window->visibility() == expected, "native titlebar handler did not maximize/restore");
+        }
+      }
+      require(window->geometry() == normalChromeGeometry, "titlebar restore changed normal geometry");
+    }
 #else
     require(titleBar->isVisible() && titleBar->height() == 36 && titleBar->width() == window->width(),
             "custom window title bar must be compact and span the whole window");
