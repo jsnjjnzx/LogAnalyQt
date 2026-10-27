@@ -503,3 +503,36 @@
 包体积实验另存build/package-size-analysis/v5.0.3：macOS副本只保留arm64，ZIP从66,881,210到39,134,609字节（-41.5%），签名和隔离Cocoa完整UI/MQTT通过；Windows原EXE未改，普通ZIP从83,862,548到33,717,646字节（-59.8%），完整性校验通过。均未发布或替换本次正式附件，不能宣称v5.0.4已经瘦身。
 
 CI/合成样例不代表Windows实机、企业网络或真实SSH/计量设备现场验收；macOS为ad-hoc，未经Apple公证。
+
+
+## 2026-10-27 全局预览规约/方向筛选（T39）
+
+| 范围 | 执行方式与证据 | 实际结果 |
+|---|---|---|
+| 模型筛选及原始身份 | 正式tests/MigrationUiChecks.h新增合成模型断言，随--ui-checks执行 | 8行、2规约；方向旧映射/未知归类、去重选项、交集、两列全不选、清除筛选、重扫清空选项、源行号和rawData保留均通过 |
+| 实际预览交互 | 同一正式运行时回归操作真实Main.qml及后端 | 多选后弹层保持、表头高亮、清旧解析、Space全不选、Escape关闭、筛选后首行解析原第3行、右键返回并精确选中原始整行、同文件重进保留筛选、新文件重置/刷新、扫描中换文件无旧行混入均通过 |
+| 本机构建 | cmake --build --preset macos-debug --target appLogAnalyQt；/tmp/loganalyqt-preview-filter-build.log | 成功，版本5.0.4；沿用现有OpenSSL重复链接警告，新增筛选代码无弃用接口警告 |
+| 现有QML | python3 tests/prot698_qml_tests.py；python3 tests/stage10_qml_tests.py | 89 passed、0 failed；109 passed、0 failed，后者日志/tmp/loganalyqt-preview-filter-stage10.log |
+| 开发应用完整回归 | python3 tests/test_ui_migration_runtime.py build/macos-debug/appLogAnalyQt.app/Contents/MacOS/appLogAnalyQt，在允许本机回环环境 | 完整UI/MQTT/迁移/多页工作区/重启保留通过；/tmp/loganalyqt-preview-filter-runtime.log；此轮早于随后补入的扫描中换文件与键盘断言，后两者以最终成品回归为准 |
+| 最终独立成品 | 清除QT/QML/DYLD开发路径变量，QT_QPA_PLATFORM=cocoa运行同一测试器，目标build/macos-debug/preview-filter-package/通联工坊.app | 最终完整原生Cocoa UI/MQTT、所有新增断言、迁移、工作区/配置保留通过；/tmp/loganalyqt-preview-filter-packaged-runtime.log；最终.filtered.png和.picker.png截图已实际查看，布局无重叠/越界 |
+| 依赖、签名、交付一致性 | check_build.py --macos-bundle、codesign --verify --deep --strict；所有普通文件SHA256和符号链接清单比对 | 最终成品及交付应用125个Mach-O均含arm64且只引用随包/系统依赖，签名通过；已验收成品与交付全文件清单一致，唯一release_package/通联工坊.app已更新，目录未新增压缩包/测试附件/旧应用备份 |
+| 六份流程文件及格式 | 逐一核对AGENTS.md/spec/backlog/notes/test-report/review-record，git diff --check | 与T39实现和实际验证一致；AGENTS规则适用，无需修改规则正文 |
+
+首次新增定位断言使用预览中带空格HEX比较原始紧凑日志，失败后改为精确核对原日志整行；不是将格式化预览当作原文。第一轮完整运行在MQTT回环端口分配受限处退出，获准本机回环后通过。最终成品第一次Cocoa启动因同步主程序后未重新整理开发Qt依赖而失败，已重新部署、签名、检查全部随包依赖并复跑完整Cocoa成功；失败包未替换交付应用。保留这些失败事实，不将首轮记为通过。
+
+交付证据build/macos-debug/preview-filter-verification.json；主程序SHA256为c834dc94999883613ae521bf351f9786a0e696405ecdacce5d1341dca575fc14。此次未执行全量CTest、Windows构建/实机、真实SSH/计量设备或人工全流程操作；原列宽拖动代码未改，自审检查5像素拖动区保留，未新增人工拖动验收。macOS为ad-hoc签名，未经Apple公证。版本保持5.0.4，未提交推送或发布。
+
+
+## 2026-10-27 v5.0.5 发行准备（T40）
+
+| 范围 | 执行与证据 | 实际结果 |
+|---|---|---|
+| 版本/说明 | check_build.py、CMake/README/CHANGELOG核对 | 5.0.5一致，说明只记录主要筛选功能，原T39的5.0.4记录保留为历史 |
+| 最终本机构建 | cmake --build --preset macos-debug --target appLogAnalyQt；/tmp/loganalyqt-v505-build.log | 成功 |
+| QML两组 | prot698_qml_tests.py、stage10_qml_tests.py；/tmp/loganalyqt-v505-qml.log、/tmp/loganalyqt-v505-stage10.log | 89 passed、0 failed；109 passed、0 failed |
+| 发布工具 | python3 -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release tests.test_ci_workflow -q，允许本机模拟服务；/tmp/loganalyqt-v505-release-tests.log | 38 tests，OK |
+| 应用/解析 | ctest --test-dir build/macos-debug -R '^(ui_migration_runtime\|ui_mqtt_parse_runtime\|ui_parse_table_runtime)$' --output-on-failure；/tmp/loganalyqt-v505-runtime-tests.log | 3/3通过，46.36秒，包含T39模型、预览交互、键盘、原文定位及扫描中换文件回归 |
+| 本地成品依赖 | build/macos-debug/v5.0.5-package/通联工坊.app，macdeployqt、codesign和check_build.py；/tmp/loganalyqt-v505-package.log | 125个Mach-O/arm64/随包依赖及deep strict签名通过，最终Cocoa运行与交付结果待实际补记 |
+| 六份根文档及格式 | 逐一核对及git diff --check | 与本次范围一致；AGENTS规则已核对，无需修改规则；应用、生成证据、个人配置/备份不纳入提交 |
+
+此时远端同提交双平台构建及正式发布/公开更新尚未完成；按RELEASE-13等待门禁，不提前宣称Windows或正式发布通过。本次不是全量本地CTest，真实设备与Apple公证仍未验证。

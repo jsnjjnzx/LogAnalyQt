@@ -22,6 +22,7 @@
 #include <QTextStream>
 
 class QTimer;
+class GlobalPreviewFilter;
 
 struct ParseResultItem {
   QString name;
@@ -107,6 +108,10 @@ private:
 // 全局预览数据模型
 class GlobalPreviewModel : public QAbstractListModel {
   Q_OBJECT
+  Q_PROPERTY(QAbstractItemModel *filteredModel READ filteredModel CONSTANT)
+  Q_PROPERTY(QStringList protocols READ protocols NOTIFY protocolsChanged)
+  Q_PROPERTY(QStringList excludedProtocols READ excludedProtocols WRITE setExcludedProtocols NOTIFY filtersChanged)
+  Q_PROPERTY(QStringList excludedDirections READ excludedDirections WRITE setExcludedDirections NOTIFY filtersChanged)
 public:
   enum Roles {
     TimestampRole = Qt::UserRole + 1,
@@ -116,7 +121,8 @@ public:
     FrameSeqRole,
     MessageTypeRole,
     LineNumberRole,
-    RawDataRole
+    RawDataRole,
+    DirectionGroupRole
   };
 
   explicit GlobalPreviewModel(QObject *parent = nullptr);
@@ -128,9 +134,24 @@ public:
 
   void clear();
   void addItem(const GlobalPreviewItem &item);
+  QAbstractItemModel *filteredModel() const;
+  QStringList protocols() const { return m_protocols; }
+  QStringList excludedProtocols() const { return m_excludedProtocols; }
+  QStringList excludedDirections() const { return m_excludedDirections; }
+  void setExcludedProtocols(const QStringList &values);
+  void setExcludedDirections(const QStringList &values);
+  void resetFilters();
+
+signals:
+  void protocolsChanged();
+  void filtersChanged();
 
 private:
   QList<GlobalPreviewItem> m_items;
+  QStringList m_protocols;
+  QStringList m_excludedProtocols;
+  QStringList m_excludedDirections;
+  GlobalPreviewFilter *m_filteredModel;
 };
 
 class LogBackend : public QObject {
@@ -352,6 +373,7 @@ private:
   ParseResultModel *m_resultModel2;
   ParseResultModel *m_popupResultModel;
   GlobalPreviewModel *m_globalPreviewModel;
+  quint64 m_previewScanGeneration = 0;
   ProtocolSyncManager *m_protocolSyncManager;
   ProtocolSyncManager *m_promptSyncManager;
 

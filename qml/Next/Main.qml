@@ -1453,6 +1453,7 @@ ApplicationWindow {
                                     backend.clearAllParses();
                                     logContentArea.text = backend.currentFileContent;
                                     logContentArea.receivingBackend = false;
+                                    if (mainWindow.isGlobalPreviewMode) backend.scanGlobalPreview();
                                 }
                             }
 
@@ -1525,11 +1526,14 @@ ApplicationWindow {
                                 color: "transparent"
                                 border.color: theme.controlBorder
                                 border.width: 1
-                                Text {
-                                    anchors.centerIn: parent
+                                Next.PreviewFilterButton {
+                                    objectName: "preview-protocol-filter"
+                                    width: parent.width - 5; height: parent.height
+                                    theme: mainWindow.uiTheme
                                     text: "规约"
-                                    font.bold: true
-                                    color: theme.text
+                                    options: backend.globalPreviewModel.protocols
+                                    excludedValues: backend.globalPreviewModel.excludedProtocols
+                                    onExcludedValuesEdited: values => backend.globalPreviewModel.excludedProtocols = values
                                 }
                                 MouseArea {
                                     width: 5
@@ -1575,11 +1579,14 @@ ApplicationWindow {
                                 color: "transparent"
                                 border.color: theme.controlBorder
                                 border.width: 1
-                                Text {
-                                    anchors.centerIn: parent
+                                Next.PreviewFilterButton {
+                                    objectName: "preview-direction-filter"
+                                    width: parent.width - 5; height: parent.height
+                                    theme: mainWindow.uiTheme
                                     text: "方向"
-                                    font.bold: true
-                                    color: theme.text
+                                    options: ["↑", "↓", "其他/未知"]
+                                    excludedValues: backend.globalPreviewModel.excludedDirections
+                                    onExcludedValuesEdited: values => backend.globalPreviewModel.excludedDirections = values
                                 }
                                 MouseArea {
                                     width: 5
@@ -1642,7 +1649,25 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        model: backend.globalPreviewModel
+                        model: backend.globalPreviewModel.filteredModel
+
+                        Connections {
+                            target: backend.globalPreviewModel
+                            function onFiltersChanged() {
+                                globalPreviewList.currentIndex = -1;
+                                if (mainWindow.isGlobalPreviewMode) {
+                                    mainWindow.selectedLogHex = "";
+                                    backend.clearAllParses();
+                                }
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            visible: globalPreviewList.count === 0
+                            text: backend.globalPreviewModel.protocols.length === 0 ? "未识别到报文" : "没有符合筛选条件的报文"
+                            color: theme.subText
+                        }
 
                         delegate: Rectangle {
                             objectName: "global-preview-row-" + index
@@ -1668,6 +1693,7 @@ ApplicationWindow {
                             Next.GlassMenu {
                                 id: contextMenu
                                 Next.GlassMenuItem {
+                                    objectName: "global-preview-return-" + index
                                     text: "返回日志并高亮"
                                     onTriggered: {
                                         var range = backend.getLineRange(model.lineNumber);
@@ -1728,16 +1754,7 @@ ApplicationWindow {
                                     height: parent.height
                                     verticalAlignment: Text.AlignVCenter
                                     horizontalAlignment: Text.AlignHCenter
-                                    text: {
-                                        var d = model.direction;
-                                        // S->C (Server to Client) mapped to Up Arrow (Uplink/Response)
-                                        if (d.indexOf("S->C") !== -1 || d.indexOf("1") !== -1 || d.toLowerCase().indexOf("down") !== -1)
-                                            return "↑";
-                                        // C->S (Client to Server) mapped to Down Arrow (Downlink/Request)
-                                        if (d.indexOf("C->S") !== -1 || d.indexOf("0") !== -1 || d.toLowerCase().indexOf("up") !== -1)
-                                            return "↓";
-                                        return d;
-                                    }
+                                    text: model.directionGroup === "其他/未知" ? model.direction : model.directionGroup
                                     font.family: Next.PlatformFonts.monospaceFamily
                                     font.pixelSize: (text === "↓" || text === "↑") ? 18 : 12
                                     font.bold: true

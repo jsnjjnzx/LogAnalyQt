@@ -208,3 +208,17 @@
 - [正式Release v5.0.4](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.4)：2026-10-27 19:06（Asia/Shanghai）公开，非草稿/非预发布且latest；EXE、DMG、更新ZIP、3摘要及update.json共7附件齐全，实际清单摘要和六个产物条目与远端一致。
 - [发布及公开更新40493620127](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40493620127)：发布及双平台公开更新全部success；日志确认实际下载、SHA256、替换、重启5.0.4及工作区草稿/便携数据保留。
 - 正式证据：build/v5.0.4-release-evidence/verification.json；本地成品：build/macos-debug/v5.0.4-local-verification.json。唯一release_package/通联工坊.app已更新为5.0.4；包体积分析只在build副本，瘦身试验未纳入发行。
+
+
+## 全局预览列筛选（2026-10-27）
+
+| 任务 | 对应需求 | 当前记录与验收 |
+|---|---|---|
+| T39 规约及方向表头多选筛选 | PREVIEW-01～03、LOCAL-05 | 已完成：实际规约多选、方向↑/↓/其他、多列交集、全选/全不选及活跃高亮；代理保留原报文/行号，退出重进保留同文件条件，换文件重置并防止扫描重入混入旧行；新增模型/界面/定位/键盘/换文件回归及最终独立Cocoa完整UI/MQTT通过，既有QML89/109项通过；125个Mach-O/签名及交付全文件摘要一致，唯一release_package/通联工坊.app已更新，版本仍5.0.4，未提交或发布；证据见build/macos-debug/preview-filter-verification.json及test-report.md/review-record.md |
+
+
+## v5.0.5 发布（2026-10-27）
+
+| 任务 | 对应需求 | 当前记录与验收 |
+|---|---|---|
+| T40 提交推送筛选功能并发布v5.0.5 | RELEASE-12、13、PREVIEW-01～03、LOCAL-05 | 进行中：用户明确授权；版本与说明统一5.0.5，本地发行准备检查后提交并推送main；需等待相同提交双平台完整验收及来源门禁，再推标签并核验正式附件和公开更新；未预先宣称远端结果 |

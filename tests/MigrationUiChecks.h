@@ -69,6 +69,41 @@ inline QString checkMigratedUi(QQuickWindow *window) {
   };
   try {
     checkParseResultPresentation();
+    {
+      GlobalPreviewModel source;
+      const QStringList directions = {"S->C", "1", "DOWN", "C->S", "0", "UP", "-", ""};
+      for (int row = 0; row < directions.size(); ++row) {
+        GlobalPreviewItem item;
+        item.protocol = row % 2 ? "B" : "A";
+        item.direction = directions[row];
+        item.lineNumber = 100 + row;
+        item.rawData = QString::number(row);
+        source.addItem(item);
+      }
+      auto *filtered = source.filteredModel();
+      require(source.protocols() == QStringList({"A", "B"}) && filtered->rowCount() == 8,
+              "preview choices must deduplicate protocols without filtering the source");
+      for (int row = 0; row < 8; ++row)
+        require(source.index(row).data(GlobalPreviewModel::DirectionGroupRole).toString() ==
+                    (row < 3 ? QStringLiteral("↑") : row < 6 ? QStringLiteral("↓") : QStringLiteral("其他/未知")),
+                "preview arrows and direction filter groups disagree");
+      source.setExcludedProtocols({"A"});
+      source.setExcludedDirections({QStringLiteral("↑"), QStringLiteral("其他/未知")});
+      require(source.rowCount() == 8 && filtered->rowCount() == 2 &&
+                  filtered->index(0, 0).data(GlobalPreviewModel::LineNumberRole).toInt() == 103 &&
+                  filtered->index(1, 0).data(GlobalPreviewModel::RawDataRole).toString() == "5",
+              "combined preview filters lost source row identity or intersection semantics");
+      source.setExcludedProtocols({"A", "B"});
+      require(filtered->rowCount() == 0, "deselecting all protocols must show no rows");
+      source.resetFilters();
+      source.setExcludedDirections({QStringLiteral("↑"), QStringLiteral("↓"), QStringLiteral("其他/未知")});
+      require(filtered->rowCount() == 0, "deselecting all directions must show no rows");
+      source.resetFilters();
+      require(filtered->rowCount() == 8, "clearing preview filters must restore every row");
+      source.clear();
+      require(source.protocols().isEmpty() && filtered->rowCount() == 0,
+              "rescanning must clear stale protocol choices and visible rows");
+    }
     if (auto *screen = window->screen())
       window->setPosition(screen->availableGeometry().topLeft());
     require(QGuiApplication::applicationDisplayName() == QString::fromUtf8("通联工坊"), "application display name is incorrect");
@@ -840,6 +875,89 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(uiItem("selected-frame-1")->property("selectedText").toString() == "68" && backend->resultModel()->rowCount() > 2,
               "preview byte highlighting cleared the parsed fields");
     }
+    trace("global preview column filters");
+    auto *preview = backend->globalPreviewModel();
+    auto *visiblePreview = preview->filteredModel();
+    auto *protocolHeader = uiItem("preview-protocol-filter");
+    auto *directionHeader = uiItem("preview-direction-filter");
+    require(protocolHeader && directionHeader && preview->protocols().size() == 2,
+            "preview filter headers or scanned protocol choices are missing");
+    click(protocolHeader);
+    auto *protocolPopup = window->findChild<QObject *>("preview-protocol-filter-popup");
+    require(protocolPopup && protocolPopup->property("visible").toBool(), "protocol filter popup did not open");
+    click(uiItem("preview-protocol-filter-option-0"));
+    require(protocolPopup->property("visible").toBool() && visiblePreview->rowCount() == 1 &&
+                protocolHeader->property("filterActive").toBool() &&
+                uiItem("globalPreviewList")->property("currentIndex").toInt() == -1 &&
+                backend->resultModel()->rowCount() == 0,
+            "protocol checkbox must keep the popup open, highlight the header and clear stale selection");
+    QKeyEvent escapeFilter(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &escapeFilter);
+    settle();
+    require(!protocolPopup->property("visible").toBool(), "Escape did not close the preview picker");
+    click(uiItem("global-preview-row-0"));
+    const auto lastFrame = preview->index(2).data(GlobalPreviewModel::RawDataRole).toString();
+    require(uiItem("selected-frame-1")->property("text").toString() == lastFrame &&
+                backend->resultModel()->rowCount() > 5,
+            "filtered preview click parsed the source index instead of the visible row");
+    const auto previewCapture = qEnvironmentVariable("LOGANALYQT_PREVIEW_SCREENSHOT");
+    if (!previewCapture.isEmpty())
+      require(window->grabWindow().save(previewCapture + ".filtered.png"), "filtered preview capture failed");
+    auto *filteredRow = uiItem("global-preview-row-0");
+    const auto previewPoint = filteredRow->mapToScene(QPointF(20, filteredRow->height() / 2));
+    QMouseEvent previewPress(QEvent::MouseButtonPress, previewPoint, window->mapToGlobal(previewPoint.toPoint()), Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+    QMouseEvent previewRelease(QEvent::MouseButtonRelease, previewPoint, window->mapToGlobal(previewPoint.toPoint()), Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &previewPress);
+    QCoreApplication::sendEvent(window, &previewRelease);
+    settle();
+    click(uiItem("global-preview-return-0"));
+    require(!window->property("isGlobalPreviewMode").toBool() &&
+                uiItem("logText")->property("selectedText").toString() == QString::fromUtf8(log).split('\n').at(2),
+            "returning from filtered preview did not highlight the original log line");
+    click(uiItem("globalPreviewButton"));
+    require(visiblePreview->rowCount() == 1 && protocolHeader->property("filterActive").toBool(),
+            "reopening the same log preview lost its column filter");
+    click(directionHeader);
+    const auto lastDirection = preview->index(2).data(GlobalPreviewModel::DirectionGroupRole).toString();
+    const int directionIndex = QStringList({QStringLiteral("↑"), QStringLiteral("↓"), QStringLiteral("其他/未知")}).indexOf(lastDirection);
+    click(uiItem(QString("preview-direction-filter-option-%1").arg(directionIndex)));
+    auto *directionPopup = window->findChild<QObject *>("preview-direction-filter-popup");
+    require(directionPopup && directionPopup->property("visible").toBool() && visiblePreview->rowCount() == 0 &&
+                directionHeader->property("filterActive").toBool(),
+            "direction picker did not combine with the protocol filter or stay open");
+    if (!previewCapture.isEmpty())
+      require(window->grabWindow().save(previewCapture + ".picker.png"), "preview picker capture failed");
+    click(uiItem("preview-direction-filter-all"));
+    require(visiblePreview->rowCount() == 1 && !directionHeader->property("filterActive").toBool(),
+            "select all directions must clear only the direction filter");
+    uiItem("preview-direction-filter-all")->forceActiveFocus();
+    QKeyEvent previewSpacePress(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+    QKeyEvent previewSpaceRelease(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &previewSpacePress);
+    QCoreApplication::sendEvent(window, &previewSpaceRelease);
+    settle();
+    require(visiblePreview->rowCount() == 0 && directionPopup->property("visible").toBool(),
+            "keyboard deselect all must hide rows without closing the picker");
+    QCoreApplication::sendEvent(window, &escapeFilter);
+    settle();
+    backend->loadFile("device2.log");
+    settle();
+    require(preview->excludedProtocols().isEmpty() && preview->excludedDirections().isEmpty() &&
+                preview->protocols().isEmpty() && visiblePreview->rowCount() == 0,
+            "changing log files retained stale preview filters or rows");
+    backend->loadFile(QFileInfo(path).fileName());
+    settle();
+    require(visiblePreview->rowCount() == 3 && preview->protocols().size() == 2 &&
+                !protocolHeader->property("filterActive").toBool(),
+            "reloading the original file did not reset and refresh preview choices");
+    QTimer::singleShot(0, backend, [&] { backend->loadFile("device2.log"); });
+    backend->scanGlobalPreview();
+    settle();
+    require(visiblePreview->rowCount() == 0 && preview->protocols().isEmpty() &&
+                backend->currentFileContent() == "device2.log",
+            "switching files during a scan mixed old rows into the new preview");
+    backend->loadFile(QFileInfo(path).fileName());
+    settle();
     click(uiItem("globalPreviewButton"));
     require(!window->property("isGlobalPreviewMode").toBool() && backend->currentFileContent().toUtf8() == log,
             "leaving global preview changed the log content");

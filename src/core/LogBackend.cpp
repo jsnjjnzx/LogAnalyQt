@@ -28,6 +28,7 @@
 #include <QFileInfo>
 #include <QLocale>
 #include <QRegularExpression>
+#include <QSortFilterProxyModel>
 #include "SshMonitorMatcher.h"
 #include <QTimer>
 #include "../common/AppSettings.h"
@@ -584,8 +585,30 @@ void ParseResultModel::rebuildVisibleItems() {
 
 // --- GlobalPreviewModel Implementation ---
 
+class GlobalPreviewFilter : public QSortFilterProxyModel {
+public:
+  explicit GlobalPreviewFilter(GlobalPreviewModel *source)
+      : QSortFilterProxyModel(source), m_source(source) {
+    setSourceModel(source);
+  }
+  using QSortFilterProxyModel::beginFilterChange;
+  using QSortFilterProxyModel::endFilterChange;
+
+protected:
+  bool filterAcceptsRow(int row, const QModelIndex &parent) const override {
+    const auto index = m_source->index(row, 0, parent);
+    return !m_source->excludedProtocols().contains(
+               index.data(GlobalPreviewModel::ProtocolRole).toString()) &&
+           !m_source->excludedDirections().contains(
+               index.data(GlobalPreviewModel::DirectionGroupRole).toString());
+  }
+
+private:
+  GlobalPreviewModel *m_source;
+};
+
 GlobalPreviewModel::GlobalPreviewModel(QObject *parent)
-    : QAbstractListModel(parent) {}
+    : QAbstractListModel(parent), m_filteredModel(new GlobalPreviewFilter(this)) {}
 
 GlobalPreviewModel::~GlobalPreviewModel() = default;
 
@@ -596,7 +619,7 @@ int GlobalPreviewModel::rowCount(const QModelIndex &parent) const {
 }
 
 QVariant GlobalPreviewModel::data(const QModelIndex &index, int role) const {
-  if (!index.isValid() || index.row() >= m_items.count())
+  if (!index.isValid() || index.row() < 0 || index.row() >= m_items.count())
     return QVariant();
   const auto &item = m_items[index.row()];
   switch (role) {
@@ -616,6 +639,15 @@ QVariant GlobalPreviewModel::data(const QModelIndex &index, int role) const {
     return item.lineNumber;
   case RawDataRole:
     return item.rawData;
+  case DirectionGroupRole: {
+    const auto &d = item.direction;
+    // Keep filtering and arrow rendering on the same protocol direction mapping.
+    if (d.contains("S->C") || d.contains('1') || d.contains("down", Qt::CaseInsensitive))
+      return QStringLiteral("↑");
+    if (d.contains("C->S") || d.contains('0') || d.contains("up", Qt::CaseInsensitive))
+      return QStringLiteral("↓");
+    return QStringLiteral("其他/未知");
+  }
   }
   return QVariant();
 }
@@ -630,19 +662,51 @@ QHash<int, QByteArray> GlobalPreviewModel::roleNames() const {
   roles[MessageTypeRole] = "messageType";
   roles[LineNumberRole] = "lineNumber";
   roles[RawDataRole] = "rawData";
+  roles[DirectionGroupRole] = "directionGroup";
   return roles;
 }
 
 void GlobalPreviewModel::clear() {
   beginResetModel();
   m_items.clear();
+  m_protocols.clear();
   endResetModel();
+  emit protocolsChanged();
 }
 
 void GlobalPreviewModel::addItem(const GlobalPreviewItem &item) {
   beginInsertRows(QModelIndex(), m_items.count(), m_items.count());
   m_items.append(item);
   endInsertRows();
+  if (!m_protocols.contains(item.protocol)) {
+    m_protocols.append(item.protocol);
+    emit protocolsChanged();
+  }
+}
+
+QAbstractItemModel *GlobalPreviewModel::filteredModel() const {
+  return m_filteredModel;
+}
+
+void GlobalPreviewModel::setExcludedProtocols(const QStringList &values) {
+  if (m_excludedProtocols == values) return;
+  m_filteredModel->beginFilterChange();
+  m_excludedProtocols = values;
+  m_filteredModel->endFilterChange(QSortFilterProxyModel::Direction::Rows);
+  emit filtersChanged();
+}
+
+void GlobalPreviewModel::setExcludedDirections(const QStringList &values) {
+  if (m_excludedDirections == values) return;
+  m_filteredModel->beginFilterChange();
+  m_excludedDirections = values;
+  m_filteredModel->endFilterChange(QSortFilterProxyModel::Direction::Rows);
+  emit filtersChanged();
+}
+
+void GlobalPreviewModel::resetFilters() {
+  setExcludedProtocols({});
+  setExcludedDirections({});
 }
 
 // --- LogBackend Implementation ---
@@ -1061,6 +1125,7 @@ void LogBackend::loadFile(const QString &fileName, const QString &encoding) {
   if (m_currentFolderPath.isEmpty() || fileName.isEmpty())
     return;
 
+  m_globalPreviewModel->resetFilters();
   QString fullPath = m_currentFolderPath + "/" + fileName;
   QFile file(fullPath);
   if (file.open(QIODevice::ReadOnly)) {
@@ -2362,6 +2427,8 @@ void LogBackend::saveSettings() {
 
 // 扫描全局预览 - 扫描整个日志文档并提取所有报文的概要信息
 void LogBackend::scanGlobalPreview() {
+  const auto generation = ++m_previewScanGeneration;
+  const auto scannedContent = m_currentFileContent;
   // 清空之前的数据
   m_globalPreviewModel->clear();
 
@@ -2378,7 +2445,7 @@ void LogBackend::scanGlobalPreview() {
   emit statusMessage("正在扫描日志文档...", 0);
 
   // 按行分割日志内容
-  QStringList lines = m_currentFileContent.split('\n');
+  QStringList lines = scannedContent.split('\n');
 
   // Initialize progress variables
   m_totalLines = lines.size();
@@ -2404,6 +2471,9 @@ void LogBackend::scanGlobalPreview() {
     if (lineNum % 100 == 0) {
       emit scanProgressChanged();
       QCoreApplication::processEvents();
+      // A file switch can start a new scan while this one yields to the UI.
+      if (generation != m_previewScanGeneration || scannedContent != m_currentFileContent)
+        return;
     }
 
     QString line = lines[lineNum].trimmed();
