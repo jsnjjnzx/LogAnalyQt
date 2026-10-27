@@ -148,16 +148,25 @@ inline QString checkParseResultTableView(QQuickWindow *window, bool differenceMo
                 "each comparison side must have both previous and next buttons");
         if (!differenceMode) continue;
         auto *card = find(window->contentItem(), QString("result-card-%1").arg(id));
-        auto *title = card ? card->property("label").value<QQuickItem *>() : nullptr;
+        auto *title = find(window->contentItem(), QString("result-card-title-%1").arg(id));
         require(title, "comparison result title is missing");
-        const auto buttonRect = navigation->mapRectToItem(card, navigation->boundingRect());
-        const auto titleRect = title->mapRectToItem(card, title->boundingRect());
-        require(buttonRect.left() >= titleRect.right() && buttonRect.right() <= card->width()
+        const bool aligned = waitFor([&] {
+          const auto buttonRect = navigation->mapRectToItem(card, navigation->boundingRect());
+          const auto titleRect = title->mapRectToItem(card, QRectF(0, 0, title->width(), title->height()));
+          return buttonRect.left() >= titleRect.right() && buttonRect.right() <= card->width()
                     && qAbs(buttonRect.center().y() - titleRect.center().y()) < 2
                     && previous->property("text").toString() == QString::fromUtf8("上一个差异")
                     && next->property("text").toString() == QString::fromUtf8("下一个差异")
                     && previous->x() + previous->width() <= next->x()
-                    && next->x() + next->width() <= navigation->width(),
+                    && next->x() + next->width() <= navigation->width();
+        });
+        if (!aligned)
+          qInfo() << "UI_CHECK_DIFF_HEADER_LAYOUT" << width << id
+                  << navigation->mapRectToItem(card, navigation->boundingRect())
+                  << title->mapRectToItem(card, QRectF(0, 0, title->width(), title->height()))
+                  << previous->x() << previous->width() << next->x() << next->width() << navigation->width()
+                  << previous->property("text") << next->property("text");
+        require(aligned,
                 "each comparison result header must contain a complete navigation pair on the title row");
       }
     }

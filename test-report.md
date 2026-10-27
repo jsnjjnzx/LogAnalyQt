@@ -479,3 +479,9 @@
 | 文件及流程 | 审查最终差异、显式提交范围、六份根流程文档及git diff --check | 一致；自审见review-record.md；不纳入本地应用/生成证据/个人配置/历史备份 |
 
 本地非全量CTest，不替代随后相同main提交的Windows/macOS构建/成品/公开更新验收。远端结果待实际取得后补记；不预先宣称已发布或Windows实机/真实设备/Apple公证通过。
+
+### T38 双平台首轮失败与标题检查修正
+
+初始提交3e60a19的build 40488089537第一次尝试在旧SSH编辑器高度断言及无完整输出的Windows预检失败；同提交第二轮已通过两平台预检，macOS一般与应用检查通过，Windows25项一般回归24通过，ui_parse_table_runtime的差异标题布局断言失败。该旧提交不作为最终标签候选。
+
+失败诊断发现标题文字boundingRect不等于控件布局框。最终标题/按钮放入共同RowLayout，断言检查真实控件width/height并等待稳定，保留同排/不重叠/四按钮与跳转要求，并新增失败布局数值日志。开发应用重建及三页解析专项通过，最终差异截图已查看；日志/tmp/loganalyqt-v504-header-build.log、/tmp/loganalyqt-v504-header-runtime.log。新提交需重新通过同提交双平台完整验收。

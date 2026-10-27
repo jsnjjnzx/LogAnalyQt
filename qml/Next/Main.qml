@@ -968,33 +968,47 @@ ApplicationWindow {
 
         // Parse Results
         StyledGroupBox {
+            id: resultCard
             objectName: "result-card-" + targetModelId
             title: titlePrefix + "解析结果"
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            Row {
-                objectName: "parse-diff-navigation-" + targetModelId
-                visible: mainWindow.currentPage === 2 && mainWindow.enableDiffLogic && targetModelId <= 2
-                anchors.right: parent.right
-                anchors.rightMargin: 12
-                y: 3
-                spacing: 6
-                Repeater {
-                    model: 2
-                    delegate: StyledButton {
-                        required property int index
-                        objectName: (index === 0 ? "parse-diff-prev-" : "parse-diff-next-") + targetModelId
-                        height: 28
-                        text: index === 0 ? "上一个差异" : "下一个差异"
-                        onClicked: {
-                            var currentIdx = parseTable.listView.currentIndex;
-                            var diffIdx = index === 0 ? backend.findPrevDiff(currentIdx) : backend.findNextDiff(currentIdx);
-                            if (diffIdx !== -1) {
-                                pane1.listView.positionViewAtIndex(diffIdx, ListView.Beginning);
-                                pane2.listView.positionViewAtIndex(diffIdx, ListView.Beginning);
-                                pane1.listView.currentIndex = diffIdx;
-                                pane2.listView.currentIndex = diffIdx;
+            label: RowLayout {
+                x: 14
+                y: 5
+                width: resultCard.width - 28
+                height: 28
+                spacing: 8
+                Label {
+                    objectName: "result-card-title-" + targetModelId
+                    Layout.fillWidth: true
+                    text: resultCard.title
+                    font.pixelSize: 15
+                    font.bold: true
+                    color: theme.text
+                    padding: 3
+                }
+                Row {
+                    objectName: "parse-diff-navigation-" + targetModelId
+                    visible: mainWindow.currentPage === 2 && mainWindow.enableDiffLogic && targetModelId <= 2
+                    spacing: 6
+                    Repeater {
+                        model: 2
+                        delegate: StyledButton {
+                            required property int index
+                            objectName: (index === 0 ? "parse-diff-prev-" : "parse-diff-next-") + targetModelId
+                            height: 28
+                            text: index === 0 ? "上一个差异" : "下一个差异"
+                            onClicked: {
+                                var currentIdx = parseTable.listView.currentIndex;
+                                var diffIdx = index === 0 ? backend.findPrevDiff(currentIdx) : backend.findNextDiff(currentIdx);
+                                if (diffIdx !== -1) {
+                                    pane1.listView.positionViewAtIndex(diffIdx, ListView.Beginning);
+                                    pane2.listView.positionViewAtIndex(diffIdx, ListView.Beginning);
+                                    pane1.listView.currentIndex = diffIdx;
+                                    pane2.listView.currentIndex = diffIdx;
+                                }
                             }
                         }
                     }
