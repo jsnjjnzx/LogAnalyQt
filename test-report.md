@@ -536,3 +536,21 @@ CI/合成样例不代表Windows实机、企业网络或真实SSH/计量设备现
 | 六份根文档及格式 | 逐一核对及git diff --check | 与本次范围一致；AGENTS规则已核对，无需修改规则；应用、生成证据、个人配置/备份不纳入提交 |
 
 此时远端同提交双平台构建及正式发布/公开更新尚未完成；按RELEASE-13等待门禁，不提前宣称Windows或正式发布通过。本次不是全量本地CTest，真实设备与Apple公证仍未验证。
+
+### T40 最终本地成品
+
+发行源码ef14906的5.0.5成品已在清理QT/QML/DYLD开发环境、临时配置和本机回环环境下通过完整Cocoa UI/MQTT、迁移/工作区重启等检查，日志/tmp/loganalyqt-v505-packaged-runtime.log。125个Mach-O依赖与签名、成品到交付全部文件SHA256/符号链接清单均一致，唯一release_package/通联工坊.app已更新；主程序SHA256为79745cd960f62ff5b1fbfa5ff71503eb00ced44ec4a97b831104ba5d822b47a2，证据build/macos-debug/v5.0.5-local-verification.json。远端验收此时仍在等待。
+
+### T40 同提交双平台及最终公开发行验收
+
+| 范围 | 实际证据 | 结果 |
+|---|---|---|
+| 源码与标签来源 | ef14906b4f4a2530bd615ad7374230de53c47b4e；build40512943078；find_validated_build.py及远端commits/v5.0.5 | 相同main源码、两平台成功及未过期产物门禁通过后才推标签，标签目标一致 |
+| Windows x64 | job122219134287，windows-build.log | 一般回归25/25、应用1/1、打包/依赖/脱离Qt与MinGW独立运行和更新HTTPS探测全部通过 |
+| macOS arm64 | job122219134723，macos-build.log | 一般回归28/28、应用/原生窗口2/2、打包/100个随包Mach-O/依赖/签名/DMG及独立Cocoa运行/更新HTTPS探测全部通过 |
+| 正式发布与元数据 | release.json、latest.json、实际下载update.json，2026-10-27 21:51（Asia/Shanghai）公开 | v5.0.5正式非草稿非预发布且latest，7附件齐全，实际清单SHA256及6产物大小/摘要/URL与远端完全匹配，说明来自CHANGELOG |
+| 公开自动更新 | run40515669865，publish-run.json、publish-jobs.json、update-verification.log | 发布及两个更新任务全success；macOS和Windows日志各一次证明真实公开下载/SHA256/替换/重启5.0.5/工作区草稿与便携数据保留 |
+| 最终本地应用 | ef14906的5.0.5成品，v5.0.5-local-verification.json | 隔离Cocoa完整UI/MQTT、125个Mach-O/签名及成品到交付全文件清单通过，唯一本地应用已更新；主程序SHA256见该文件 |
+| 最终流程与提交范围 | 六份根文档核对、git diff --check | 与最终功能/版本/验收一致；应用、生成证据、个人配置与历史备份不纳入提交，结果补记不移动发行标签 |
+
+正式结果文件build/v5.0.5-release-evidence/verification.json；[构建](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40512943078)、[发布及更新](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40515669865)、[正式下载](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.5)。CI和合成样例不代表Windows实机、企业网络或真实设备验收；macOS仍为ad-hoc，未通过Apple公证。

@@ -221,4 +221,13 @@
 
 | 任务 | 对应需求 | 当前记录与验收 |
 |---|---|---|
-| T40 提交推送筛选功能并发布v5.0.5 | RELEASE-12、13、PREVIEW-01～03、LOCAL-05 | 进行中：用户明确授权；版本与说明统一5.0.5，本地发行准备检查后提交并推送main；需等待相同提交双平台完整验收及来源门禁，再推标签并核验正式附件和公开更新；未预先宣称远端结果 |
+| T40 提交推送筛选功能并发布v5.0.5 | RELEASE-12、13、PREVIEW-01～03、LOCAL-05 | 已完成：发行源码ef14906已推main；双平台构建40512943078全部成功、来源及有效期门禁通过后推v5.0.5标签；正式latest、7附件/更新清单摘要及双平台公开自动更新40515669865全部通过；唯一本地应用已更新5.0.5，实际证据见下方及test-report.md/review-record.md |
+
+
+### T40 正式发布结果
+
+- 发行源码：`ef14906b4f4a2530bd615ad7374230de53c47b4e`，已推main，v5.0.5标签指向同一源码。双平台首轮完整验收全部通过并实际执行来源/未过期门禁后才推标签。
+- [双平台构建40512943078](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40512943078)：Windows一般25/25及应用1/1，macOS一般28/28及应用/原生窗口2/2；两平台打包、独立运行与更新HTTPS检查均通过。
+- [正式Release v5.0.5](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.5)：2026-10-27 21:51（Asia/Shanghai）公开，正式非草稿非预发布且latest，7附件齐全，实际update.json摘要及6产物大小/摘要/URL与远端一致，说明来自CHANGELOG主要筛选功能。
+- [发布及公开更新40515669865](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40515669865)：发布、Windows/macOS公开更新均success，实际日志证明真实下载、SHA256、替换、重启5.0.5、工作区草稿与便携数据保留。
+- 正式证据build/v5.0.5-release-evidence/verification.json；本地5.0.5成品证据build/macos-debug/v5.0.5-local-verification.json，唯一本地release_package/通联工坊.app已更新。发布后仅补记结果文档，不移动标签或改变验收源码。
