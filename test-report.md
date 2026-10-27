@@ -402,3 +402,24 @@
 日志：/tmp/loganalyqt-v503-qml.log、/tmp/loganalyqt-v503-parser.log、/tmp/loganalyqt-v503-tooling.log、/tmp/loganalyqt-v503-build.log。提交前逐一核对六份流程文档，发布范围为 T33/T34，后端和持久化格式未变。
 
 本次提交时，远端同提交构建、正式附件和公开更新尚待执行，本地固定应用也须后续更新为 5.0.3；不得把 T33/T34 或上一版本结果替代本次发行验收。
+
+### T35 本地 5.0.3 成品验收
+
+本次新编译主程序/Info.plist/Broker 复用相同 Qt 依赖部署，114 个 Mach-O 的 arm64/随包依赖与 codesign deep strict 通过。清理 Qt/QML/DYLD 环境，使用临时个人数据对独立应用执行 Cocoa tests/test_ui_migration_runtime.py，完整 UI/MQTT 通过，含 macOS 顶栏处理/几何恢复、全局样式、配置/工作区迁移和重启保留及本机 Broker 清理。
+
+已更新唯一 release_package/通联工坊.app，版本 5.0.3；源/目标主程序摘要一致，签名通过，目录只保留应用，无压缩包/日期目录/旧应用备份。主程序 SHA256：876d2771387da30ee907202c3e449d240ee256aa23892ca131542c485fe261b2。结构化记录：build/macos-debug/v5.0.3-local-verification.json，日志 /tmp/loganalyqt-v503-packaged-runtime.log。本地 Debug/ad-hoc 不代表正式远端发行验收。
+
+### T35 远端发行与公开更新最终验收
+
+| 范围 | 实际证据 | 结果 |
+|---|---|---|
+| 同提交双平台构建 | [40480869250](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40480869250)，head 4093a81f9d37640f175ab38c5f186b00df0ae8b4 | 总体 success；Windows 常规 CTest 25/25、UI 1/1，macOS 常规 CTest 28/28、UI/原生激活 2/2；预检/稳定性、打包、独立启动及 HTTPS 探测通过 |
+| 产物来源门禁 | find_validated_build.py --repository jsnjjnzx/LogAnalyQt --commit 4093a81f9d37640f175ab38c5f186b00df0ae8b4 | 实际通过，选择 40480869250；两个平台成功、同仓库同 main 提交、未过期产物 |
+| 标签与正式发行 | v5.0.3、[40482963607](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40482963607) | 门禁后创建并推送标签，目标为已验证源码；发布任务 success，正式非草稿/非预发布且 latest，7 附件完整，说明来自本版 CHANGELOG |
+| 更新元数据 | 保存 release.json、下载 update.json 后 assert 核对 | update.json 实际 SHA256 与 GitHub digest 一致，6 个产物名称/大小/摘要/下载地址完全匹配；公开前所有上传摘要由现有发布脚本验证 |
+| 双平台公开更新 | 发布 run 的 macOS/Windows Verify published update | 均 success；模拟旧客户端走生产更新路径，实际公开下载、SHA256、替换、重启到 5.0.3、主窗可见/激活和工作区草稿/便携数据保留通过 |
+| 流程与格式 | 六份根流程文档、git diff --check | 核对一致；历史本地未发布记录保留历史含义，后续补记仅改证据文档 |
+
+远端材料：`build/v5.0.3-release-evidence/verification.json`、release.json、update.json、update-verification.log；公开结果以所链接的 Actions 和 [Release](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.3) 为准。
+
+首次 main 直连推送超时，核对未更新后重试同一提交成功，不把超时写成成功。受控 CI 与合成数据不代表实体 Windows、企业网络或真实 SSH 设备验收；macOS 为 ad-hoc，未经 Apple 公证。旧偶发首连提示未在本次修改 SSH 逻辑或宣称修复。

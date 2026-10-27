@@ -201,3 +201,11 @@ Qt Quick Test 的标准 mouseDoubleClickSequence 在真实 Cocoa 窗口中验证
 ## 2026-10-27 v5.0.3 发布准备（T35）
 
 用户授权将 T33、T34 提交推送并正式发布。复用既有 build.yml、release.yml、verify-release.yml，不绕过同提交双平台、有效产物来源、上传摘要与公开更新门禁。CHANGELOG 只列 macOS 顶栏双击修复、配置收起/四组参数两项改进；不将旧偶发 SSH 首连提示列为已修复。
+
+### T35 最终发行结果
+
+发行源码 `4093a81f9d37640f175ab38c5f186b00df0ae8b4` 的[双平台构建](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40480869250)、[发布与公开更新](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40482963607)均通过，[v5.0.3](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.3)已正式公开并设为 latest。
+
+首次直连 main 推送超时后先核对远端仍为原基线，再按现有网络配置重试同一非强制推送成功；v5.0.3 标签在来源门禁通过后正常 Git 推送成功。后续补记只改发布结果文档，不移动标签或改变已经构建/发布的源码。
+
+本地固定应用更新为 5.0.3，生成材料只存 build 或远端。macOS ad-hoc/未经公证、CI 不代表真实设备验收及旧偶发 SSH 提示未定位的边界保持。
