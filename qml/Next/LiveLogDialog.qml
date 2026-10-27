@@ -17,6 +17,8 @@ GlassPage {
     property string sessionName: "监控"
     property bool persistConnectionSettings: true
     property bool workspaceManaged: false
+    property bool detached: false
+    property Item sessionActionHost: null
     property bool relocatingWindow: false
     property bool useSystemCredentials: false
     property var sharedCommands: null
@@ -832,6 +834,7 @@ GlassPage {
     }
 
     function cancelCustomCommandEdit() {
+        commandManagementExpanded = false;
         customCmdEditingName = "";
         customCmdNameInput.text = "";
         customCmdContentInput.text = "";
@@ -1402,6 +1405,9 @@ GlassPage {
         spacing: 6
 
         Rectangle {
+            objectName: "ssh-connection-panel"
+            visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.connectionConfigExpanded
+                || sshTerminal.lastError !== "" || sshTerminal.logging || sshTerminal.logBusy || sshTerminal.logError !== ""
             Layout.fillWidth: true
             Layout.preferredHeight: connectionRows.implicitHeight + 20
             color: cardBg; border.color: cardBorder; radius: 10
@@ -1409,27 +1415,21 @@ GlassPage {
                 id: connectionRows
                 anchors.fill: parent; anchors.margins: 10; spacing: 8
                 RowLayout {
+                    id: connectionActions
+                    visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached
                     Layout.fillWidth: true
                     spacing: 8
                     StyledButton {
                         objectName: "ssh-config-toggle"
+                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached
                         text: liveLogDialog.connectionConfigExpanded ? "▾ 收起配置" : "▸ 连接配置"
                         Accessible.name: "连接配置"
                         Accessible.description: liveLogDialog.connectionConfigExpanded ? "已展开" : "已折叠"
                         onClicked: liveLogDialog.connectionConfigExpanded = !liveLogDialog.connectionConfigExpanded
                     }
-                    Label {
-                        objectName: "ssh-target-summary"
-                        Layout.fillWidth: true
-                        Layout.minimumWidth: 0
-                        text: liveLogDialog.sessionName + " · " + (userInput.text.trim() || "用户") + "@" + (hostInput.text.trim() || "未设置主机") + ":" + portInput.text + " · " + encodingCombo.currentText
-                        textFormat: Text.PlainText
-                        elide: Text.ElideRight
-                        color: labelColor
-                        font.pixelSize: 12
-                    }
                     StyledButton {
                         objectName: "sshConnectAction"
+                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached
                         implicitWidth: 96
                         enabled: !liveLogDialog.passwordOperationId
                         palette.button: connBtnBg
@@ -1452,8 +1452,15 @@ GlassPage {
 
                     StyledButton {
                         objectName: "ssh-pause"
+                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.sessionActionHost !== null
+                        parent: liveLogDialog.sessionActionHost ? liveLogDialog.sessionActionHost.followHost : connectionActions
+                        anchors.fill: liveLogDialog.sessionActionHost ? parent : null
+                        implicitHeight: liveLogDialog.sessionActionHost ? 26 : 36
+                        horizontalPadding: liveLogDialog.sessionActionHost ? 0 : 14
+                        padding: liveLogDialog.sessionActionHost ? 0 : 8
+                        font.pixelSize: liveLogDialog.sessionActionHost ? 11 : 13
                         text: autoScroll ? "暂停跟随" : "继续跟随"
-                        implicitWidth: 96
+                        implicitWidth: liveLogDialog.sessionActionHost ? 51 : 96
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
                         ToolTip.text: autoScroll ? "只停止自动滚动到底部，后台仍持续接收和更新日志。\n如需停止后台接收，请点击“停止刷屏”。"
@@ -1467,8 +1474,15 @@ GlassPage {
 
                     StyledButton {
                         objectName: "ssh-stop-reception"
+                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.sessionActionHost !== null
+                        parent: liveLogDialog.sessionActionHost ? liveLogDialog.sessionActionHost.receptionHost : connectionActions
+                        anchors.fill: liveLogDialog.sessionActionHost ? parent : null
+                        implicitHeight: liveLogDialog.sessionActionHost ? 26 : 36
+                        horizontalPadding: liveLogDialog.sessionActionHost ? 0 : 14
+                        padding: liveLogDialog.sessionActionHost ? 0 : 8
+                        font.pixelSize: liveLogDialog.sessionActionHost ? 11 : 13
                         text: sshTerminal.receptionPaused ? "恢复接收" : "停止刷屏"
-                        implicitWidth: 96
+                        implicitWidth: liveLogDialog.sessionActionHost ? 51 : 96
                         checked: sshTerminal.receptionPaused
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
@@ -1480,8 +1494,15 @@ GlassPage {
 
                     StyledButton {
                         objectName: "ssh-clear"
+                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.sessionActionHost !== null
+                        parent: liveLogDialog.sessionActionHost ? liveLogDialog.sessionActionHost.clearHost : connectionActions
+                        anchors.fill: liveLogDialog.sessionActionHost ? parent : null
+                        implicitHeight: liveLogDialog.sessionActionHost ? 26 : 36
+                        horizontalPadding: liveLogDialog.sessionActionHost ? 0 : 14
+                        padding: liveLogDialog.sessionActionHost ? 0 : 8
+                        font.pixelSize: liveLogDialog.sessionActionHost ? 11 : 13
                         text: "清屏"
-                        implicitWidth: 96
+                        implicitWidth: liveLogDialog.sessionActionHost ? 51 : 96
                         onClicked: { monitorHit = null; monitorNotice = null; sshTerminal.clearBuffer(); }
                     }
 
@@ -2327,7 +2348,6 @@ GlassPage {
 
             StyledButton {
                 objectName: "ssh-command-cancel"
-                visible: liveLogDialog.customCmdEditingName !== ""
                 text: "取消"
                 implicitWidth: 64
                 onClicked: liveLogDialog.cancelCustomCommandEdit()
@@ -2363,14 +2383,6 @@ GlassPage {
                     font.pixelSize: 12
                 }
 
-                StyledButton {
-                    objectName: "ssh-command-management-toggle"
-                    text: liveLogDialog.commandManagementExpanded ? "▾ 收起管理" : "▸ 管理"
-                    Accessible.name: "快捷命令管理"
-                    Accessible.description: liveLogDialog.commandManagementExpanded ? "已展开" : "已折叠"
-                    onClicked: liveLogDialog.commandManagementExpanded = !liveLogDialog.commandManagementExpanded
-                }
-
                 Flickable {
                     objectName: "ssh-command-buttons"
                     Layout.preferredWidth: 280
@@ -2398,8 +2410,8 @@ GlassPage {
                                     width: implicitWidth
                                     height: parent.height
                                     text: modelData.name
-                                    implicitWidth: Math.max(72, Math.min(180, modelData.name.length * 14 + 40))
-                                    leftPadding: liveLogDialog.commandManagementExpanded ? 18 : 8
+                                    implicitWidth: Math.max(72, Math.min(180, implicitContentWidth + leftPadding + rightPadding + 4))
+                                    leftPadding: 18
                                     rightPadding: 22
                                     enabled: sshTerminal.connected && !sshTerminal.receptionPaused
                                     onClicked: liveLogDialog.sendQuickCommand(modelData.command)
@@ -2423,7 +2435,6 @@ GlassPage {
 
                                 Rectangle {
                                     objectName: "ssh-command-delete-" + index
-                                    visible: liveLogDialog.commandManagementExpanded
                                     width: 14
                                     height: 14
                                     radius: 7
@@ -2457,24 +2468,88 @@ GlassPage {
                                 }
                             }
                         }
+
+                        StyledButton {
+                            id: createCommandButton
+                            objectName: "ssh-command-create"
+                            text: "＋ 添加命令"
+                            implicitWidth: 96; height: 30
+                            horizontalPadding: 10
+                            font.pixelSize: 12
+                            enabled: !liveLogDialog.commandManagementExpanded
+                            Accessible.name: "添加快捷命令"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "添加一个可重复使用的快捷命令"
+                            onClicked: {
+                                liveLogDialog.cancelCustomCommandEdit();
+                                liveLogDialog.commandManagementExpanded = true;
+                                customCmdNameInput.forceActiveFocus();
+                            }
+                            background: Rectangle {
+                                radius: 6
+                                color: createCommandButton.hovered ? (liveLogDialog.theme ? liveLogDialog.theme.surfaceHover : "#393f49") : "transparent"
+                                Canvas {
+                                    objectName: "ssh-command-create-border"
+                                    anchors.fill: parent
+                                    property color strokeColor: createCommandButton.hovered || createCommandButton.visualFocus
+                                        ? liveLogDialog.focusAccentColor : liveLogDialog.mutedColor
+                                    onStrokeColorChanged: requestPaint()
+                                    onWidthChanged: requestPaint()
+                                    onHeightChanged: requestPaint()
+                                    onPaint: {
+                                        const context = getContext("2d");
+                                        context.reset();
+                                        context.strokeStyle = strokeColor;
+                                        context.lineWidth = 1;
+                                        context.setLineDash([4, 3]);
+                                        context.roundedRect(0.5, 0.5, width - 1, height - 1, 6, 6);
+                                        context.stroke();
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-
-                Text {
-                    visible: liveLogDialog.customCommands.length === 0
-                    text: "点击「管理」添加常用命令"
-                    color: theme ? theme.subText : "#888888"
-                    font.pixelSize: 12
-                }
             }
+        }
 
+        Label {
+            objectName: "ssh-credential-status"; visible: liveLogDialog.secureCredentials || liveLogDialog.passwordNotice !== ""; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+            text: liveLogDialog.passwordNotice || sshTerminal.credentialError || (sshTerminal.credentialBusy ? "正在核验安全凭据…" : !liveLogDialog.targetMatchesBackend() ? "目标已修改，将重新核验凭据。" : sshTerminal.hasSavedPassword ? "当前目标已保存密码，不回显原密码。" : "当前目标未保存密码。")
+            color: liveLogDialog.passwordNoticeError || sshTerminal.credentialError ? errorColor : (theme ? theme.subText : "#888888")
+        }
+
+        // ── 快捷键提示栏 ──────────────────────────────────────────
+        RowLayout {
+            id: footerRow
+            objectName: "ssh-footer"
+            Layout.fillWidth: true
+            spacing: 8
+            Label {
+                id: statusHint
+                objectName: "ssh-footer-hint"
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.alignment: Qt.AlignVCenter
+                text: sshTerminal.connected ? "点击终端直接输入，按键发送到远端  ·  Ctrl+Shift+F 查找  ·  Ctrl+Shift+C 复制行  ·  Ctrl+Shift+A 复制全部" : "尚未连接  —  填写连接参数后点击「连接」"
+                color: theme ? theme.subText : "#888"
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                topPadding: 1
+                bottomPadding: 2
+                ToolTip.visible: footerHintHover.hovered && truncated
+                ToolTip.text: text
+                HoverHandler { id: footerHintHover }
+            }
             // 状态指示器
             Row {
+                objectName: "ssh-footer-connection"
                 spacing: 8
                 Layout.alignment: Qt.AlignVCenter
 
                 // 胶囊：圆点 + 连接状态
                 Rectangle {
+                    objectName: "ssh-connection-badge"
                     height: 26
                     width: dotText.implicitWidth + 28
                     radius: 13
@@ -2554,30 +2629,16 @@ GlassPage {
                     visible: sshTerminal.statusMessage !== "" && sshTerminal.statusMessage !== stateText()
                     anchors.verticalCenter: parent.verticalCenter
                     text: sshTerminal.statusMessage
+                    width: Math.min(implicitWidth, Math.max(0, liveLogDialog.width - 20) * 0.22)
                     color: theme ? theme.subText : "#888888"
                     font.pixelSize: 12
                     elide: Text.ElideRight
                     maximumLineCount: 1
+                    ToolTip.visible: connectionHintHover.hovered && truncated
+                    ToolTip.text: text
+                    HoverHandler { id: connectionHintHover }
                 }
             }
-        }
-
-        Label {
-            objectName: "ssh-credential-status"; visible: liveLogDialog.secureCredentials || liveLogDialog.passwordNotice !== ""; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
-            text: liveLogDialog.passwordNotice || sshTerminal.credentialError || (sshTerminal.credentialBusy ? "正在核验安全凭据…" : !liveLogDialog.targetMatchesBackend() ? "目标已修改，将重新核验凭据。" : sshTerminal.hasSavedPassword ? "当前目标已保存密码，不回显原密码。" : "当前目标未保存密码。")
-            color: liveLogDialog.passwordNoticeError || sshTerminal.credentialError ? errorColor : (theme ? theme.subText : "#888888")
-        }
-
-        // ── 快捷键提示栏 ──────────────────────────────────────────
-        Label {
-            id: statusHint
-            Layout.fillWidth: true
-            text: sshTerminal.connected ? "点击终端直接输入，按键发送到远端  ·  Ctrl+Shift+F 查找  ·  Ctrl+Shift+C 复制行  ·  Ctrl+Shift+A 复制全部" : "尚未连接  —  填写连接参数后点击「连接」"
-            color: theme ? theme.subText : "#888"
-            font.pixelSize: 11
-            elide: Text.ElideRight
-            topPadding: 1
-            bottomPadding: 2
         }
     }
 }

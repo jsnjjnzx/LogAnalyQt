@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 5.0.1 LANGUAGES CXX)
+project(LogAnalyQt VERSION 5.0.2 LANGUAGES CXX)
 if(NOT WIN32)
     find_package(Iconv REQUIRED)
 endif()
@@ -767,6 +767,11 @@ endforeach()
 
 add_subdirectory(qml/Next)
 target_link_libraries(appLogAnalyQt PRIVATE nextUiPlugin)
+
+qt_add_resources(appLogAnalyQt "controls_style"
+    PREFIX "/qt/qml" BASE "qml"
+    FILES qml/WorkshopStyle/qmldir qml/WorkshopStyle/Theme.qml qml/WorkshopStyle/ToolTip.qml
+)
 
 qt_add_qml_module(appLogAnalyQt
     URI LogAnalyQt

@@ -355,7 +355,6 @@ GlassPage {
         Next.LiveLogDialog {
             id: sessionPage
             objectName: "ssh-session-" + sessionId
-            property bool detached: false
             enabled: !root.waitingForLogShutdown
             property bool windowPositioned: false
             readonly property alias monitorWindow: floatingWindow
@@ -591,6 +590,15 @@ GlassPage {
                                     text: "收回主窗口"
                                     onTriggered: root.dockSession(sessionRow.modelData)
                                 }
+                                Next.GlassMenuItem {
+                                    objectName: "ssh-session-config-" + sessionRow.modelData.sessionId
+                                    text: sessionRow.modelData.connectionConfigExpanded ? "收起连接配置" : "连接配置"
+                                    onTriggered: {
+                                        root.currentIndex = sessionRow.index;
+                                        sessionRow.modelData.connectionConfigExpanded = !sessionRow.modelData.connectionConfigExpanded;
+                                        if (sessionRow.modelData.detached) root.locateSession(sessionRow.modelData);
+                                    }
+                                }
                                 Next.GlassMenuSeparator {}
                                 SessionOption {
                                     objectName: "ssh-copy-on-select"
@@ -679,25 +687,39 @@ GlassPage {
                                     textFormat: Text.PlainText; elide: Text.ElideRight
                                     color: root.theme ? root.theme.subText : "#9199a5"; font.pixelSize: 11
                                 }
-                                RowLayout {
-                                    visible: !root.sidebarCollapsed
-                                    Layout.fillWidth: true
-                                    Label {
-                                        Layout.fillWidth: true; Layout.minimumWidth: 0
+                                Label {
+                                    Layout.fillWidth: true; Layout.minimumWidth: 0
                                     text: sessionRow.modelData.monitorHit ? "命中 · 已暂停跟随" : sessionRow.modelData.monitorError ? "规则检测已停止"
                                         : sessionRow.modelData.terminal.receptionPaused ? "接收已停止"
                                         : (sessionRow.modelData.detached ? "↗ 独立窗口 · " : "") + sessionRow.modelData.stateText()
-                                        elide: Text.ElideRight
+                                    elide: Text.ElideRight
                                     color: sessionRow.modelData.monitorHit && sessionRow.modelData.monitorHitColor.hslLightness >= 0.45 ? sessionRow.modelData.monitorHitColor
                                         : sessionRow.modelData.monitorError ? "#e8b76a" : (root.theme ? root.theme.subText : "#9199a5"); font.pixelSize: 11
+                                }
+                                RowLayout {
+                                    id: sessionActions
+                                    objectName: "ssh-session-actions-" + sessionRow.modelData.sessionId
+                                    readonly property alias followHost: followHost
+                                    readonly property alias receptionHost: receptionHost
+                                    readonly property alias clearHost: clearHost
+                                    Layout.fillWidth: true
+                                    spacing: 3
+                                    Binding {
+                                        target: sessionRow.modelData
+                                        property: "sessionActionHost"
+                                        value: sessionRow.modelData.detached ? null : sessionActions
                                     }
                                     Next.GlassButton {
                                         objectName: "ssh-session-connect-" + sessionRow.modelData.sessionId
                                         text: sessionRow.modelData.sessionActive || sessionRow.modelData.pendingSshAction ? "断开" : "连接"
-                                        implicitWidth: 48; implicitHeight: 26; padding: 0; horizontalPadding: 0
+                                        implicitWidth: 51; implicitHeight: 26; padding: 0; horizontalPadding: 0
+                                        font.pixelSize: 11
                                         enabled: !sessionRow.modelData.passwordOperationId
                                         onClicked: root.connectSession(sessionRow.modelData)
                                     }
+                                    Item { id: followHost; Layout.preferredWidth: 51; Layout.preferredHeight: 26; visible: !sessionRow.modelData.detached }
+                                    Item { id: receptionHost; Layout.preferredWidth: 51; Layout.preferredHeight: 26; visible: !sessionRow.modelData.detached }
+                                    Item { id: clearHost; Layout.preferredWidth: 51; Layout.preferredHeight: 26; visible: !sessionRow.modelData.detached }
                                 }
                             }
                         }

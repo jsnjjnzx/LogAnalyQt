@@ -102,7 +102,8 @@ Item {
             const view = item(a, "ssh-log-list")
             view.positionViewAtIndex(80, ListView.Beginning); wait(20)
             const stop = item(a, "ssh-stop-reception"), pause = item(a, "ssh-pause"), clear = item(a, "ssh-clear")
-            verify(stop.x > pause.x && stop.x < clear.x)
+            verify(stop.mapToItem(page, 0, 0).x > pause.mapToItem(page, 0, 0).x
+                   && stop.mapToItem(page, 0, 0).x < clear.mapToItem(page, 0, 0).x)
             compare(stop.width, pause.width); compare(stop.height, pause.height)
             mouseClick(stop); wait(30)
             verify(a.terminal.receptionPaused); compare(stop.text, "恢复接收"); verify(!a.autoScroll)
@@ -124,6 +125,105 @@ Item {
             compare(a.terminal.currentLineCount, 350); compare(a.terminal.lineAt(349), "background 149")
             verify(!a.autoScroll)
             verify(page.dockSession(a)); wait(20)
+        }
+        function test_sessionActionsShareExistingConnectRowAndFollowTheirSession() {
+            make()
+            const a = page.activeSession; connected(a)
+            a.connectionConfigExpanded = false
+            a.terminal.appendTestLines(["session A output"], 100)
+            const b = page.addSession(); connected(b); b.connectionConfigExpanded = false
+            b.terminal.appendTestLines(["session B output"], 100); wait(30)
+            const row = item(page, "ssh-session-actions-" + a.sessionId)
+            const connect = item(page, "ssh-session-connect-" + a.sessionId)
+            const pause = item(a, "ssh-pause"), stop = item(a, "ssh-stop-reception"), clear = item(a, "ssh-clear")
+            for (const width of [760, 1180]) {
+                page.width = width; verify(waitForPolish(page)); wait(20)
+                const controls = [connect, pause, stop, clear]
+                for (let i = 0; i < controls.length; ++i) {
+                    const control = controls[i]
+                    compare(i ? control.parent.parent : control.parent, row)
+                    const position = control.mapToItem(row, 0, 0)
+                    verify(control.visible && position.x >= 0 && position.x + control.width <= row.width + 1,
+                           control.text + " visible=" + control.visible + " x=" + position.x + " width=" + control.width + " row=" + row.width)
+                    compare(position.y, connect.y)
+                    compare(control.width, 51); compare(control.height, 26)
+                    compare(control.font.pixelSize, 11)
+                    compare(control.font.family, connect.font.family)
+                    compare(control.font.weight, connect.font.weight)
+                    verify(control.contentItem.implicitWidth <= control.availableWidth + 1, control.text)
+                    if (i) verify(position.x >= controls[i - 1].mapToItem(row, 0, 0).x + controls[i - 1].width)
+                }
+            }
+            verify(!item(a, "sshConnectAction").visible && !item(a, "ssh-config-toggle").visible)
+            mouseClick(pause); verify(!a.autoScroll && b.autoScroll)
+            mouseClick(stop); verify(a.terminal.receptionPaused && !b.terminal.receptionPaused)
+            mouseClick(clear); compare(a.terminal.currentLineCount, 0); compare(b.terminal.currentLineCount, 1)
+            compare(page.activeSession, b)
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            mouseClick(item(scene.Window.window.contentItem, "ssh-session-config-" + a.sessionId)); wait(20)
+            compare(page.activeSession, a); verify(a.connectionConfigExpanded && !b.connectionConfigExpanded)
+            verify(page.detachSession(a)); wait(30)
+            verify(pause.parent.parent !== row && stop.parent === pause.parent && clear.parent === pause.parent)
+            verify(pause.visible && item(a, "sshConnectAction").visible)
+            mouseClick(stop); verify(!a.terminal.receptionPaused && !a.autoScroll)
+            verify(page.dockSession(a)); wait(30)
+            compare(pause.parent.parent, row); verify(!item(a, "sshConnectAction").visible)
+            mouseClick(item(page, "ssh-sidebar-toggle")); wait(20)
+            verify(!pause.visible && !item(a, "sshConnectAction").visible)
+            mouseClick(item(page, "ssh-sidebar-toggle")); wait(20)
+            verify(pause.visible && !a.autoScroll)
+        }
+        function test_scrollingSessionListDoesNotRestoreDuplicateToolbarActions() {
+            make()
+            const a = page.activeSession
+            for (let i = 0; i < 11; ++i) page.addSession()
+            page.currentIndex = 0; wait(40)
+            const list = item(page, "ssh-session-list")
+            list.currentIndex = -1; list.cacheBuffer = 0; list.positionViewAtEnd(); wait(60)
+            tryCompare(a, "sessionActionHost", null)
+            for (const name of ["ssh-config-toggle", "sshConnectAction", "ssh-pause", "ssh-stop-reception", "ssh-clear"])
+                verify(!item(a, name).visible, name + " must not return to the right toolbar when its sidebar row is recycled")
+            list.positionViewAtBeginning(); wait(40)
+            tryVerify(() => a.sessionActionHost !== null)
+            verify(item(a, "ssh-pause").visible)
+        }
+        function test_footerHintAndConnectionShareTheBottomRow() {
+            make()
+            const a = page.activeSession
+            a.connectionConfigExpanded = false
+            const footer = item(a, "ssh-footer")
+            const hint = item(a, "ssh-footer-hint")
+            verify(findChild(a, "ssh-footer-command-hint") === null)
+            const connection = item(a, "ssh-footer-connection")
+            const badge = item(a, "ssh-connection-badge")
+            function checkFooter() {
+                verify(waitForPolish(a)); wait(20)
+                compare(hint.parent, footer); compare(connection.parent, footer)
+                const left = hint.mapToItem(footer, 0, 0)
+                const right = connection.mapToItem(footer, 0, 0)
+                verify(Math.abs(left.y + hint.height / 2 - right.y - connection.height / 2) <= 1)
+                verify(Math.abs(right.x + connection.width - footer.width) <= 1)
+                verify(left.x + hint.width <= right.x)
+                const create = item(a, "ssh-command-create")
+                verify(create.mapToItem(a, 0, 0).y + create.height <= footer.mapToItem(a, 0, 0).y)
+                verify(badge.visible && hint.width >= 0)
+            }
+            for (const width of [760, 1180, 1560]) {
+                page.width = width
+                for (const state of [0, 1, 2, 3, 4]) {
+                    a.terminal.connectionState = state; a.terminal.connected = state === 2
+                    a.terminal.statusMessage = ""
+                    checkFooter()
+                }
+            }
+            verify(item(a, "ssh-command-create").visible)
+            a.addCustomCommand("查看目录", "pwd"); wait(20)
+            verify(item(a, "ssh-command-create").visible); checkFooter()
+            a.terminal.statusMessage = "连接失败，等待恢复。".repeat(20)
+            checkFooter()
+            verify(page.detachSession(a)); wait(30)
+            a.monitorWindow.width = 760; checkFooter()
+            verify(page.dockSession(a)); wait(30); checkFooter()
         }
         function test_followAndReceptionPauseHaveDistinctHoverHelp() {
             make()
@@ -545,11 +645,11 @@ Item {
             mouseClick(item(page, "ssh-sidebar-toggle")); wait(20)
             verify(!page.sidebarCollapsed)
             mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
-            verify(findChild(overlay, "ssh-session-config-" + a.sessionId) === null)
+            verify(item(overlay, "ssh-session-config-" + a.sessionId).visible)
             verify(item(overlay, "ssh-session-detach-" + a.sessionId).visible)
-            keyClick(Qt.Key_Escape); wait(20)
-            mouseClick(item(a, "ssh-config-toggle")); wait(20)
+            mouseClick(item(overlay, "ssh-session-config-" + a.sessionId)); wait(20)
             verify(a.connectionConfigExpanded)
+            verify(!item(a, "ssh-config-toggle").visible)
         }
         function test_sidebarConfigurationConnectionAndCollapseAreIndependent() {
             make()
@@ -681,6 +781,29 @@ Item {
                 parent = originalParent
             }
         }
+        function test_removedSummaryLeavesNoEmptyPanelButKeepsConfigErrorsAndLogging() {
+            make()
+            const a = page.activeSession
+            const panel = item(a, "ssh-connection-panel")
+            verify(findChild(a, "ssh-target-summary") === null)
+            a.connectionConfigExpanded = false; wait(20)
+            verify(!panel.visible)
+            verify(item(a, "ssh-pause").visible)
+            a.terminal.lastError = "synthetic connection failure"; wait(20)
+            verify(panel.visible && item(a, "ssh-current-connection-error").visible)
+            a.terminal.lastError = ""; wait(20); verify(!panel.visible)
+            a.terminal.logging = true; wait(20)
+            verify(panel.visible && item(a, "ssh-log-status").visible)
+            a.terminal.logging = false; wait(20); verify(!panel.visible)
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            mouseClick(item(scene.Window.window.contentItem, "ssh-session-config-" + a.sessionId)); wait(20)
+            verify(a.connectionConfigExpanded && panel.visible)
+            a.connectionConfigExpanded = false
+            verify(page.detachSession(a)); wait(30)
+            verify(panel.visible && item(a, "sshConnectAction").visible)
+            verify(page.dockSession(a)); wait(30)
+            verify(!panel.visible && item(a, "ssh-pause").visible)
+        }
         function test_onlyCurrentConnectionErrorAppearsOutsideRemoteOutput() {
             make()
             const a = page.activeSession, status = item(a, "ssh-current-connection-error")
@@ -804,6 +927,8 @@ Item {
             keyClick(Qt.Key_Escape); wait(20)
             mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
             menu.currentIndex = 0; wait(20)
+            keyClick(Qt.Key_Down); wait(20)
+            compare(menu.itemAt(menu.currentIndex).objectName, "ssh-session-config-" + a.sessionId)
             keyClick(Qt.Key_Down); wait(20); verify(copy.activeFocus)
             keyClick(Qt.Key_Space); wait(20)
             verify(a.copyOnSelect && menu.opened)

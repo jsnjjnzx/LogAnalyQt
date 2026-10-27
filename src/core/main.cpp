@@ -140,7 +140,8 @@ int main(int argc, char *argv[]) {
 #else
   const bool uiSmokeMode = false;
 #endif
-  QQuickStyle::setStyle(QStringLiteral("Basic"));
+  QQuickStyle::setStyle(QStringLiteral("WorkshopStyle"));
+  QQuickStyle::setFallbackStyle(QStringLiteral("Basic"));
 
   ConfigManager configManager(AppPaths::writableDataRoot());
   QStringList legacyRoots{AppPaths::writableDataRoot()};

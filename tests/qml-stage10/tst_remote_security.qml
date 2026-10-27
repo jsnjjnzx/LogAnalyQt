@@ -132,7 +132,7 @@ Item {
             verify(!item("ssh-save-password").visible)
             verify(!item("ssh-clear-password").visible)
             tryVerify(function() { return terminal.height > expandedHeight + 30 })
-            compare(item("ssh-target-summary").text, "监控 · operator@monitor.example:2222 · GB2312")
+            verify(findChild(page, "ssh-target-summary") === null)
             compare(ssh.connectCalls, 0); compare(ssh.disconnectCalls, disconnects)
             page.visible = false; page.visible = true
             verify(!page.connectionConfigExpanded)
@@ -149,11 +149,9 @@ Item {
             edit("ssh-host", "very-long-monitor-hostname-".repeat(8) + ".example")
             page.width = 900
             mouseClick(item("ssh-config-toggle")); verify(waitForPolish(page))
-            const summary = item("ssh-target-summary")
-            verify(summary.truncated)
-            const summaryRight = summary.mapToItem(page, summary.width, 0).x
-            const connectLeft = item("sshConnectAction").mapToItem(page, 0, 0).x
-            verify(summaryRight <= connectLeft, "summary must not overlap connection actions")
+            verify(findChild(page, "ssh-target-summary") === null)
+            const connect = item("sshConnectAction")
+            verify(connect.mapToItem(page, connect.width, 0).x <= page.width)
             verify(findChild(page, "ssh-copy-on-select") === null)
             for (const name of ["ssh-config-toggle", "ssh-pause", "ssh-clear"])
                 verify(!item(name).contentItem.truncated, name + " text must fit")
@@ -187,39 +185,48 @@ Item {
             mouseClick(item("sshConnectAction")); compare(ssh.disconnectCalls, disconnects + 1)
             verify(!page.connectionConfigExpanded)
         }
-        function test_sshCommandManagementFold() {
+        function test_sshCommandPlaceholderAndEditorLifecycle() {
             make(nextSsh)
             const ssh = item("ssh-terminal-backend")
-            verify(!page.commandManagementExpanded)
-            verify(!item("ssh-command-editor").visible)
-            mouseClick(item("ssh-command-management-toggle"))
+            verify(findChild(page, "ssh-command-management-toggle") === null)
+            verify(!page.commandManagementExpanded && !item("ssh-command-editor").visible)
+            const create = item("ssh-command-create")
+            verify(create.visible && create.enabled)
+            compare(create.text, "＋ 添加命令")
+            compare(create.width, 96)
+            verify(waitForPolish(page))
+            verify(!create.contentItem.truncated)
+            tryVerify(() => item("ssh-command-create-border").available)
+            mouseClick(create)
             tryCompare(item("ssh-command-editor"), "visible", true)
-            wait(30)
+            verify(item("ssh-command-cancel").visible && !create.enabled)
             verify(!item("ssh-command-add").contentItem.truncated)
+            item("ssh-command-name").text = "未保存"
+            item("ssh-command-content").text = "echo draft"
+            verify(waitForPolish(page)); wait(20)
+            const expandedHeight = item("ssh-terminal-pane").height
+            mouseClick(item("ssh-command-cancel"))
+            tryVerify(() => item("ssh-terminal-pane").height > expandedHeight + 20)
+            verify(!page.commandManagementExpanded)
+            mouseClick(create); wait(20)
+            compare(item("ssh-command-name").text, "")
+            compare(item("ssh-command-content").text, "")
             item("ssh-command-name").text = "测试命令"
             item("ssh-command-content").text = "echo synthetic"
-            const expandedHeight = item("ssh-terminal-pane").height
-            mouseClick(item("ssh-command-management-toggle"))
-            tryVerify(function() { return item("ssh-terminal-pane").height > expandedHeight + 20 })
-            page.visible = false; page.visible = true
-            verify(!page.commandManagementExpanded)
-            mouseClick(item("ssh-command-management-toggle"))
-            wait(30)
-            compare(item("ssh-command-name").text, "测试命令")
-            compare(item("ssh-command-content").text, "echo synthetic")
             mouseClick(item("ssh-command-add")); compare(page.customCommands.length, 1)
-            tryVerify(function() { return visualItem(page, "ssh-command-delete-0") !== null })
+            verify(!page.commandManagementExpanded && create.visible && create.enabled)
+            tryVerify(() => visualItem(page, "ssh-command-delete-0") !== null)
             const remove = visualItem(page, "ssh-command-delete-0")
             const run = visualItem(page, "ssh-command-run-0")
-            verify(remove.visible)
-            mouseClick(item("ssh-command-management-toggle")); verify(!remove.visible); wait(30)
-            verify(run.visible); verify(!run.enabled)
-            verify(!run.contentItem.truncated)
+            verify(waitForPolish(page)); wait(20)
+            verify(remove.visible && run.visible && !run.enabled)
+            verify(!run.contentItem.truncated, "width=" + run.width + " text=" + run.contentItem.implicitWidth + " available=" + run.availableWidth)
+            compare(ssh.sentCommands.length, 0)
+            mouseClick(create); verify(item("ssh-command-editor").visible)
+            mouseClick(item("ssh-command-cancel")); verify(!item("ssh-command-editor").visible)
             ssh.connectionState = 2; ssh.connected = true
             mouseClick(run)
             compare(ssh.sentCommands.length, 1); compare(ssh.sentCommands[0], "echo synthetic")
-            compare(page.customCommands.length, 1)
-            mouseClick(item("ssh-command-management-toggle")); verify(remove.visible); wait(30)
             mouseClick(remove, remove.width / 2, remove.height / 2)
             compare(page.customCmdPendingDeleteName, "测试命令")
         }

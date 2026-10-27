@@ -1,4 +1,5 @@
 import LogAnalyQt.Next as Next
+import WorkshopStyle as WorkshopStyle
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Controls
@@ -12,6 +13,7 @@ ApplicationWindow {
 
     objectName: "nextMainWindow"
     property alias uiTheme: theme
+    Binding { target: WorkshopStyle.Theme; property: "appTheme"; value: theme }
     property alias analysisBackend: backend
     property int currentPage: 0
     property bool reflectingHighlight: false

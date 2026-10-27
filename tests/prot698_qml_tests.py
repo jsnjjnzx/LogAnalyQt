@@ -82,10 +82,10 @@ def main():
         (backend / "qmldir").write_text("module LogAnalyQt\nSshTerminal 1.0 SshTerminal.qml\n")
         module(imports / "LogAnalyQt" / "Next", "LogAnalyQt.Next", source / "qml" / "Next")
         environment = os.environ.copy()
-        environment["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+        environment["QT_QUICK_CONTROLS_STYLE"] = "WorkshopStyle"
         for number in range(args.repeat):
             print(f"QML iteration {number + 1}/{args.repeat}", flush=True)
-            command = [runner, "-input", str(source / "tests/qml-next"), "-import", str(imports),
+            command = [runner, "-input", str(source / "tests/qml-next"), "-import", str(imports), "-import", str(source / "qml"),
                        "-platform", environment.get("QT_QPA_PLATFORM", "offscreen")]
             if args.filter:
                 command.append(args.filter)

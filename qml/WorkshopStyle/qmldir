@@ -1,0 +1,5 @@
+module WorkshopStyle
+ToolTip 2.15 ToolTip.qml
+ToolTip 6.0 ToolTip.qml
+singleton Theme 1.0 Theme.qml
+import QtQuick.Controls.Basic auto

@@ -18,6 +18,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QQmlEngine>
+#include <QQmlExpression>
 #include <QQmlIncubationController>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -479,7 +480,15 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       const auto ruleScreenshot = qEnvironmentVariable("LOGANALYQT_SSH_RULE_SCREENSHOT");
       if (!ruleScreenshot.isEmpty()) require(ruleEditor->grabWindow().save(ruleScreenshot + ".library.png"), "rule library capture failed");
       ruleEditor->close(); settle();
-      click(uiItem("ssh-pause"));
+      auto *followControl = uiItem("ssh-pause");
+      require(followControl, "follow control is missing");
+      QQmlExpression tooltipExpression(qmlContext(followControl), followControl, "ToolTip.toolTip");
+      auto *sharedTooltip = tooltipExpression.evaluate().value<QObject *>();
+      require(!tooltipExpression.hasError() && sharedTooltip
+                  && sharedTooltip->objectName() == "workshop-tooltip"
+                  && sharedTooltip->property("appTheme").value<QObject *>() == window->property("uiTheme").value<QObject *>(),
+              "packaged application did not load its global tooltip style and theme");
+      click(followControl);
       firstInput.feed(*ssh, "normal after resume\n"); settle();
       require(livePage->property("autoScroll").toBool(), "resuming rematched historical output");
       firstInput.feed(*ssh, "ERROR new after resume\n"); settle();
@@ -527,9 +536,9 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       firstInput.feed(*ssh, "RX 680407000000\n"); settle();
       const int receivedFrame = ssh->currentLineCount() - 1;
       const int stoppedRows = ssh->currentLineCount();
-      auto *pauseButton = findItem(firstMonitorItem, "ssh-pause");
-      auto *stopButton = findItem(firstMonitorItem, "ssh-stop-reception");
-      require(stopButton && pauseButton && stopButton->x() > pauseButton->x(), "stop-screen button must follow pause-follow");
+      auto *pauseButton = findItem(qobject_cast<QQuickItem *>(liveWorkspace), "ssh-pause");
+      auto *stopButton = findItem(qobject_cast<QQuickItem *>(liveWorkspace), "ssh-stop-reception");
+      require(stopButton && pauseButton && stopButton->mapToScene(QPointF()).x() > pauseButton->mapToScene(QPointF()).x(), "stop-screen button must follow pause-follow in the sidebar");
       click(stopButton);
       require(ssh->receptionPaused(), "stop-screen button did not stop reception");
       firstInput.feed(*ssh, "output waits until reception resumes\n"); settle();

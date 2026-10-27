@@ -24,11 +24,11 @@ def main():
         icon_directory.mkdir()
         (icon_directory / "logo.ico").symlink_to(source / "assets/logo.ico")
         environment = os.environ.copy()
-        environment["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+        environment["QT_QUICK_CONTROLS_STYLE"] = "WorkshopStyle"
         environment["QML_DISABLE_DISK_CACHE"] = "1"
         for number in range(args.repeat):
             print(f"SSH QML iteration {number + 1}/{args.repeat}", flush=True)
-            command = [runner, "-input", str(source / "tests/qml-stage10"), "-import", str(imports), "-platform", "offscreen"]
+            command = [runner, "-input", str(source / "tests/qml-stage10"), "-import", str(imports), "-import", str(source / "qml"), "-platform", "offscreen"]
             if args.filter:
                 command.append(args.filter)
             result = run_logged(command, cwd=source, env=environment, log_name=f"qml-stage10-{number + 1}.log")

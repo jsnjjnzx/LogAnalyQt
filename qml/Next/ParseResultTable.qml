@@ -158,7 +158,7 @@ Item {
             }
             ToolTip.visible: rowMouse.containsMouse && !rowMenu.visible
             ToolTip.delay: 800
-            ToolTip.text: "<p>" + control.escaped(row.field.name + "\n" + row.field.value + "\n" + row.field.description) + "</p>"
+            ToolTip.text: row.field.name + "\n" + row.field.value + "\n" + row.field.description
 
             Text {
                 anchors.centerIn: parent
