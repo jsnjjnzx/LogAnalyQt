@@ -146,4 +146,13 @@
 
 | 任务 | 对应需求 | 当前记录与验收 |
 |---|---|---|
-| T32 提交推送并正式发布 v5.0.2 | RELEASE-06、07、PROCESS-01、LOCAL-05 | 进行中：核对当前改动、版本和文档，执行发布前回归与自审；推送 main 后等待同提交双平台门禁，再推送标签并验收公开 Release/更新 |
+| T32 提交推送并正式发布 v5.0.2 | RELEASE-06、07、PROCESS-01、LOCAL-05 | 已完成：发行源码 0d04eb1 已推送，双平台同提交构建与来源门禁通过；v5.0.2 正式 latest、7 附件/更新清单、双平台公开更新均通过；本地固定应用已更新 5.0.2，证据见下方 |
+
+### T32 发布完成记录
+
+- 发行源码：`0d04eb13de6701ba3251180737864835c1d5cb02`，已推送 main，v5.0.2 标签指向同一提交。
+- [双平台构建 40447726139](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40447726139)：Windows x64、macOS arm64 均 success；find_validated_build.py 实际校验同提交、同仓库、两个成功平台与两份未过期产物后才创建标签。
+- 标签 Git 推送连续遇 TLS 错误，改用 GitHub Git Database API 创建注释标签对象和引用；本地/远端标签对象与目标提交已核对，原有 push 标签工作流正常触发，未绕过发行门禁。
+- [正式 Release v5.0.2](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.2)：2026-10-27 12:25（Asia/Shanghai）公开，非草稿/非预发布且 latest，EXE、DMG、更新 ZIP、3 个摘要和 update.json 共 7 个附件齐全。
+- [发布与公开更新 40449577483](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40449577483)：发布及 Windows/macOS 公开更新均 success；真实下载、SHA256、替换、重启至 5.0.2、工作区草稿/便携数据保留通过。
+- 结构化证据：`build/v5.0.2-release-evidence/verification.json`；本地 5.0.2 Debug/ad-hoc 成品记录：`build/macos-debug/v5.0.2-local-verification.json`。本地 `release_package/通联工坊.app` 已更新，交付目录只放应用。

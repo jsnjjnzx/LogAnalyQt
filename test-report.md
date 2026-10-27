@@ -330,3 +330,25 @@
 日志：/tmp/loganalyqt-v502-qml.log、/tmp/loganalyqt-v502-parser.log、/tmp/loganalyqt-v502-tooling.log、/tmp/loganalyqt-v502-build.log、/tmp/loganalyqt-v502-native.log。六份流程文件与当前版本及范围已核对。
 
 提交时，远端同提交双平台构建、正式 Release 与公开更新仍待执行；本地固定应用也须后续更新为 5.0.2。历史本地成品证据见 T31，本节不把历史结果当作本次发行结果。
+
+### T32 本地 5.0.2 成品验收
+
+复用同一 Qt 依赖部署本次编译的主程序/Info.plist/Broker 并重定位依赖，114 个 Mach-O 的 arm64/随包依赖、codesign deep strict 均通过。清理 Qt/QML/DYLD 环境、使用临时个人数据执行 tests/test_ui_migration_runtime.py，完整通过全局样式/主题断言、配置迁移和恢复、11 个独立页签、共享规则、工作区重启保留及 MQTT 本机收发/助手清理。
+
+已直接更新 release_package/通联工坊.app，版本 5.0.2，签名及源/目标摘要一致，目录只保留应用，无额外压缩包或旧应用备份。主程序 SHA256：3e5ef243571d4686275b7c32be1ae1745e7499dbaea4eff2bc30ed7f66c870d9。结构化记录 build/macos-debug/v5.0.2-local-verification.json；运行日志 /tmp/loganalyqt-v502-packaged-runtime.log。此本地 Debug/ad-hoc 成品不等同于远端正式发行验收。
+
+### T32 远端发行与公开更新最终验收
+
+| 范围 | 实际证据 | 结果 |
+|---|---|---|
+| 同提交双平台构建 | [40447726139](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40447726139)，head 0d04eb13de6701ba3251180737864835c1d5cb02 | 总体 success；Windows 常规 CTest 25/25、UI 1/1，macOS 常规 CTest 28/28、UI/原生激活 2/2；预检/稳定性、打包、独立启动与 HTTPS 更新探测均通过 |
+| 产物门禁 | find_validated_build.py --repository jsnjjnzx/LogAnalyQt --commit 0d04eb13de6701ba3251180737864835c1d5cb02 | 通过，选择 40447726139；两个平台成功、产物未过期、同仓库同 main 提交 |
+| 标签一致性 | Git Database API 注释对象及引用、本地对象 SHA 和 commits/v5.0.2 | 标签目标为已验证源码；原 Git 推送 TLS 失败未冒称成功，API 创建后原 push 工作流正常触发 |
+| 正式 Release | [v5.0.2](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.2)、[40449577483](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40449577483) | 发布任务 success，非草稿/非预发布且 latest；7 个附件完整，说明与本版 CHANGELOG 一致 |
+| 更新元数据 | 保存 release.json、下载 update.json 并运行 assert | update.json 实际 SHA256 与 GitHub digest 一致；6 个产物条目的名称、大小、摘要、下载地址与远端完全一致；公开前所有上传摘要由发布脚本门禁验证 |
+| 双平台公开更新 | 同一发布 run 的 Windows/macOS Verify published update 任务 | 均 success；模拟旧客户端走生产更新路径，实际公开下载、SHA256、替换、重启至 5.0.2、主窗口可见/激活、工作区草稿和便携数据保留通过 |
+| 六份流程文档和格式 | spec/backlog/AGENTS/notes/test-report/review-record、git diff --check | 核对一致；历史本地阶段“未提交/未发布”记录保留历史含义，最终补记只改证据文档 |
+
+最终证据位于 `build/v5.0.2-release-evidence/`：verification.json、release.json、update.json、update-verification.log。正式远端结果以所链接的 Actions 和 Release 为准。
+
+限制：偶发首次 SSH 粉红提示仍未定位，本次未改 SSH 连接逻辑；受控 CI/合成数据不代表实体 Windows、企业网络或真实 SSH 设备验收。macOS 为 ad-hoc 签名，未经 Apple 公证。

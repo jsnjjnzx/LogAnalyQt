@@ -175,3 +175,11 @@ T28～T30 最终合并交付至 release_package/通联工坊.app；仅保留本�
 ## 2026-10-27 v5.0.2 发布决策（T32）
 
 用户已授权将此前 T26～T31 合并提交、推送并发布。复用现有 build.yml / release.yml / verify-release.yml，先通过相同 main 提交的双平台门禁，后推送 v5.0.2 标签。CHANGELOG 汇总监控会话/快捷命令工作流和全局提示两项主要改进；偶发首连提示原因未确认，保留原核查结论，不列为已修复。
+
+### T32 最终发行结果
+
+发行源码 `0d04eb13de6701ba3251180737864835c1d5cb02` 的[双平台构建](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40447726139)、[发布与公开更新](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40449577483)均通过，[v5.0.2](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.2)已正式公开并设为 latest。
+
+Git 标签推送两次因 TLS 失败，GitHub API 可正常访问；使用 Git Database API 创建同提交注释标签对象/引用，并验证本地对象 SHA、远端对象 SHA 与目标提交一致。该操作实际触发原有 push 标签发布流程，未修改工作流或绕过产物来源门禁；未输出或保存新的认证信息。
+
+最终补记仅更新发布结果文档，不移动发行标签。构建验收材料保存在 build 目录，release_package 继续只放唯一验证应用。偶发首连提示仍未定位、macOS ad-hoc/未经公证及 CI 不代表真实设备验收的边界保持明确。
