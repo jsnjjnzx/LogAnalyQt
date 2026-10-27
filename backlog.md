@@ -199,4 +199,12 @@
 
 | 任务 | 对应需求 | 当前记录与验收 |
 |---|---|---|
-| T38 提交推送 IP 修复与最终界面并发布 v5.0.4 | RELEASE-10、11、IP698-01、02、PARSEBAR-01、LOCAL-05 | 进行中：初始提交已推；远端发现字体相关标题断言问题，已改共用标题布局及实际尺寸检查，本机三页专项通过；以修正后的新提交重新等待双平台完整构建和来源门禁，成功后推标签并验收发布/公开更新 |
+| T38 提交推送 IP 修复与最终界面并发布 v5.0.4 | RELEASE-10、11、IP698-01、02、PARSEBAR-01、LOCAL-05 | 已完成：最终发行源码b034b6a已推main；双平台构建40491303790及来源门禁通过后推v5.0.4标签；正式latest、7附件/更新摘要及双平台公开更新40493620127全部通过；唯一本地5.0.4应用已更新；结果与前次失败记录见下方及test-report.md/review-record.md |
+
+### T38 发布完成记录
+
+- 发行源码：`b034b6a4b7185e96bfaf08a77f3ef6046ef2fae4`，包含IP显示修复、最终底栏/每侧完整导航对及跨平台标题布局验收修正，已推main；v5.0.4标签指向相同源码。此前3e60a19的失败记录保留，未用于最终产物。
+- [双平台构建40491303790](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40491303790)：Windows x64、macOS arm64全部success；find_validated_build.py实际验证同提交、同仓库、成功平台及两份未过期产物后才创建并推送标签。
+- [正式Release v5.0.4](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.4)：2026-10-27 19:06（Asia/Shanghai）公开，非草稿/非预发布且latest；EXE、DMG、更新ZIP、3摘要及update.json共7附件齐全，实际清单摘要和六个产物条目与远端一致。
+- [发布及公开更新40493620127](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40493620127)：发布及双平台公开更新全部success；日志确认实际下载、SHA256、替换、重启5.0.4及工作区草稿/便携数据保留。
+- 正式证据：build/v5.0.4-release-evidence/verification.json；本地成品：build/macos-debug/v5.0.4-local-verification.json。唯一release_package/通联工坊.app已更新为5.0.4；包体积分析只在build副本，瘦身试验未纳入发行。

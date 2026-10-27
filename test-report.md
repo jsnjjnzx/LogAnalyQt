@@ -485,3 +485,21 @@
 初始提交3e60a19的build 40488089537第一次尝试在旧SSH编辑器高度断言及无完整输出的Windows预检失败；同提交第二轮已通过两平台预检，macOS一般与应用检查通过，Windows25项一般回归24通过，ui_parse_table_runtime的差异标题布局断言失败。该旧提交不作为最终标签候选。
 
 失败诊断发现标题文字boundingRect不等于控件布局框。最终标题/按钮放入共同RowLayout，断言检查真实控件width/height并等待稳定，保留同排/不重叠/四按钮与跳转要求，并新增失败布局数值日志。开发应用重建及三页解析专项通过，最终差异截图已查看；日志/tmp/loganalyqt-v504-header-build.log、/tmp/loganalyqt-v504-header-runtime.log。新提交需重新通过同提交双平台完整验收。
+
+### T38 最终同提交双平台及发行验收
+
+| 范围 | 证据与执行 | 实际结果 |
+|---|---|---|
+| 最终源码/标签 | b034b6a4b7185e96bfaf08a77f3ef6046ef2fae4；build40491303790；find_validated_build.py；远端commits/v5.0.4 | 同main源码、成功双平台、产物来源及未过期门禁通过后推标签，标签目标一致 |
+| Windows x64 | 最终Windows job122145631174、windows-build.log | 一般25/25、应用1/1、打包/依赖/脱离Qt与MinGW运行/更新HTTPS探测全通过；959项698检查零失败；UPX未安装，仍用原EXE格式 |
+| macOS arm64 | 最终macOS job122145631434、macos-build.log | 一般28/28、应用/原生激活2/2、包100个Mach-O/签名/依赖/DMG及独立Cocoa运行/更新探测全通过 |
+| 公开发布/摘要 | release.json、latest.json、实际下载update.json | v5.0.4正式非草稿非预发布且latest，7附件齐全，实际update.json SHA256和6产物大小/摘要/URL全部与远端一致；说明来自CHANGELOG |
+| 双平台公开自动更新 | 发布run40493620127及update-verification.log | Windows和macOS全部success；真实公开下载、SHA256、替换、重启5.0.4、工作区草稿及便携数据保留通过 |
+| 最终本地成品 | b034b6a成品隔离完整UI/MQTT及三页专项；114个Mach-O/签名/交付摘要 | 通过，唯一release_package/通联工坊.app已更新5.0.4；源码/本地路径和SHA见v5.0.4-local-verification.json |
+| 六份根文档及格式 | 逐一核对及git diff --check | 一致，历史失败和修正记录保留；生成证据/应用/个人配置不纳入提交 |
+
+正式结果文件build/v5.0.4-release-evidence/verification.json；[构建](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40491303790)、[发布/更新](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40493620127)、[正式下载](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.4)。本地最终日志/tmp/loganalyqt-v504-final-packaged-runtime.log。补记只改文档，不改变源码标签。
+
+包体积实验另存build/package-size-analysis/v5.0.3：macOS副本只保留arm64，ZIP从66,881,210到39,134,609字节（-41.5%），签名和隔离Cocoa完整UI/MQTT通过；Windows原EXE未改，普通ZIP从83,862,548到33,717,646字节（-59.8%），完整性校验通过。均未发布或替换本次正式附件，不能宣称v5.0.4已经瘦身。
+
+CI/合成样例不代表Windows实机、企业网络或真实SSH/计量设备现场验收；macOS为ad-hoc，未经Apple公证。
