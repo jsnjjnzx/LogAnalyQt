@@ -6,6 +6,49 @@ import LogAnalyQt.Next as Next
 GlassPage {
     id: root
     title: "实时监控"
+    component SessionOption: CheckDelegate {
+        id: option
+        required property var menu
+        signal keyboardToggleRequested()
+        implicitHeight: 34
+        implicitWidth: Math.max(212, implicitContentWidth + leftPadding + rightPadding)
+        leftPadding: 32; rightPadding: 12
+        font.pixelSize: 13
+        focusPolicy: Qt.StrongFocus
+        hoverEnabled: true
+        highlighted: hovered || visualFocus
+        function selectInMenu() {
+            for (let i = 0; i < menu.count; ++i)
+                if (menu.itemAt(i) === option) { menu.currentIndex = i; return }
+        }
+        onHoveredChanged: if (hovered) selectInMenu()
+        onPressed: selectInMenu()
+        Keys.onReturnPressed: keyboardToggleRequested()
+        Keys.onEnterPressed: keyboardToggleRequested()
+        indicator: Rectangle {
+            x: 12; y: (option.height - height) / 2
+            width: 14; height: 14; radius: 3
+            color: "transparent"; border.width: 1
+            border.color: option.highlighted ? option.palette.highlightedText : option.palette.text
+            opacity: option.enabled ? 1 : 0.38
+            Text {
+                objectName: "menu-check-mark"
+                anchors.centerIn: parent
+                visible: option.checked; text: "✓"; font.pixelSize: 11
+                color: parent.border.color
+            }
+        }
+        contentItem: Text {
+            text: option.text; textFormat: Text.PlainText; font: option.font
+            color: option.highlighted ? option.palette.highlightedText : option.palette.text
+            opacity: option.enabled ? 1 : 0.38
+            verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+        }
+        background: Rectangle {
+            radius: 7
+            color: option.highlighted && option.enabled ? option.palette.highlight : "transparent"
+        }
+    }
     property var backend
     property var sessions: []
     property var savedConnections: []
@@ -18,6 +61,33 @@ GlassPage {
     property var pendingClose: null
     property bool sidebarCollapsed: false
     property bool shuttingDown: false
+    property bool waitingForLogShutdown: false
+    enabled: !waitingForLogShutdown
+    property var logShutdownTargets: []
+    signal logShutdownReady(bool success)
+    function hasOpenLogFiles() {
+        return sessions.some(function(page) { return page.terminal.logging || page.terminal.logBusy; });
+    }
+    function finishLogsBeforeExit() {
+        logShutdownTargets = sessions.filter(function(page) { return page.terminal.logging || page.terminal.logBusy; });
+        waitingForLogShutdown = true;
+        continueLogShutdown();
+    }
+    function continueLogShutdown() {
+        if (!waitingForLogShutdown) return;
+        let pending = false;
+        for (const page of sessions) {
+            const terminal = page.terminal;
+            if (terminal.logBusy) pending = true;
+            else if (terminal.logging) { pending = true; terminal.stopLogging(); }
+        }
+        if (!pending) {
+            waitingForLogShutdown = false;
+            const success = !logShutdownTargets.some(function(page) { return page.terminal.logError !== ""; });
+            logShutdownTargets = [];
+            logShutdownReady(success);
+        }
+    }
     property var monitorRules: []
     property int nextMonitorRuleId: 1
     property string monitorRuleError: ""
@@ -88,6 +158,9 @@ GlassPage {
             && typeof config.autoReconnect === "boolean" && typeof config.expanded === "boolean"
             && typeof config.commandManagementExpanded === "boolean"
             && (config.copyOnSelect === undefined || typeof config.copyOnSelect === "boolean")
+            && (config.wrapLogLines === undefined || typeof config.wrapLogLines === "boolean")
+            && (config.logFlushIntervalSeconds === undefined || Number.isInteger(config.logFlushIntervalSeconds) && config.logFlushIntervalSeconds >= 1 && config.logFlushIntervalSeconds <= 60)
+            && (config.logBufferKiB === undefined || Number.isInteger(config.logBufferKiB) && config.logBufferKiB >= 16 && config.logBufferKiB <= 8192)
             && (config.monitorEnabled === undefined || typeof config.monitorEnabled === "boolean")
             && (config.monitorRuleIds === undefined || Array.isArray(config.monitorRuleIds) && config.monitorRuleIds.length <= 256
                 && config.monitorRuleIds.every(function(id, index, ids) { return Number.isInteger(id) && id > 0 && id < 2147483647 && ids.indexOf(id) === index; }));
@@ -283,6 +356,7 @@ GlassPage {
             id: sessionPage
             objectName: "ssh-session-" + sessionId
             property bool detached: false
+            enabled: !root.waitingForLogShutdown
             property bool windowPositioned: false
             readonly property alias monitorWindow: floatingWindow
             parent: detached ? floatingSessionHost : sessionHost
@@ -299,6 +373,9 @@ GlassPage {
             Connections {
                 target: sessionPage.terminal
                 function onConnectedChanged() { if (target.connected) root.rememberConnection(sessionPage); }
+                function onLoggingChanged() {
+                    if (root.waitingForLogShutdown) Qt.callLater(root.continueLogShutdown);
+                }
             }
             ApplicationWindow {
                 id: floatingWindow
@@ -497,6 +574,10 @@ GlassPage {
                             Next.GlassMenu {
                                 id: sessionMenu
                                 objectName: "ssh-session-options-" + sessionRow.modelData.sessionId
+                                onCurrentIndexChanged: {
+                                    const option = itemAt(currentIndex)
+                                    if (option instanceof CheckDelegate) option.forceActiveFocus(Qt.TabFocusReason)
+                                }
                                 Next.GlassMenuItem {
                                     objectName: "ssh-session-detach-" + sessionRow.modelData.sessionId
                                     text: sessionRow.modelData.detached ? "定位独立窗口" : "独立窗口"
@@ -505,9 +586,57 @@ GlassPage {
                                 Next.GlassMenuItem {
                                     objectName: "ssh-session-dock-" + sessionRow.modelData.sessionId
                                     visible: sessionRow.modelData.detached
+                                    enabled: visible
                                     height: visible ? implicitHeight : 0
                                     text: "收回主窗口"
                                     onTriggered: root.dockSession(sessionRow.modelData)
+                                }
+                                Next.GlassMenuSeparator {}
+                                SessionOption {
+                                    objectName: "ssh-copy-on-select"
+                                    menu: sessionMenu
+                                    text: "选中即复制"
+                                    checked: sessionRow.modelData.copyOnSelect
+                                    onToggled: sessionRow.modelData.copyOnSelect = checked
+                                    onKeyboardToggleRequested: sessionRow.modelData.copyOnSelect = !sessionRow.modelData.copyOnSelect
+                                }
+                                SessionOption {
+                                    objectName: "ssh-wrap-lines"
+                                    menu: sessionMenu
+                                    text: "自动换行"
+                                    checked: sessionRow.modelData.wrapLogLines
+                                    onToggled: sessionRow.modelData.wrapLogLines = checked
+                                    onKeyboardToggleRequested: sessionRow.modelData.wrapLogLines = !sessionRow.modelData.wrapLogLines
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "勾选后按窗口宽度换行；关闭时通过底部横向滚动条查看长行。"
+                                }
+                                Next.GlassMenuSeparator {}
+                                Next.GlassMenuItem {
+                                    objectName: "ssh-session-log-settings-" + sessionRow.modelData.sessionId
+                                    text: "日志写入设置…"
+                                    onTriggered: sessionRow.modelData.openLogSettings()
+                                }
+                                Next.GlassMenuItem {
+                                    objectName: "ssh-session-log-start-" + sessionRow.modelData.sessionId
+                                    text: "开始记录日志…"
+                                    enabled: !sessionRow.modelData.terminal.logging && !sessionRow.modelData.terminal.logBusy
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "选择文件后记录该会话的新输出，保存为 UTF-8 文本；清屏和暂停跟随不影响记录。"
+                                    onTriggered: sessionRow.modelData.requestLogFile(false)
+                                }
+                                Next.GlassMenuItem {
+                                    objectName: "ssh-session-log-stop-" + sessionRow.modelData.sessionId
+                                    text: "停止记录日志"
+                                    enabled: sessionRow.modelData.terminal.logging && !sessionRow.modelData.terminal.logBusy
+                                    onTriggered: sessionRow.modelData.terminal.stopLogging()
+                                }
+                                Next.GlassMenuItem {
+                                    objectName: "ssh-session-log-export-" + sessionRow.modelData.sessionId
+                                    text: "导出当前缓冲日志…"
+                                    enabled: !sessionRow.modelData.terminal.logBusy
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "只导出该会话当前保留的日志及未换行尾部，已淘汰的内容无法恢复。"
+                                    onTriggered: sessionRow.modelData.requestLogFile(true)
                                 }
                                 Next.GlassMenuSeparator {}
                                 Next.GlassMenuItem {

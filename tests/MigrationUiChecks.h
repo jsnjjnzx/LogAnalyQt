@@ -277,8 +277,17 @@ inline QString checkMigratedUi(QQuickWindow *window) {
           [clipboard](QMimeData *data) { clipboard->setMimeData(data); });
       clipboard->setText("selection-test-sentinel");
       auto *row = uiItem("ssh-log-line-" + QString::number(ssh->lineIdAt(0)));
-      require(row && !uiItem("ssh-copy-all") && uiItem("ssh-copy-on-select"),
-              "selection-copy toggle did not replace the copy-all button");
+      require(row && !uiItem("ssh-copy-all") && !findItem(qobject_cast<QQuickItem *>(livePage), "ssh-copy-on-select"),
+              "selection-copy control must live in the session menu");
+      auto toggleCopy = [&] {
+        click(uiItem("ssh-session-menu-" + livePage->property("sessionId").toString())); settle();
+        auto *option = uiItem("ssh-copy-on-select");
+        require(option && option->isVisible(), "session menu copy toggle is missing");
+        click(option); settle();
+        require(option->isVisible(), "session menu must stay open after toggling copy");
+        auto *menu = option->property("menu").value<QObject *>();
+        require(menu && QMetaObject::invokeMethod(menu, "close"), "session menu failed to close"); settle();
+      };
       const qreal charWidth = livePage->property("charWidth").toReal();
       auto drag = [&] {
         const auto from = row->mapToScene(QPointF(10 + charWidth * 0.1, row->height() / 2));
@@ -292,10 +301,10 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       };
       drag();
       require(clipboard->text() == "selection-test-sentinel", "unchecked selection-copy changed clipboard");
-      click(uiItem("ssh-copy-on-select")); settle();
+      toggleCopy();
       drag();
       require(clipboard->text() == "RX", "native clipboard does not contain the dragged text");
-      click(uiItem("ssh-copy-on-select"));
+      toggleCopy();
     }
     ssh->clearBuffer(); livePage->setProperty("parseWindowVisible", false);
     trace("live log paused viewport across coalesced batches");

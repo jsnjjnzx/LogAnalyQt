@@ -77,6 +77,13 @@ Item {
             const tab = item(page, "ssh-session-row-" + page.sessions[index].sessionId)
             mouseClick(tab, 25, 18); wait(30); compare(page.currentIndex, index)
         }
+        function toggleSessionOption(session, name) {
+            mouseClick(item(page, "ssh-session-menu-" + session.sessionId)); wait(20)
+            const option = visualItem(scene.Window.window.contentItem, name)
+            verify(option !== null && option.visible, name)
+            mouseClick(option); wait(20)
+            keyClick(Qt.Key_Escape); wait(20)
+        }
         function connected(session) { session.terminal.connectionState = 2; session.terminal.connected = true }
         function clipboard(value) {
             const editor = clipboardEditor.createObject(scene)
@@ -444,7 +451,7 @@ Item {
             const x1 = 10 + a.charWidth * 1.05, x4 = 10 + a.charWidth * 4.05, y = row.height / 2
             verify(findChild(a, "ssh-copy-all") === null)
             verify(!a.copyOnSelect)
-            mouseClick(item(a, "ssh-copy-on-select")); verify(a.copyOnSelect)
+            toggleSessionOption(a, "ssh-copy-on-select"); verify(a.copyOnSelect)
             clipboard("untouched")
             mousePress(row, x1, y)
             mouseMove(row, x4, y, 20, Qt.LeftButton); wait(20)
@@ -452,7 +459,7 @@ Item {
             compare(clipboard(), "untouched")
             mouseRelease(row, x4, y); wait(20)
             compare(clipboard(), "bcd")
-            mouseClick(item(a, "ssh-copy-on-select")); verify(!a.copyOnSelect)
+            toggleSessionOption(a, "ssh-copy-on-select"); verify(!a.copyOnSelect)
             clipboard("keep")
             mousePress(row, x4, y)
             mouseMove(row, x1, y, 20, Qt.LeftButton)
@@ -493,7 +500,7 @@ Item {
         function test_copyOnSelectIsPerSessionAndRestoresWithoutCopying() {
             make()
             const a = page.activeSession
-            mouseClick(item(a, "ssh-copy-on-select"))
+            toggleSessionOption(a, "ssh-copy-on-select")
             const b = page.addSession(); wait(20)
             verify(a.copyOnSelect); verify(!b.copyOnSelect)
             clipboard("preserved")
@@ -673,6 +680,456 @@ Item {
             } finally {
                 parent = originalParent
             }
+        }
+        function test_onlyCurrentConnectionErrorAppearsOutsideRemoteOutput() {
+            make()
+            const a = page.activeSession, status = item(a, "ssh-current-connection-error")
+            verify(!status.visible)
+            a.terminal.lastError = "当前连接失败"
+            verify(status.visible); verify(status.text.indexOf("当前连接失败") >= 0)
+            compare(a.terminal.currentLineCount, 0)
+            a.terminal.lastError = ""; connected(a)
+            verify(!status.visible)
+        }
+        function test_longLinesSupportHorizontalScrollingAndWrappedSelection() {
+            make()
+            const a = page.activeSession
+            a.connectionConfigExpanded = false; page.width = 954
+            const text = "prefix " + "x".repeat(300) + " AA BB CC DD"
+            a.terminal.appendTestLines([text], 10); wait(30)
+            const view = item(a, "ssh-log-list"), row = item(a, "ssh-log-line-0")
+            verify(waitForPolish(a))
+            tryVerify(() => view.contentWidth > view.width * 2)
+            verify(item(a, "ssh-log-horizontal-scroll").visible)
+            verify(view.y + view.height <= item(a, "ssh-log-horizontal-scroll").y + 1)
+            const hex = text.indexOf("AA BB")
+            view.contentX = Math.min(view.contentWidth - view.width, hex * a.charWidth - 30)
+            a.autoScroll = false; wait(20)
+            mouseDoubleClickSequence(row, 10 + a.charWidth * (hex + 3.1), row.height / 2); wait(20)
+            compare(a.parseableHexText, "AA BB CC DD")
+            a.copyTextSelection(); compare(clipboard(), "AA BB CC DD")
+            toggleSessionOption(a, "ssh-wrap-lines")
+            verify(a.wrapLogLines); tryCompare(view, "contentX", 0)
+            compare(view.contentWidth, view.width)
+            verify(!item(a, "ssh-log-horizontal-scroll").visible)
+            tryVerify(() => row.height > a.terminalFontSize * 3)
+            const editor = item(row, "ssh-selected-text")
+            compare(editor.selectedText, "AA BB CC DD")
+            const start = editor.positionToRectangle(2), end = editor.positionToRectangle(100)
+            verify(end.y > start.y)
+            a.clearTextSelection(); wait(20)
+            mousePress(row, 10 + start.x + a.charWidth * 0.05, start.y + start.height / 2)
+            mouseMove(row, 10 + end.x + a.charWidth * 0.05, end.y + end.height / 2, 20, Qt.LeftButton)
+            mouseRelease(row, 10 + end.x + a.charWidth * 0.05, end.y + end.height / 2); wait(20)
+            a.copyTextSelection(); compare(clipboard(), text.slice(2, 100))
+            const point = item(row, "ssh-selected-text").positionToRectangle(hex + 3)
+            mouseDoubleClickSequence(row, 10 + point.x + a.charWidth * 0.55, point.y + point.height / 2); wait(20)
+            compare(a.parseableHexText, "AA BB CC DD")
+        }
+        function test_wrappingAndCopyOptionsAreOrderedPerSessionAndPersist() {
+            make()
+            const a = page.activeSession
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            const copy = visualItem(scene.Window.window.contentItem, "ssh-copy-on-select")
+            const wrap = visualItem(scene.Window.window.contentItem, "ssh-wrap-lines")
+            verify(copy !== null && wrap !== null)
+            verify(wrap.y > copy.y && wrap.y - copy.y <= copy.height + 4)
+            keyClick(Qt.Key_Escape); wait(20)
+            verify(findChild(a, "ssh-copy-on-select") === null)
+            toggleSessionOption(a, "ssh-copy-on-select")
+            toggleSessionOption(a, "ssh-wrap-lines")
+            connected(a)
+            a.terminal.liveLine = "prompt " + "p".repeat(350); a.terminal.cursorColumn = a.terminal.liveLine.length
+            wait(30)
+            const view = item(a, "ssh-log-list"), footer = view.footerItem
+            tryVerify(() => footer.height > a.terminalFontSize * 3)
+            verify(footer.caretY > 0)
+            const b = page.addSession(); wait(20)
+            verify(a.wrapLogLines && a.copyOnSelect)
+            verify(!b.wrapLogLines && !b.copyOnSelect)
+            verify(page.detachSession(a)); wait(30)
+            verify(a.wrapLogLines); verify(page.dockSession(a)); wait(20)
+            verify(page.saveWorkspace())
+            page.destroy(); page = null; wait(40); make()
+            verify(page.sessions[0].wrapLogLines && page.sessions[0].copyOnSelect)
+            verify(!page.sessions[1].wrapLogLines)
+            const config = page.blankConfiguration("旧配置")
+            page.activeSession.restoreConfiguration(config); verify(!page.activeSession.wrapLogLines)
+            config.wrapLogLines = "true"; verify(!page.validConfiguration(config))
+        }
+        function test_checkedMenuIndicatorsStayInTheirOwnGutter() {
+            make()
+            const a = page.activeSession
+            a.copyOnSelect = true
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            const copy = visualItem(scene.Window.window.contentItem, "ssh-copy-on-select")
+            const wrap = visualItem(scene.Window.window.contentItem, "ssh-wrap-lines")
+            verify(copy !== null && wrap !== null)
+            for (const option of [copy, wrap]) {
+                const mark = option.indicator
+                verify(mark.x >= 0)
+                verify(mark.x + mark.width + 4 <= option.contentItem.x)
+                compare(mark.y + mark.height / 2, option.height / 2)
+                verify(mark.visible)
+                compare(mark.width, mark.height)
+                verify(mark.border.width > 0)
+                compare(item(mark, "menu-check-mark").visible, option.checked)
+            }
+            mouseMove(copy, copy.width / 2, copy.height / 2); wait(20)
+            verify(copy.highlighted)
+            compare(copy.indicator.border.color, copy.contentItem.color)
+            compare(item(copy.indicator, "menu-check-mark").color, copy.contentItem.color)
+            mouseClick(copy); wait(20)
+            verify(!a.copyOnSelect)
+            keyClick(Qt.Key_Escape); wait(20)
+            toggleSessionOption(a, "ssh-wrap-lines")
+            verify(a.wrapLogLines)
+        }
+        function test_sessionOptionsStayOpenForMouseAndKeyboard() {
+            make()
+            const a = page.activeSession
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            const copy = visualItem(scene.Window.window.contentItem, "ssh-copy-on-select")
+            const wrap = visualItem(scene.Window.window.contentItem, "ssh-wrap-lines")
+            const menu = copy.menu
+            verify(copy && wrap && menu.opened)
+            for (let i = 0; i < 2; ++i) {
+                mouseClick(copy); wait(20)
+                compare(a.copyOnSelect, i === 0); compare(copy.checked, a.copyOnSelect)
+                verify(menu.opened)
+                mouseClick(wrap); wait(20)
+                compare(a.wrapLogLines, i === 0); compare(wrap.checked, a.wrapLogLines)
+                verify(menu.opened)
+            }
+            keyClick(Qt.Key_Escape); wait(20)
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            menu.currentIndex = 0; wait(20)
+            keyClick(Qt.Key_Down); wait(20); verify(copy.activeFocus)
+            keyClick(Qt.Key_Space); wait(20)
+            verify(a.copyOnSelect && menu.opened)
+            keyClick(Qt.Key_Down); wait(20); verify(wrap.activeFocus)
+            keyClick(Qt.Key_Return); wait(20)
+            verify(a.wrapLogLines && menu.opened)
+            keyClick(Qt.Key_Escape); wait(20); verify(!menu.visible)
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            mouseClick(item(page, "ssh-session-row-" + a.sessionId), 25, 18); wait(20)
+            verify(!menu.visible)
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            const settings = visualItem(scene.Window.window.contentItem, "ssh-session-log-settings-" + a.sessionId)
+            mouseClick(settings); wait(20); verify(!menu.visible)
+        }
+        function test_terminalTextHasHigherContrastAcrossOutputAndSelection() {
+            make()
+            const a = page.activeSession
+            a.connectionConfigExpanded = false; connected(a)
+            a.terminal.appendTestLines(["RX 68 04 07 00 中文日志"], 10)
+            a.terminal.liveLine = "root@device:~# "; wait(30)
+            const row = item(a, "ssh-log-line-0")
+            compare(item(row, "ssh-log-text").color, a.terminalText)
+            compare(item(a, "ssh-terminal-live-line").color, a.terminalText)
+            const luminance = function(color) {
+                const linear = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+                return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b)
+            }
+            verify((luminance(a.terminalText) + 0.05) / (luminance(a.terminalBg) + 0.05) > 15)
+            mouseDoubleClickSequence(row, 10 + a.charWidth * 4, row.height / 2); wait(20)
+            const editor = item(row, "ssh-selected-text")
+            compare(editor.color, a.terminalText); compare(editor.selectedTextColor, a.terminalText)
+            a.wrapLogLines = true; wait(20)
+            compare(item(a, "ssh-selected-live-text").color, a.terminalText)
+        }
+        function test_wrappedMatchHighlightsSpanMultipleVisualRows() {
+            make()
+            const a = page.activeSession
+            a.wrapLogLines = true; a.connectionConfigExpanded = false; page.width = 954
+            const id = page.saveMonitorRule(-1, "跨行标记", "(?:ERROR)+", false, "#80b9ff", false, false)
+            a.monitorRuleIds = [id]; a.monitorEnabled = true
+            a.terminal.appendTestLines(["prefix " + "ERROR".repeat(70) + " end"], 10); wait(30)
+            const row = item(a, "ssh-log-line-0")
+            verify(waitForPolish(a))
+            const mark = item(row, "ssh-log-match-highlights")
+            tryVerify(() => mark.children.filter(child => child.objectName === "ssh-wrapped-match-span").length > 1)
+            for (const span of mark.children.filter(child => child.objectName === "ssh-wrapped-match-span")) {
+                verify(span.width > 0 && span.height > 0)
+                verify(span.x >= 0 && span.x + span.width <= mark.width + 1)
+                verify(span.y >= 0 && span.y + span.height <= row.height + 1)
+            }
+            a.terminal.lineModel.setProperty(0, "lineText", "short"); wait(20)
+            tryVerify(() => mark.children.filter(child => child.objectName === "ssh-wrapped-match-span").length === 0)
+        }
+        function test_quickCommandPencilIsAnOverlayAndNeverSends() {
+            make()
+            const a = page.activeSession; connected(a)
+            a.addCustomCommand("查看日志", "tail -f app.log")
+            tryVerify(() => visualItem(a, "ssh-command-edit-0") !== null)
+            const run = visualItem(a, "ssh-command-run-0"), edit = visualItem(a, "ssh-command-edit-0")
+            verify(!a.commandManagementExpanded)
+            verify(edit.visible && edit.enabled && edit.width <= 20 && edit.height <= 20)
+            compare(edit.parent, run.parent); compare(edit.parent.width, run.width)
+            verify(edit.x + edit.width <= run.width && edit.x > run.width / 2)
+            verify(waitForRendering(edit)); mouseClick(edit)
+            verify(a.commandManagementExpanded)
+            compare(item(a, "ssh-command-content").text, "tail -f app.log")
+            compare(a.terminal.sentCommands.length, 0)
+            const remove = visualItem(a, "ssh-command-delete-0")
+            verify(remove.x + remove.width < edit.x)
+        }
+        function test_logWriteSettingsValidatePersistAndReachOnlyTheirOwnSession() {
+            make()
+            const a = page.activeSession
+            compare(a.logFlushIntervalSeconds, 1); compare(a.logBufferKiB, 256)
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            const overlay = scene.Window.window.contentItem
+            mouseClick(item(overlay, "ssh-session-log-settings-" + a.sessionId)); wait(20)
+            verify(item(a, "ssh-log-settings").visible)
+            item(a, "ssh-log-interval").text = "0"
+            verify(!item(a, "ssh-log-settings-save").enabled)
+            item(a, "ssh-log-interval").text = "2"
+            item(a, "ssh-log-buffer-size").text = "8193"
+            verify(!item(a, "ssh-log-settings-save").enabled)
+            item(a, "ssh-log-buffer-size").text = "32"
+            mouseClick(item(a, "ssh-log-settings-save")); wait(20)
+            compare(a.logFlushIntervalSeconds, 2); compare(a.logBufferKiB, 32)
+            a.selectLogFile("file:///tmp/buffered.log")
+            compare(a.terminal.logCalls[0].intervalMs, 2000)
+            compare(a.terminal.logCalls[0].bufferKiB, 32)
+            const b = page.addSession(); wait(20)
+            compare(b.logFlushIntervalSeconds, 1); compare(b.logBufferKiB, 256)
+            verify(page.saveWorkspace())
+            page.destroy(); page = null; wait(40); make()
+            compare(page.sessions[0].logFlushIntervalSeconds, 2); compare(page.sessions[0].logBufferKiB, 32)
+            compare(page.sessions[1].logFlushIntervalSeconds, 1); compare(page.sessions[1].logBufferKiB, 256)
+            const config = page.blankConfiguration("旧配置")
+            verify(page.validConfiguration(config))
+            page.activeSession.restoreConfiguration(config)
+            compare(page.activeSession.logFlushIntervalSeconds, 1); compare(page.activeSession.logBufferKiB, 256)
+            config.logBufferKiB = "256"; verify(!page.validConfiguration(config))
+            config.logBufferKiB = 256; config.logFlushIntervalSeconds = 61; verify(!page.validConfiguration(config))
+            page.activeSession.openLogSettings(); wait(20)
+            item(page.activeSession, "ssh-log-interval").text = "5"
+            mouseClick(item(page.activeSession, "ssh-log-settings-cancel"))
+            compare(page.activeSession.logFlushIntervalSeconds, 1)
+        }
+        function test_applicationExitWaitsForBusyLogOperationsAndStopAcknowledgements() {
+            make()
+            const a = page.activeSession
+            a.selectLogFile("file:///tmp/exit-a.log")
+            const b = page.addSession()
+            b.selectLogFile("file:///tmp/exit-b.log")
+            b.terminal.logBusy = true
+            const ready = []
+            page.logShutdownReady.connect(function(success) { ready.push(success) })
+            verify(page.hasOpenLogFiles())
+            page.finishLogsBeforeExit(); wait(20)
+            compare(ready.length, 0); verify(!a.terminal.logging); verify(b.terminal.logging)
+            verify(!page.enabled && !b.enabled)
+            b.terminal.logBusy = false
+            tryCompare(b.terminal, "logging", false)
+            tryCompare(page, "waitingForLogShutdown", false)
+            compare(ready.length, 1); verify(ready[0]); verify(!page.hasOpenLogFiles())
+            verify(page.enabled && b.enabled)
+            a.selectLogFile("file:///tmp/exit-failure.log")
+            a.terminal.logError = "模拟停止时的写入错误"
+            page.finishLogsBeforeExit(); wait(20)
+            compare(ready.length, 2); verify(!ready[1])
+        }
+        function test_sessionLogControlsAreIndependentAndSurviveDetaching() {
+            make()
+            const a = page.activeSession
+            const b = page.addSession()
+            b.selectLogFile("file:///tmp/session-b.log")
+            verify(b.terminal.logging); verify(!a.terminal.logging)
+            compare(b.terminal.logCalls[0].kind, "start")
+            compare(b.terminal.logCalls[0].append, false)
+            compare(b.terminal.sentCommands.length, 0)
+            verify(findChild(b, "ssh-log-menu") === null)
+            verify(findChild(b, "ssh-log-start") === null)
+            verify(item(b, "ssh-log-status").visible)
+            verify(item(b, "ssh-log-status").text.indexOf("session-b.log") >= 0)
+            page.width = 954
+            const status = item(b, "ssh-log-status")
+            verify(waitForRendering(status))
+            const corner = status.mapToItem(b, status.width, status.height)
+            verify(corner.x <= b.width && corner.y <= b.height)
+            mouseClick(item(b, "ssh-clear")); verify(b.terminal.logging)
+            mouseClick(item(b, "ssh-pause")); verify(b.terminal.logging)
+            select(0); verify(b.terminal.logging)
+            verify(page.detachSession(b)); wait(30)
+            verify(b.terminal.logging && b.monitorWindow.visible)
+            mouseClick(item(page, "ssh-session-menu-" + b.sessionId)); wait(20)
+            const overlay = scene.Window.window.contentItem
+            verify(!item(overlay, "ssh-session-log-start-" + b.sessionId).enabled)
+            verify(item(overlay, "ssh-session-log-stop-" + b.sessionId).enabled)
+            mouseClick(item(overlay, "ssh-session-log-stop-" + b.sessionId))
+            verify(!b.terminal.logging); compare(b.terminal.logCalls[1].kind, "stop")
+            verify(page.dockSession(b)); wait(20)
+            b.selectLogFile("file:///tmp/restarted.log")
+            verify(b.terminal.logging)
+            b.closeSshSession(); verify(!b.terminal.logging)
+        }
+        function test_existingSessionLogOffersAppendOverwriteAndCancel() {
+            make()
+            const a = page.activeSession
+            a.terminal.existingLogFile = true
+            a.selectLogFile("file:///tmp/existing.log")
+            verify(item(a, "ssh-log-file-conflict").visible)
+            compare(a.terminal.logCalls.length, 0)
+            mouseClick(item(a, "ssh-log-file-cancel")); wait(20)
+            compare(a.terminal.logCalls.length, 0)
+            compare(String(a.pendingLogFile), "")
+            a.selectLogFile("file:///tmp/existing.log"); wait(20)
+            mouseClick(item(a, "ssh-log-file-append"))
+            verify(a.terminal.logging); verify(a.terminal.logCalls[0].append)
+            a.terminal.stopLogging()
+            a.selectLogFile("file:///tmp/existing.log"); wait(20)
+            mouseClick(item(a, "ssh-log-file-overwrite"))
+            verify(a.terminal.logging); verify(!a.terminal.logCalls[2].append)
+        }
+        function test_sessionLogExportAndErrorsBelongToSelectedTab() {
+            make()
+            const a = page.activeSession
+            const b = page.addSession()
+            b.terminal.existingLogFile = true
+            b.exportCurrentLog = true
+            b.selectLogFile("file:///tmp/export.log"); wait(20)
+            verify(!item(b, "ssh-log-file-append").visible)
+            mouseClick(item(b, "ssh-log-file-overwrite"))
+            compare(b.terminal.logCalls[0].kind, "export")
+            compare(a.terminal.logCalls.length, 0)
+            verify(!b.terminal.logging)
+            b.terminal.logError = "磁盘写入失败"
+            verify(item(b, "ssh-log-status").visible)
+            verify(item(b, "ssh-log-status").text.indexOf("磁盘写入失败") >= 0)
+            verify(!item(a, "ssh-log-status").visible)
+            mouseClick(item(page, "ssh-session-menu-" + a.sessionId)); wait(20)
+            const overlay = scene.Window.window.contentItem
+            verify(item(overlay, "ssh-session-log-start-" + a.sessionId).enabled)
+            verify(!item(overlay, "ssh-session-log-stop-" + a.sessionId).enabled)
+            verify(item(overlay, "ssh-session-log-export-" + a.sessionId).enabled)
+            keyClick(Qt.Key_Escape)
+        }
+        function editCommand(session, index) {
+            session.commandManagementExpanded = true
+            tryVerify(() => visualItem(session, "ssh-command-edit-" + index) !== null)
+            const edit = visualItem(session, "ssh-command-edit-" + index)
+            verify(edit.enabled && edit.visible)
+            verify(waitForPolish(session))
+            verify(waitForRendering(edit))
+            verify(!edit.contentItem.truncated)
+            mouseClick(edit)
+            compare(item(session, "ssh-command-add").text, "保存修改")
+            verify(waitForPolish(session))
+            verify(waitForRendering(item(session, "ssh-command-add")))
+        }
+        function test_quickCommandEditOfflineRenamesInPlaceAndPersists() {
+            make()
+            const a = page.activeSession
+            a.commandManagementExpanded = true
+            verify(waitForPolish(a))
+            verify(waitForRendering(item(a, "ssh-command-add")))
+            item(a, "ssh-command-name").text = "原命令"
+            item(a, "ssh-command-content").text = "echo old"
+            mouseClick(item(a, "ssh-command-add"))
+            compare(a.customCommands.length, 1)
+            compare(a.customCommands[0].name, "原命令")
+            a.addCustomCommand("其他命令", "pwd")
+            editCommand(a, 0)
+            compare(item(a, "ssh-command-name").text, "原命令")
+            compare(item(a, "ssh-command-content").text, "echo old")
+            compare(item(a, "ssh-command-add").text, "保存修改")
+            verify(!item(a, "ssh-command-add").contentItem.truncated)
+            item(a, "ssh-command-name").text = " 新名称 "
+            item(a, "ssh-command-content").text = " echo updated "
+            mouseClick(item(a, "ssh-command-add"))
+            compare(a.customCommands.length, 2)
+            compare(a.customCommands[0].name, "新名称")
+            compare(a.customCommands[0].command, "echo updated")
+            compare(a.customCommands[1].name, "其他命令")
+            compare(a.terminal.sentCommands.length, 0)
+            compare(item(a, "ssh-command-add").text, "添加")
+            compare(item(a, "ssh-command-name").text, "")
+            const saved = JSON.parse(testBackend.settings["liveLog/customCommands"])
+            compare(saved[0].command, "echo updated")
+            page.destroy(); page = null; wait(40); make()
+            compare(page.activeSession.customCommands.length, 2)
+            compare(page.activeSession.customCommands[0].name, "新名称")
+            compare(page.activeSession.customCommands[0].command, "echo updated")
+        }
+        function test_quickCommandEditSharesContentAndKeepsSendBehavior() {
+            make()
+            const a = page.activeSession
+            a.addCustomCommand("共用命令", "echo old")
+            const b = page.addSession(); connected(b)
+            editCommand(b, 0)
+            item(b, "ssh-command-content").text = "echo new"
+            item(b, "ssh-command-content").forceActiveFocus()
+            keyClick(Qt.Key_Return)
+            compare(a.customCommands[0].command, "echo new")
+            compare(b.terminal.sentCommands.length, 0)
+            compare(item(b, "ssh-command-content").text, "")
+            b.commandManagementExpanded = false; wait(20)
+            mouseClick(visualItem(b, "ssh-command-run-0"))
+            compare(b.terminal.sentCommands.length, 1)
+            compare(b.terminal.sentCommands[0], "echo new")
+            compare(a.terminal.sentCommands.length, 0)
+            verify(page.detachSession(b)); wait(30)
+            editCommand(b, 0)
+            item(b, "ssh-command-content").text = "echo detached"
+            mouseClick(item(b, "ssh-command-add"))
+            compare(a.customCommands[0].command, "echo detached")
+            compare(b.terminal.sentCommands.length, 1)
+        }
+        function test_quickCommandEditCancelAndInvalidDraftKeepOriginal() {
+            make()
+            const a = page.activeSession
+            a.addCustomCommand("原命令", "echo old")
+            a.addCustomCommand("已占用", "pwd")
+            const saved = testBackend.settings["liveLog/customCommands"]
+            editCommand(a, 0)
+            item(a, "ssh-command-name").text = "已占用"
+            item(a, "ssh-command-content").text = "echo changed"
+            mouseClick(item(a, "ssh-command-add"))
+            verify(item(a, "ssh-command-error").visible)
+            compare(a.customCommands[0].name, "原命令")
+            compare(a.customCommands[1].command, "pwd")
+            compare(item(a, "ssh-command-content").text, "echo changed")
+            item(a, "ssh-command-name").text = " "
+            mouseClick(item(a, "ssh-command-add"))
+            verify(item(a, "ssh-command-error").visible)
+            compare(testBackend.settings["liveLog/customCommands"], saved)
+            item(a, "ssh-command-name").text = "原命令"
+            item(a, "ssh-command-content").text = " "
+            mouseClick(item(a, "ssh-command-add"))
+            compare(testBackend.settings["liveLog/customCommands"], saved)
+            mouseClick(item(a, "ssh-command-cancel"))
+            compare(item(a, "ssh-command-add").text, "添加")
+            compare(item(a, "ssh-command-name").text, "")
+            verify(!item(a, "ssh-command-error").visible)
+            compare(a.customCommands[0].command, "echo old")
+            editCommand(a, 0)
+            item(a, "ssh-command-content").text = "echo failure"
+            testBackend.failSave = true
+            mouseClick(item(a, "ssh-command-add"))
+            verify(item(a, "ssh-command-error").visible)
+            compare(a.customCommands[0].command, "echo old")
+            compare(item(a, "ssh-command-content").text, "echo failure")
+            compare(testBackend.settings["liveLog/customCommands"], saved)
+            testBackend.failSave = false
+            mouseClick(item(a, "ssh-command-add"))
+            compare(a.customCommands[0].command, "echo failure")
+        }
+        function test_quickCommandRemovedInOtherSessionCannotBeRecreatedByStaleEdit() {
+            make()
+            const a = page.activeSession
+            a.addCustomCommand("原命令", "echo old")
+            const b = page.addSession()
+            editCommand(b, 0)
+            a.removeCustomCommandByName("原命令")
+            item(b, "ssh-command-name").text = "新名称"
+            mouseClick(item(b, "ssh-command-add"))
+            compare(a.customCommands.length, 0)
+            verify(item(b, "ssh-command-error").visible)
+            compare(item(b, "ssh-command-name").text, "新名称")
         }
         function test_switchingKeepsConnectionsLogsDraftsAndCommandsIndependent() {
             make()

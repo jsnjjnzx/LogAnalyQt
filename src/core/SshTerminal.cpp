@@ -10,6 +10,8 @@
 #include <QSet>
 #include "../common/AppSettings.h"
 #include "SshHostKeyStore.h"
+#include "SshSessionLog.h"
+#include <QStandardPaths>
 #include <QHostInfo>
 #include <QHostAddress>
 #include <QElapsedTimer>
@@ -104,13 +106,36 @@ public:
   }
 
 public slots:
-  void shutdown() { cleanup(); }
+  void shutdown() { stopLog(); cleanup(); }
+  void startLog(const QString &path, const QString &encoding, bool append, int intervalMs, int bufferKiB) {
+    const bool success = m_sessionLog.start(path, encoding, append, bufferKiB);
+    m_logPath = path;
+    if (success) {
+      if (!m_logFlushTimer) {
+        m_logFlushTimer = new QTimer(this);
+        connect(m_logFlushTimer, &QTimer::timeout, this, [this] {
+          if (!m_sessionLog.flush()) logWriteFailed();
+        });
+      }
+      m_logFlushTimer->start(intervalMs);
+    }
+    emit logStateChanged(m_sessionLog.active(), path, success ? QString{} : m_sessionLog.errorString());
+  }
+  void stopLog() {
+    if (m_logFlushTimer) m_logFlushTimer->stop();
+    const bool success = m_sessionLog.stop();
+    emit logStateChanged(false, m_logPath, success ? QString{} : m_sessionLog.errorString());
+  }
+  void exportLog(const QString &path, const QByteArray &data) {
+    emit logExportFinished(path, SshSessionLog::exportSnapshot(path, data));
+  }
   void doConnect(quint64 generation, const QString &host, int port,
                  const QString &user, const QString &password, const QString &encoding, bool useSystemCredentials) {
     cleanup();
     if (generation != m_buffer->activeGeneration.load()) return;
     m_generation = generation;
     m_encoding = encoding;
+    logBoundary(encoding);
     m_streamRevision = m_buffer->contentRevision.load();
     m_stream.reset(m_encoding);
     if (!m_stream.encodingAvailable()) { fail(QStringLiteral("当前系统不支持所选 SSH 字符编码"), true); return; }
@@ -191,6 +216,7 @@ public slots:
   }
   void resetStream(quint64 revision, const QString &encoding, bool discardPartial) {
     if (revision != m_buffer->contentRevision.load()) return;
+    if (m_encoding != encoding) logBoundary(encoding);
     m_streamRevision = revision; m_encoding = encoding;
     m_replay.clear(); m_replayOffset = 0;
     m_stream.reset(encoding, discardPartial);
@@ -228,6 +254,8 @@ public slots:
   }
 
 signals:
+  void logStateChanged(bool active, const QString &path, const QString &error);
+  void logExportFinished(const QString &path, const QString &error);
   void connected(quint64 generation);
   void errorOccurred(quint64 generation, const QString &error, bool securityFailure);
   void disconnected(quint64 generation);
@@ -337,6 +365,7 @@ private:
     if (notify) emit dataReady(m_generation, m_streamRevision);
   }
   void appendData(const char *data, int size) {
+    if (!m_sessionLog.feed(QByteArrayView(data, size))) logWriteFailed();
     prepareMonitor();
     QByteArray replay;
     bool capturing = false;
@@ -547,7 +576,15 @@ private:
     }
     if (rc != LIBSSH2_ERROR_EAGAIN) fail(QStringLiteral("SSH 握手或通道建立失败"));
   }
+  void logWriteFailed() {
+    if (m_logFlushTimer) m_logFlushTimer->stop();
+    emit logStateChanged(false, m_logPath, m_sessionLog.errorString());
+  }
+  void logBoundary(const QString &encoding) {
+    if (!m_sessionLog.boundary(encoding)) logWriteFailed();
+  }
   void cleanup() {
+    logBoundary(m_encoding);
     m_phase = Stopped;
     if (m_timer) m_timer->stop();
     for (auto **notifier : {&m_readNotifier, &m_writeNotifier}) {
@@ -595,6 +632,9 @@ private:
   bool m_useSystemCredentials = false;
   QString m_encoding = QStringLiteral("UTF-8");
   SshLogStream m_stream;
+  SshSessionLog m_sessionLog;
+  QTimer *m_logFlushTimer = nullptr;
+  QString m_logPath;
   SshMonitorMatcher m_monitor;
   quint64 m_monitorRevision = ~quint64(0);
   quint64 m_streamRevision = 0;
@@ -950,6 +990,21 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
         emit credentialStateChanged();
         if (!operationId.isEmpty()) emit passwordOperationFinished(operationId, error.isEmpty(), error);
       });
+  connect(m_worker, &SshWorker::logStateChanged, this,
+      [this](bool active, const QString &path, const QString &error) {
+        m_logging = active; m_logBusy = false; m_logFilePath = path; m_logError = error;
+        emit loggingChanged();
+        emit logOperationFinished(error.isEmpty(), error.isEmpty()
+            ? (active ? QStringLiteral("已开始记录日志：") : QStringLiteral("已停止记录日志：")) + path
+            : QStringLiteral("日志记录失败：") + error);
+      });
+  connect(m_worker, &SshWorker::logExportFinished, this,
+      [this](const QString &path, const QString &error) {
+        m_logBusy = false; m_logError = error;
+        emit loggingChanged();
+        emit logOperationFinished(error.isEmpty(), error.isEmpty()
+            ? QStringLiteral("日志已导出：") + path : QStringLiteral("日志导出失败：") + error);
+      });
   m_workerThread->start();
   refreshCredentials();
 
@@ -1255,6 +1310,7 @@ void SshTerminal::setLastError(const QString &error) {
 }
 
 void SshTerminal::startConnection() {
+  setLastError({});
   clearHostKeyRequest();
   const quint64 previous = m_generation++;
   m_buffer->activeGeneration.store(m_generation);
@@ -1350,6 +1406,69 @@ void SshTerminal::sendTabCompletion(const QString &prefix) {
 
   // 发送「当前文本 + \t」触发远端 shell 补全
   emit sigSendCommand(prefix + "\t", false, m_encoding);
+}
+
+QUrl SshTerminal::suggestedLogFile(const QString &sessionName) const {
+  QString name = QStringLiteral("ssh-%1-%2-%3.log").arg(sessionName.left(60), m_host.left(60),
+      QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-hhmmss-zzz")));
+  name.replace(QRegularExpression(QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1f]")), QStringLiteral("_"));
+  const auto documents = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+  return QUrl::fromLocalFile(QDir(documents.isEmpty() ? QDir::homePath() : documents).filePath(name));
+}
+
+bool SshTerminal::logFileExists(const QUrl &file) const {
+  return file.isLocalFile() && QFileInfo::exists(file.toLocalFile());
+}
+
+bool SshTerminal::beginLogOperation(const QUrl &file) {
+  if (m_logBusy) return false;
+  if (!file.isLocalFile() || file.toLocalFile().isEmpty() || !QFileInfo(file.toLocalFile()).isAbsolute()) {
+    m_logError = QStringLiteral("请选择有效的本地日志文件");
+    emit loggingChanged();
+    emit logOperationFinished(false, m_logError);
+    return false;
+  }
+  m_logError.clear(); m_logBusy = true;
+  emit loggingChanged();
+  return true;
+}
+
+bool SshTerminal::startLogging(const QUrl &file, bool append, int intervalMs, int bufferKiB) {
+  if (m_logging || m_logBusy) return false;
+  if (intervalMs < 1000 || intervalMs > 60000 || bufferKiB < 16 || bufferKiB > 8192) {
+    m_logError = QStringLiteral("日志写入间隔须为 1～60 秒，缓存大小须为 16～8192 KiB");
+    emit loggingChanged(); emit logOperationFinished(false, m_logError);
+    return false;
+  }
+  if (!beginLogOperation(file)) return false;
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, path = file.toLocalFile(), encoding = m_encoding, append, intervalMs, bufferKiB] {
+    worker->startLog(path, encoding, append, intervalMs, bufferKiB);
+  });
+  return true;
+}
+
+bool SshTerminal::stopLogging() {
+  if (m_logBusy || !m_logging) return false;
+  m_logBusy = true; emit loggingChanged();
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker] { worker->stopLog(); });
+  return true;
+}
+
+bool SshTerminal::exportLog(const QUrl &file) {
+  if (!beginLogOperation(file)) return false;
+  QString snapshot = m_lineModel->bufferText();
+  {
+    QMutexLocker lock(&m_buffer->mutex);
+    for (const auto &line : m_buffer->lines) {
+      snapshot += line.text;
+      if (!line.continues) snapshot += '\n';
+    }
+    snapshot += m_buffer->partial.text;
+  }
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, path = file.toLocalFile(), data = snapshot.toUtf8()] {
+    worker->exportLog(path, data);
+  });
+  return true;
 }
 
 QString SshTerminal::getBufferText() const {
@@ -1487,9 +1606,6 @@ void SshTerminal::onWorkerConnected() {
 
 void SshTerminal::onWorkerError(const QString &errorStr) {
   flushFinalPendingData();
-  emit linesAboutToChange();
-  m_lineModel->appendLines({errorStr});
-  emit lineCountChanged();
   setLastError(errorStr);
   setStatusMessage(errorStr);
   emit connectionError(errorStr);

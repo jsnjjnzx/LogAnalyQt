@@ -1,5 +1,6 @@
 #include "SshLogStream.h"
 #include "SshTerminal.h"
+#include "SshSessionLog.h"
 #include <QAbstractItemModelTester>
 #include <QCoreApplication>
 #include <QTextStream>
@@ -9,6 +10,12 @@
 
 struct SshTerminalTestAccess {
   static void inputSchedulingChecks();
+  static void queue(SshTerminal &terminal, const SshLogLine &line, const SshLogLine &partial) {
+    QMutexLocker lock(&terminal.m_buffer->mutex);
+    terminal.m_buffer->lines.push_back(line);
+    terminal.m_buffer->bytes += line.storageBytes();
+    terminal.m_buffer->partial = partial;
+  }
   static void publish(SshTerminal &terminal, std::vector<SshLogLine> lines, const SshLogLine &partial, SshMonitorHit hit = {}) {
     {
       QMutexLocker lock(&terminal.m_buffer->mutex);
@@ -359,11 +366,125 @@ static void receptionPauseChecks() {
   check(state.wait(1000) && terminal.receptionPaused(), "rapid stop/resume ignores stale worker acknowledgements");
 }
 
+static QByteArray readLog(const QString &path) {
+  QFile file(path);
+  check(file.open(QIODevice::ReadOnly), "saved session log is readable");
+  return file.readAll();
+}
+
+static void sessionLogChecks() {
+  QTemporaryDir temporary;
+  check(temporary.isValid(), "isolated log directory exists");
+  const auto path = temporary.filePath(QString::fromUtf8("中文 会话.log"));
+  SshSessionLog log;
+  check(log.start(path, "UTF-8", false), "readable logging starts independently of a connection");
+  check(log.feed("device$ abc"), "unterminated prompt is buffered");
+  check(readLog(path).isEmpty(), "a small read does not write the file before the interval or size threshold");
+  check(log.flush() && readLog(path) == "device$ abc", "interval flush writes the latest prompt");
+  check(log.feed("\r\x1b[2Kdevice$ x"), "terminal redraw is logged");
+  check(log.flush(), "redraw is flushed as a batch");
+  check(readLog(path) == "device$ x", "shorter CR redraw truncates only the live tail");
+  const auto unicode = QString::fromUtf8("\r\n中文😀\x1b[31m red\x1b[0m\n").toUtf8();
+  for (const char byte : unicode) check(log.feed(QByteArrayView(&byte, 1)), "split UTF-8 and ANSI are accepted");
+  const auto expected = QString::fromUtf8("device$ x\n中文😀 red\n").toUtf8();
+  check(log.flush(), "split bytes are flushed together");
+  check(readLog(path) == expected, "UTF-8 output strips ANSI without duplicate prompts");
+  SshSessionLog conflict;
+  check(!conflict.start(temporary.filePath("./中文 会话.log"), "UTF-8", false), "same canonical file cannot be opened by another session");
+  check(!SshSessionLog::exportSnapshot(path, "overwrite").isEmpty(), "export cannot overwrite an active session log");
+  check(readLog(path) == expected, "rejected file collisions preserve the active log");
+  const QByteArray longLine(40000, 'x');
+  check(log.feed(longLine), "no-newline long output is accepted");
+  check(log.flush(), "long output can be flushed before stopping");
+  check(readLog(path) == expected + longLine, "segmentation introduces no artificial newlines and flushes the tail");
+  check(log.stop(), "stop finalizes the live tail");
+  const auto previous = expected + longLine + '\n';
+  check(readLog(path) == previous, "stop writes the final unterminated line exactly once");
+  check(log.start(path, "GB2312", true), "existing file can be appended with a different receive encoding");
+  const auto gb = QByteArray::fromHex("d6d0cec4");
+  for (const char byte : gb) check(log.feed(QByteArrayView(&byte, 1)), "split GB2312 is accepted");
+  check(log.boundary("UTF-8") && log.active(), "disconnect/encoding boundary finishes text without stopping the log");
+  check(log.feed("next connection\n") && log.stop(), "a reconnected stream continues logging");
+  check(readLog(path) == previous + QString::fromUtf8("中文\n").toUtf8() + "next connection\n", "append preserves old bytes and new streams in order");
+  check(log.start(path, "UTF-8", false) && log.feed(QByteArray::fromHex("e4b8")) && log.stop(), "overwrite and truncated UTF-8 finalization succeed");
+  QString invalidTail = QString::fromUtf8(readLog(path));
+  check(invalidTail.contains(QChar::ReplacementCharacter) && invalidTail.remove(QChar::ReplacementCharacter) == "\n", "incomplete final code point is explicit");
+  check(SshSessionLog::exportSnapshot(path, "snapshot").isEmpty() && readLog(path) == "snapshot", "snapshot atomically replaces a closed log");
+  const auto missing = temporary.filePath("missing/output.log");
+  check(!log.start(missing, "UTF-8", false) && !log.active() && !log.errorString().isEmpty(), "open failure is reported without leaving recording active");
+  check(!SshSessionLog::exportSnapshot(temporary.path(), "bad").isEmpty(), "export failure is reported for a directory target");
+  check(readLog(path) == "snapshot", "failed operations do not modify another log");
+
+  const auto batchPath = temporary.filePath("batch.log");
+  check(log.start(batchPath, "UTF-8", false, 16), "custom cache threshold is accepted");
+  check(log.feed(QByteArray(16383, 'a')) && readLog(batchPath).isEmpty(), "below-threshold output remains in memory");
+  check(log.feed("b") && readLog(batchPath) == QByteArray(16383, 'a') + 'b', "exact size threshold writes without waiting for more data");
+  check(log.feed("idle prompt"), "idle tail is queued");
+  QTimer flushTimer;
+  flushTimer.setSingleShot(true);
+  bool flushed = false;
+  QObject::connect(&flushTimer, &QTimer::timeout, [&] { flushed = log.flush(); });
+  QSignalSpy timeout(&flushTimer, &QTimer::timeout);
+  flushTimer.start(20);
+  check(timeout.wait(1000) && flushed && readLog(batchPath).endsWith("idle prompt"), "timer callback flushes an idle tail without another receive");
+  check(log.stop(), "custom buffered log stops");
+  check(log.start(batchPath, "UTF-8", false), "small-read amplification test starts");
+  bool feedsAccepted = true;
+  for (int i = 0; i < 1000; ++i) feedsAccepted = log.feed("x") && feedsAccepted;
+  check(feedsAccepted && readLog(batchPath).isEmpty(), "one thousand one-byte reads cause no file-data writes before a flush");
+  check(log.stop() && readLog(batchPath) == QByteArray(1000, 'x') + '\n', "stop coalesces small reads and drains the final tail once");
+  check(!log.start(batchPath, "UTF-8", false, 15), "invalid cache size is rejected before touching the file");
+  check(readLog(batchPath) == QByteArray(1000, 'x') + '\n', "invalid cache settings preserve existing log content");
+
+  SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
+  terminal.setUseSystemCredentials(false);
+  QSignalSpy finished(&terminal, &SshTerminal::logOperationFinished);
+  check(!terminal.exportLog(QUrl("https://example.com/log")) && !terminal.logError().isEmpty(), "nonlocal output paths are rejected");
+  const auto url = QUrl::fromLocalFile(temporary.filePath("session.log"));
+  check(!terminal.startLogging(url, false, 0, 256) && !terminal.logBusy(), "invalid flush interval is rejected");
+  check(!terminal.startLogging(url, false, 1000, 8193) && !terminal.logBusy(), "oversized cache is rejected");
+  check(terminal.startLogging(url, false, 2000, 32) && terminal.logBusy(), "session start accepts custom interval and cache asynchronously");
+  check(finished.wait(2000) && terminal.logging() && !terminal.logBusy(), "worker acknowledges recording without connecting");
+  SshTerminal other(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
+  other.setUseSystemCredentials(false);
+  QSignalSpy otherFinished(&other, &SshTerminal::logOperationFinished);
+  check(other.startLogging(url), "second session requests the same output");
+  check(otherFinished.wait(2000) && !other.logging() && !other.logError().isEmpty(), "worker rejects the collision and reports its error to the correct session");
+  check(terminal.logging(), "another session's failure does not stop recording");
+  terminal.clearBuffer(); terminal.setPresentationActive(false);
+  check(terminal.logging(), "clear and background presentation retain recording state");
+  SshTerminalTestAccess::publish(terminal, {{"displayed", 1, false, false}}, {"old prompt", 2, false, true});
+  SshTerminalTestAccess::queue(terminal, {QString::fromUtf8("待显示"), 2, false, false}, {"new prompt", 3, false, true});
+  const auto snapshotUrl = QUrl::fromLocalFile(temporary.filePath("snapshot.log"));
+  check(terminal.exportLog(snapshotUrl) && finished.wait(2000), "worker exports an isolated snapshot while recording continues");
+  check(readLog(snapshotUrl.toLocalFile()) == QString::fromUtf8("displayed\n待显示\nnew prompt").toUtf8(), "snapshot includes queued received rows and latest live tail without the old prompt");
+  check(terminal.logging() && !terminal.logBusy(), "export does not stop continuous recording");
+  check(terminal.stopLogging() && finished.wait(2000) && !terminal.logging(), "stop is acknowledged by the worker");
+  check(terminal.suggestedLogFile("test/unsafe:name").isLocalFile() &&
+        !QFileInfo(terminal.suggestedLogFile("test/unsafe:name").toLocalFile()).fileName().contains('/'), "suggested filenames are sanitized and local");
+}
+
+static void currentConnectionErrorChecks() {
+  QTemporaryDir directory;
+  SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), directory.path());
+  terminal.setProperty("persistSettings", false);
+  terminal.setAutoReconnectEnabled(false);
+  terminal.lineModel()->appendLines({"remote business ERROR must survive"});
+  const auto output = terminal.getBufferText();
+  const QString failure = QStringLiteral("连接 SSH 服务器失败，请检查网络和端口");
+  check(QMetaObject::invokeMethod(&terminal, "onWorkerError", Q_ARG(QString, failure)), "current connection error callback executes");
+  check(terminal.lastError() == failure && terminal.statusMessage() == failure, "current connection error remains visible in state");
+  check(terminal.getBufferText() == output, "connection failures are not appended to remote output");
+  check(QMetaObject::invokeMethod(&terminal, "onWorkerConnected"), "connection recovery callback executes");
+  check(terminal.isConnected() && terminal.lastError().isEmpty() && terminal.statusMessage() == "已连接", "success clears the current connection error");
+  check(terminal.getBufferText() == output, "recovery preserves genuine remote ERROR content");
+}
+
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); SshTerminalTestAccess::inputSchedulingChecks();
-    QTextStream(stdout) << "PASS: " << checks << " SSH stream/model assertions; synthetic payloads stayed in RAM\n";
+    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); currentConnectionErrorChecks();
+    QTextStream(stdout) << "PASS: " << checks << " SSH stream/model/session-log assertions; files used isolated temporary directories\n";
     return 0;
   } catch (const std::exception &error) {
     QTextStream(stderr) << "FAIL: " << error.what() << '\n'; return 1;

@@ -154,10 +154,8 @@ Item {
             const summaryRight = summary.mapToItem(page, summary.width, 0).x
             const connectLeft = item("sshConnectAction").mapToItem(page, 0, 0).x
             verify(summaryRight <= connectLeft, "summary must not overlap connection actions")
-            const copy = item("ssh-copy-on-select")
-            tryVerify(function() { return copy.mapToItem(page, copy.width, 0).x <= page.width }, 5000,
-                      "copy control must fit after the layout settles")
-            for (const name of ["ssh-config-toggle", "ssh-pause", "ssh-clear", "ssh-copy-on-select"])
+            verify(findChild(page, "ssh-copy-on-select") === null)
+            for (const name of ["ssh-config-toggle", "ssh-pause", "ssh-clear"])
                 verify(!item(name).contentItem.truncated, name + " text must fit")
         }
         function test_sshFoldedControlsKeepWorking() {
@@ -181,8 +179,8 @@ Item {
             verify(page.parseWindowVisible)
             mouseClick(item("ssh-pause")); verify(!page.autoScroll)
             mouseClick(item("ssh-pause")); verify(page.autoScroll)
-            verify(item("ssh-copy-on-select").visible && item("ssh-copy-on-select").enabled)
-            mouseClick(item("ssh-copy-on-select")); verify(page.copyOnSelect)
+            verify(findChild(page, "ssh-copy-on-select") === null)
+            page.copyOnSelect = true; verify(page.copyOnSelect)
             verify(findChild(page, "ssh-copy-all") === null)
             mouseClick(item("ssh-clear")); compare(ssh.currentLineCount, 0)
             const disconnects = ssh.disconnectCalls

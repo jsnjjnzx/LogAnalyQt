@@ -18,6 +18,30 @@ QtObject {
     property int connectionState: 0
     property string statusMessage: ""
     property string lastError: ""
+    property bool logging: false
+    property bool logBusy: false
+    onLogBusyChanged: loggingChanged()
+    property string logFilePath: ""
+    property string logError: ""
+    property bool existingLogFile: false
+    property var logCalls: []
+    signal logOperationFinished(bool success, string message)
+    function suggestedLogFile(name) { return "file:///tmp/ssh-" + name + ".log" }
+    function logFileExists(file) { return existingLogFile }
+    function startLogging(file, append, intervalMs, bufferKiB) {
+        logCalls = logCalls.concat([{kind:"start",file:String(file),append:append,intervalMs:intervalMs,bufferKiB:bufferKiB}])
+        logging = true; logFilePath = String(file); logOperationFinished(true, "已开始记录")
+        return true
+    }
+    function stopLogging() {
+        if (!logging) return false
+        logCalls = logCalls.concat([{kind:"stop"}]); logging = false
+        logOperationFinished(true, "已停止记录"); return true
+    }
+    function exportLog(file) {
+        logCalls = logCalls.concat([{kind:"export",file:String(file)}])
+        logOperationFinished(true, "已导出"); return true
+    }
     property bool autoReconnectEnabled: false
     property int reconnectMaxAttempts: 2
     property int reconnectIntervalMs: 2000

@@ -74,19 +74,19 @@ void reconnectNoticeChecks() {
   check(terminal.getBufferText().isEmpty(), "initial success does not add a reconnection notice");
   const QString failure = QStringLiteral("连接 SSH 服务器失败，请检查网络和端口");
   check(QMetaObject::invokeMethod(&terminal, "onWorkerError", Q_ARG(QString, failure)), "failed attempt callback");
-  check(terminal.reconnectAttempt() > 0 && terminal.getBufferText() == failure,
-        "failed attempt retains its error without prematurely reporting success");
+  check(terminal.reconnectAttempt() > 0 && terminal.lastError() == failure && terminal.getBufferText().isEmpty(),
+        "failed attempt is shown in current state without polluting remote output");
   const auto before = QDateTime::currentDateTime().addSecs(-1);
   check(QMetaObject::invokeMethod(&terminal, "onWorkerConnected"), "reconnection success callback");
   const auto lines = terminal.lineModel()->lines();
-  check(lines.size() == 2 && lines.first() == failure && lines.last().endsWith(
-            QStringLiteral("] SSH 已重新连接成功")), "recovery notice is appended after the retained failure");
+  check(lines.size() == 1 && lines.last().endsWith(
+            QStringLiteral("] SSH 已重新连接成功")), "recovery notice contains no previous attempt error");
   const auto timestamp = QDateTime::fromString(lines.last().mid(1, 19), "yyyy-MM-dd HH:mm:ss");
   check(timestamp.isValid() && timestamp >= before && timestamp <= QDateTime::currentDateTime(),
         "recovery notice contains the current local date and time");
   check(terminal.isConnected() && terminal.lastError().isEmpty() && terminal.reconnectAttempt() == 0,
         "recovery retains normal connected state and clears the current error");
-  check(QMetaObject::invokeMethod(&terminal, "onWorkerConnected") && terminal.currentLineCount() == 2,
+  check(QMetaObject::invokeMethod(&terminal, "onWorkerConnected") && terminal.currentLineCount() == 1,
         "a repeated success callback does not duplicate the recovery notice");
 }
 }

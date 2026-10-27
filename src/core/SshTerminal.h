@@ -10,6 +10,7 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QVariantList>
+#include <QUrl>
 #include "../common/JsonSettings.h"
 #include <memory>
 #include <atomic>
@@ -131,6 +132,10 @@ class SshTerminal : public QObject {
   Q_PROPERTY(int cursorPadding READ cursorPadding NOTIFY liveLineChanged)
   // QML ListView 的数据模型，替代 TextArea 实现内存有界的虚拟化渲染
   Q_PROPERTY(TerminalLineModel *lineModel READ lineModel CONSTANT)
+  Q_PROPERTY(bool logging READ logging NOTIFY loggingChanged)
+  Q_PROPERTY(bool logBusy READ logBusy NOTIFY loggingChanged)
+  Q_PROPERTY(QString logFilePath READ logFilePath NOTIFY loggingChanged)
+  Q_PROPERTY(QString logError READ logError NOTIFY loggingChanged)
 
 public:
   enum ConnectionState {
@@ -217,6 +222,16 @@ public:
   // 发送 Tab 补全请求：截获响应并解析后通过 tabCompletionReady 信号通知 QML
   Q_INVOKABLE void sendTabCompletion(const QString &prefix);
   Q_INVOKABLE QString getBufferText() const;
+  bool logging() const { return m_logging; }
+  bool logBusy() const { return m_logBusy; }
+  QString logFilePath() const { return m_logFilePath; }
+  QString logError() const { return m_logError; }
+  Q_INVOKABLE QUrl suggestedLogFile(const QString &sessionName) const;
+  Q_INVOKABLE bool logFileExists(const QUrl &file) const;
+  Q_INVOKABLE bool startLogging(const QUrl &file, bool append = false,
+                               int flushIntervalMs = 1000, int bufferKiB = 256);
+  Q_INVOKABLE bool stopLogging();
+  Q_INVOKABLE bool exportLog(const QUrl &file);
   Q_INVOKABLE QString selectedText(qint64 firstId, int firstOffset, qint64 lastId, int lastOffset) const {
     return lineModel()->textRange(firstId, firstOffset, lastId, lastOffset, liveLine());
   }
@@ -239,6 +254,8 @@ public:
   Q_INVOKABLE bool setMonitorRules(const QVariantList &rules, bool armed);
 
 signals:
+  void loggingChanged();
+  void logOperationFinished(bool success, const QString &message);
   void credentialStateChanged();
   void passwordOperationFinished(const QString &operationId, bool success, const QString &error);
   void hostKeyPendingChanged();
@@ -287,6 +304,7 @@ private slots:
 
 private:
   friend struct SshTerminalTestAccess;
+  bool beginLogOperation(const QUrl &file);
   JsonSettings settings() const;
   void refreshCredentials();
   void dispatchCredentialRefresh();
@@ -311,6 +329,10 @@ private:
   TerminalLineModel *m_lineModel;
 
   QString m_dataRoot;
+  bool m_logging = false;
+  bool m_logBusy = false;
+  QString m_logFilePath;
+  QString m_logError;
   bool m_persistSettings = true;
   bool m_useSystemCredentials = false;
   bool m_hasSavedPassword = false;

@@ -334,6 +334,11 @@ ApplicationWindow {
             navigate(5);
             return;
         }
+        if (liveLogDialog.hasOpenLogFiles()) {
+            close.accepted = false;
+            liveLogDialog.finishLogsBeforeExit();
+            return;
+        }
         saveWindowGeometry();
         liveLogDialog.closing();
         if (installingUpdate) {
@@ -2761,6 +2766,10 @@ ApplicationWindow {
         visible: mainWindow.currentPage === 5
         onRequested: mainWindow.navigate(5)
         onClosed: mainWindow.navigate(0)
+        onLogShutdownReady: function(success) {
+            if (success) Qt.callLater(mainWindow.close);
+            else mainWindow.navigate(5);
+        }
         ownerWindow: mainWindow
         theme: mainWindow.uiTheme
         backend: backend
