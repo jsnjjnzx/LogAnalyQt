@@ -423,3 +423,59 @@
 远端材料：`build/v5.0.3-release-evidence/verification.json`、release.json、update.json、update-verification.log；公开结果以所链接的 Actions 和 [Release](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.3) 为准。
 
 首次 main 直连推送超时，核对未更新后重试同一提交成功，不把超时写成成功。受控 CI 与合成数据不代表实体 Windows、企业网络或真实 SSH 设备验收；macOS 为 ad-hoc，未经 Apple 公证。旧偶发首连提示未在本次修改 SSH 逻辑或宣称修复。
+
+## 2026-10-27 698 IPv4 显示（T36 / IP698-01、02）
+
+| 范围 | 执行方式 | 实际结果 |
+|---|---|---|
+| 修复前复现 | 先加入 testIpv4Display，构建并执行 prot698_boundary_tests | 959 项检查、4 项失败：两组 IPv4 显示、真实 4510 主站数组及网络 IP/掩码/网关；日志 /tmp/loganalyqt-ip698-before.log |
+| 修复后协议回归 | cmake --build build/macos-debug --target prot698_boundary_tests appLogAnalyQt -j 4；执行 build/macos-debug/prot698_boundary_tests | 构建成功，959 项检查、0 失败；日志 /tmp/loganalyqt-ip698-build.log、/tmp/loganalyqt-ip698-after.log |
+| 新增显示边界 | 临时字典与独立构造带 CRC 的 GET 响应，经公开 parse 接口解析；另加载项目真实 XML | 覆盖实际报文值与 SaveVal 不同、0/128/254/255、空/3/5/16 字节、无 Format/其他 Format、未知 OAD、UTF8、原始类型/字节保留及格式化前后定位/层级元数据一致；真实 4510 属性3重复数组及属性4 IP/掩码/网关通过 |
+| 成品解析表格 | 隔离配置、清理开发依赖路径，offscreen 执行 tests/test_ui_migration_runtime.py ... --parse-table-only | 通过；手动/日志/对比的层级、说明、选择定位及行高；日志 /tmp/loganalyqt-ip698-packaged-parse.log |
+| 成品完整 UI/MQTT | 隔离临时配置执行 tests/test_ui_migration_runtime.py，offscreen、本机回环 Broker | 首次受限环境无法分配 MQTT 测试端口，未记为通过；允许本机测试端口后完整重跑通过，覆盖启动、迁移、解析入口、重启/草稿保护和 MQTT；日志 /tmp/loganalyqt-ip698-packaged-runtime.log、/tmp/loganalyqt-ip698-packaged-runtime-retry.log |
+| 应用交付 | 复用同版本 Qt 随包依赖，替换新主程序、重定位库路径、ad-hoc 签名；check_build.py --macos-bundle，codesign --verify --deep --strict，交付摘要和目录检查 | 114 个 Mach-O 为 arm64 且无外部非系统依赖，签名及源/目标 SHA256 一致；已更新唯一 release_package/通联工坊.app，版本仍为 5.0.3，目录只保留应用 |
+| 流程与自审 | 六份根目录文件逐一核对，git diff --check；检查所有 parseData 调用链及最终差异 | 通过；审查范围及边界见 review-record.md 的 T36 |
+
+结构化交付记录：build/macos-debug/ip698-verification.json。主程序 SHA256：27d3d1a7aca2c3c1639130699f484f926dcfde269230b3a308e78c40c79ec059。
+
+未做 Windows 实机、真实设备或本次 Cocoa 人工界面验收；未运行全量 CTest，未宣称 IPv6 格式化、点分地址组帧输入或 Apple 公证通过。未提交、推送或发布。
+
+## 2026-10-27 解析底栏与差异导航布局（T37 / PARSEBAR-01）
+
+| 范围 | 执行方式 | 实际结果 |
+|---|---|---|
+| 本地构建 | cmake --build build/macos-debug --target appLogAnalyQt -j 4 | 通过；保留 T36 IPv4 修复和版本5.0.3；既有 OpenSSL 重复静态库提示未导致失败 |
+| 实际三页布局与交互 | tests/test_ui_migration_runtime.py ... --parse-table-only；新增 ParseResultChecks.h 几何/导航检查 | 手动、日志、差异三页通过；1200及1280宽度检查协议/状态在左、地址控件在右、同一水平行且不重叠；手动和差异页状态等于已有 backend.parseResult；差异两侧标题各一个导航按钮，位置、文字、显隐及左右同步选择目标通过 |
+| 既有解析表格 | 同一正式运行时回归 | 复杂报文、字节选择、主次说明、表格列宽、差异行高仍通过；不把此专项写成全量CTest通过 |
+| 独立成品 | 复用同版本Qt依赖、替换主程序并重定位路径、ad-hoc签名；清理Qt/QML/DYLD环境及临时配置重跑三页检查 | 通过；日志 /tmp/loganalyqt-status-row-packaged-runtime.log；114个Mach-O为arm64、无外部非系统依赖；codesign deep strict通过 |
+| 截图复核 | 查看实际渲染的手动/差异截图及最终成品差异截图 | 确认底栏同排、协议及解析成功在左，左侧标题为上一个差异、右侧为下一个差异；没有遮挡结果表格；截图 /tmp/loganalyqt-status-row*.png |
+| 唯一交付与流程 | ditto更新release_package/通联工坊.app；签名、源/目标摘要、目录和六份文档及git diff --check | 一致；交付目录检查发现Finder生成的.DS_Store后移除，仅保留应用，无ZIP/日期目录/旧应用备份 |
+
+证据：build/macos-debug/status-row-verification.json；构建和开发应用日志 /tmp/loganalyqt-status-row-build.log、/tmp/loganalyqt-status-row-runtime.log。最终主程序SHA256：8df2e14b0879c972bb78bf771d2a750d9ea082b459d1cd25a1611d73b44906f9。
+
+本次未重跑完整UI/MQTT、全量CTest、Windows实机、Cocoa人工操作或真实设备验收；T36既有测试保持历史结果。本次仅布局和差异页现有状态同步，不涉及新的解析或地址替换逻辑；未提交、推送或发布。
+
+### T37 纠正验收：左右标题行各一对导航
+
+用户纠正了前次布局：两侧应各有完整的上一个/下一个，共四个。上节“各一个导航按钮”只记录前次错误理解下的运行结果，已由本节取代，不属于最终需求验收。
+
+- 构建通过：cmake --build build/macos-debug --target appLogAnalyQt -j 4，日志 /tmp/loganalyqt-diff-pairs-build.log。
+- 正式三页解析专项在开发应用及隔离成品均通过：1200/1280宽度，两侧各有前/后按钮、文字/顺序正确、与标题同排不重叠；四个按钮逐一检查，基于所在侧当前行查找并同步左右选中；首/尾无目标时保留双方选中；原底栏和表格断言全部保留。日志 /tmp/loganalyqt-diff-pairs-runtime.log、/tmp/loganalyqt-diff-pairs-packaged-runtime.log。
+- 已查看最终成品实际截图 /tmp/loganalyqt-diff-pairs-packaged.diff.png，确认四个按钮及标题排列。114个Mach-O架构/依赖、ad-hoc deep strict签名、源/目标摘要和交付目录检查通过，已更新唯一release_package/通联工坊.app；无ZIP/日期目录/旧应用备份，版本保持5.0.3。
+- 最终证据 build/macos-debug/diff-pairs-verification.json；主程序SHA256：5675b5121bfdb5771b9e0c42e5b3fecc35c6726aee1e5f6ca903d6b6163b82bc。
+
+未重跑全量CTest或完整UI/MQTT，未做Windows实机/Cocoa人工/真实设备验收；未提交、推送或发布。六份流程文件和git diff --check已核对。
+
+## 2026-10-27 v5.0.4 提交前验收（T38）
+
+| 范围 | 执行方式 | 实际结果 |
+|---|---|---|
+| 本地构建及版本 | cmake --build build/macos-debug --target appLogAnalyQt prot698_boundary_tests -j 4；check_build.py；Info.plist | 通过，项目及应用均5.0.4；日志 /tmp/loganalyqt-v504-build.log |
+| 698协议 | build/macos-debug/prot698_boundary_tests | 959项检查、0失败，包含IPv4/真实字典及边界；/tmp/loganalyqt-v504-boundary.log |
+| 通用QML/窗口 | python3 tests/prot698_qml_tests.py | 89 passed、0 failed；/tmp/loganalyqt-v504-qml.log |
+| 监控/设置QML | python3 tests/stage10_qml_tests.py | 109 passed、0 failed；/tmp/loganalyqt-v504-stage10.log |
+| 发布工具 | python3 -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release tests.test_ci_workflow -q，在允许本机模拟服务环境 | 38 tests，OK；/tmp/loganalyqt-v504-release-tests.log |
+| 应用与专项 | ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ui_mqtt_parse_runtime|ui_parse_table_runtime|prot698_boundary_tests)$' --output-on-failure，隔离配置/本机回环 | 4/4通过，44.96秒；含四个差异按钮、两宽度/状态/字节定位等；/tmp/loganalyqt-v504-runtime-tests.log |
+| 文件及流程 | 审查最终差异、显式提交范围、六份根流程文档及git diff --check | 一致；自审见review-record.md；不纳入本地应用/生成证据/个人配置/历史备份 |
+
+本地非全量CTest，不替代随后相同main提交的Windows/macOS构建/成品/公开更新验收。远端结果待实际取得后补记；不预先宣称已发布或Windows实机/真实设备/Apple公证通过。

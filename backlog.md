@@ -182,3 +182,21 @@
 - [正式 Release v5.0.3](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.3)：2026-10-27 17:44（Asia/Shanghai）公开，非草稿/非预发布且 latest，EXE、DMG、更新 ZIP、3 个摘要和 update.json 共 7 附件齐全。
 - [发布与公开更新 40482963607](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40482963607)：发布及 Windows/macOS 更新均 success；公开下载、SHA256、替换、重启至 5.0.3、工作区草稿/便携数据保留通过。
 - 证据：`build/v5.0.3-release-evidence/verification.json`，本地 Debug/ad-hoc：`build/macos-debug/v5.0.3-local-verification.json`。本地 `release_package/通联工坊.app` 已更新，交付目录只放应用。
+
+## 698 IPv4 显示（2026-10-27）
+
+| 任务 | 对应需求 | 当前记录与验收 |
+|---|---|---|
+| T36 核查历史并补齐 698 IPv4 显示 | IP698-01、02、LOCAL-05 | 已完成：可追溯历史未找到 698 IP 转换被删，找到的是旧 AppMsg 新增记录；共用分支增加 7 行转换，修复前 4 项失败、修复后 959 项检查零失败；真实 XML/不转换边界、成品解析表格与完整 UI/MQTT 通过，114 个 Mach-O/签名/交付摘要一致；唯一自测应用已更新，未提交或发布；见 test-report.md、review-record.md 本次条目 |
+
+## 解析底栏单行布局（2026-10-27）
+
+| 任务 | 对应需求 | 当前记录与验收 |
+|---|---|---|
+| T37 手动解析及差异对比底栏重排 | PARSEBAR-01、LOCAL-05 | 已按用户纠正完成：两侧结果标题行各有“上一个差异 / 下一个差异”，共四个按钮；1200/1280宽度及四按钮各自起点/双侧同步/无目标保护回归通过，开发和独立成品三页专项、截图及114个Mach-O/签名/交付摘要检查通过；唯一本地应用已重新更新；前次单按钮布局记录已被本次纠正取代；未提交或发布 |
+
+## v5.0.4 发布（2026-10-27）
+
+| 任务 | 对应需求 | 当前记录与验收 |
+|---|---|---|
+| T38 提交推送 IP 修复与最终界面并发布 v5.0.4 | RELEASE-10、11、IP698-01、02、PARSEBAR-01、LOCAL-05 | 进行中：版本和说明已准备，提交前测试/自审后推main；双平台同提交构建和来源门禁成功后才推标签；远端发布/更新验收结果待实际执行后补记 |

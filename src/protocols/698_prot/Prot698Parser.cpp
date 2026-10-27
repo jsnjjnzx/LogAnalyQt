@@ -740,6 +740,13 @@ void Prot698Parser::parseData(const QByteArray &data, int &offset,
       QString display = (type == Prot698DataType::Utf8String)
                             ? QString::fromUtf8(val)
                             : QString(val.toHex().toUpper());
+      if (type == Prot698DataType::OctetString && def && def->format == "1" && len == 4) {
+        display = QString("%1.%2.%3.%4")
+                      .arg(static_cast<quint8>(val[0]))
+                      .arg(static_cast<quint8>(val[1]))
+                      .arg(static_cast<quint8>(val[2]))
+                      .arg(static_cast<quint8>(val[3]));
+      }
       fields.append(Prot698Field("Value", QString(val.toHex().toUpper()),
                                  display, offset, len, indent + 1));
       offset += len;

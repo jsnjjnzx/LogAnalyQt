@@ -117,6 +117,76 @@ inline QString checkParseResultTableView(QQuickWindow *window, bool differenceMo
       } while (elapsed.elapsed() < 3000);
       return ready();
     };
+    auto *bar = find(window->contentItem(), "parse-status-bar");
+    auto *protocol = find(window->contentItem(), "parse-protocol-status");
+    auto *status = find(window->contentItem(), "parseStatus");
+    auto *address = find(window->contentItem(), "parse-address-controls");
+    require(bar && protocol && status && address, "parse footer controls are missing");
+    if (window->property("currentPage").toInt() > 0)
+      require(status->property("text").toString() == backend->parseResult(), "footer must display the existing parse result in manual and comparison modes");
+    const QSize originalSize = window->size();
+    for (int width : {1200, originalSize.width()}) {
+      window->resize(width, originalSize.height());
+      require(waitFor([&] { return bar->width() > 0 && status->width() >= status->implicitWidth()
+          && qAbs(protocol->mapToScene(QPointF(0, protocol->height() / 2)).y()
+                  - address->mapToScene(QPointF(0, address->height() / 2)).y()) < 1; }),
+              "protocol, parse status and address must fit one footer row");
+      const auto protocolRect = protocol->mapRectToItem(bar, protocol->boundingRect());
+      const auto statusRect = status->mapRectToItem(bar, status->boundingRect());
+      const auto addressRect = address->mapRectToItem(bar, address->boundingRect());
+      require(protocol->isVisible() && address->isVisible() && qAbs(protocolRect.left()) < 1
+                  && protocolRect.right() <= statusRect.left() && statusRect.right() <= addressRect.left()
+                  && qAbs(statusRect.center().y() - addressRect.center().y()) < 1
+                  && qAbs(addressRect.right() - bar->width()) < 1 && bar->height() <= 40,
+              "footer must place protocol then status on the left and address controls on the right");
+      for (int id : {1, 2}) {
+        auto *navigation = find(window->contentItem(), QString("parse-diff-navigation-%1").arg(id));
+        require(navigation && navigation->isVisible() == differenceMode, "comparison header button visibility is incorrect");
+        auto *previous = find(navigation, QString("parse-diff-prev-%1").arg(id));
+        auto *next = find(navigation, QString("parse-diff-next-%1").arg(id));
+        require(previous && next && previous->isVisible() == differenceMode && next->isVisible() == differenceMode,
+                "each comparison side must have both previous and next buttons");
+        if (!differenceMode) continue;
+        auto *card = find(window->contentItem(), QString("result-card-%1").arg(id));
+        auto *title = card ? card->property("label").value<QQuickItem *>() : nullptr;
+        require(title, "comparison result title is missing");
+        const auto buttonRect = navigation->mapRectToItem(card, navigation->boundingRect());
+        const auto titleRect = title->mapRectToItem(card, title->boundingRect());
+        require(buttonRect.left() >= titleRect.right() && buttonRect.right() <= card->width()
+                    && qAbs(buttonRect.center().y() - titleRect.center().y()) < 2
+                    && previous->property("text").toString() == QString::fromUtf8("上一个差异")
+                    && next->property("text").toString() == QString::fromUtf8("下一个差异")
+                    && previous->x() + previous->width() <= next->x()
+                    && next->x() + next->width() <= navigation->width(),
+                "each comparison result header must contain a complete navigation pair on the title row");
+      }
+    }
+    if (differenceMode) {
+      auto *leftTable = find(window->contentItem(), "parse-table-1");
+      auto *rightTable = find(window->contentItem(), "parse-table-2");
+      auto *leftList = leftTable ? leftTable->property("listView").value<QObject *>() : nullptr;
+      auto *rightList = rightTable ? rightTable->property("listView").value<QObject *>() : nullptr;
+      const int first = backend->findNextDiff(-1);
+      require(leftList && rightList && first >= 0, "comparison fixture has no navigation target");
+      for (int id : {1, 2}) {
+        auto *source = id == 1 ? leftList : rightList;
+        auto *other = id == 1 ? rightList : leftList;
+        for (bool previous : {true, false}) {
+          source->setProperty("currentIndex", previous ? first + 1 : -1);
+          other->setProperty("currentIndex", previous ? -1 : first + 1);
+          auto *button = find(window->contentItem(), QString(previous ? "parse-diff-prev-%1" : "parse-diff-next-%1").arg(id));
+          require(QMetaObject::invokeMethod(button, "clicked") && leftList->property("currentIndex").toInt() == first
+                      && rightList->property("currentIndex").toInt() == first,
+                  "both buttons on each side must navigate from their own selected row and synchronize both panes");
+          const int boundary = previous ? 0 : backend->resultModel()->rowCount() - 1;
+          source->setProperty("currentIndex", boundary);
+          other->setProperty("currentIndex", first);
+          require(QMetaObject::invokeMethod(button, "clicked") && source->property("currentIndex").toInt() == boundary
+                      && other->property("currentIndex").toInt() == first,
+                  "navigation without a previous/next difference must preserve both selections");
+        }
+      }
+    }
     for (int id = 1; id <= (differenceMode ? 2 : 1); ++id) {
       auto *table = find(window->contentItem(), QString("parse-table-%1").arg(id));
       auto *model = backend->parseModel(id);

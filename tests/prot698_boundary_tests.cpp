@@ -413,10 +413,64 @@ void testSyntheticAllServices(const QString &sourceRoot) {
   expect(!Prot698ServiceSchema::validateJsonTreeValue("ACTION_RESPONSE_NORMAL",QJsonObject{{"piid",piid},{"actionResult",returned}},&normalized,&error),"hasData=false rejects supplied dataValue");
   expect(manager.loadXml(sourceRoot+"/protocol_xml/698_protocol.xml"),"restore project dictionary after synthetic cases");
 }
+void testIpv4Display(const QString &sourceRoot) {
+  QTemporaryDir dir; auto &manager = Prot698OadManager::instance();
+  const auto path = writeXml(dir, "ipv4.xml", R"XML(<OIConfig><Item OI="A020">
+<Node Method="attrib" ID="2" OP="GET"><SubItem Type="octet_string" Name="地址字段" Format="1" SaveVal="1.2.3.4"/></Node>
+<Node Method="attrib" ID="3" OP="GET"><SubItem Type="octet_string" Name="IP地址"/></Node>
+<Node Method="attrib" ID="4" OP="GET"><SubItem Type="octet_string" Format="4"/></Node>
+<Node Method="attrib" ID="5" OP="GET"><SubItem Type="UTF8_string" Format="1"/></Node>
+</Item></OIConfig>)XML");
+  expect(manager.loadXml(path), "load IPv4 display dictionary");
+  auto parseValues = [](const char *oadHex, const char *dataHex) {
+    const auto apdu = QByteArray::fromHex("850101") + QByteArray::fromHex(oadHex)
+        + QByteArray::fromHex("01") + QByteArray::fromHex(dataHex) + QByteArray::fromHex("0000");
+    const auto frame = referenceFrame(apdu, QByteArray::fromHex("010000000000"));
+    Prot698Parser parser; const auto fields = parser.parse(frame);
+    QList<Prot698Field> values;
+    for (const auto &field : fields) {
+      expect(field.name != "Error", "IPv4 fixture parses without errors");
+      if (field.name == "octet-string" || field.name == "UTF8-string") values.append(field);
+    }
+    return values;
+  };
+  const struct { const char *oad; const char *wire; const char *display; } cases[] = {
+      {"A0200200", "0904C0A80A1B", "192.168.10.27"},
+      {"A0200200", "09040080FEFF", "0.128.254.255"},
+      {"A0200200", "0900", ""},
+      {"A0200200", "0903C0A80A", "C0A80A"},
+      {"A0200200", "0905C0A80A1BFF", "C0A80A1BFF"},
+      {"A0200200", "0910000102030405060708090A0B0C0D0E0F", "000102030405060708090A0B0C0D0E0F"},
+      {"A0200300", "0904C0A80A1B", "C0A80A1B"},
+      {"A0200400", "0904C0A80A1B", "C0A80A1B"},
+      {"A0210200", "0904C0A80A1B", "C0A80A1B"},
+      {"A0200500", "0C0474657374", "test"}};
+  for (const auto &c : cases) {
+    const auto values = parseValues(c.oad, c.wire);
+    expect(values.size() == 1, "one byte-string result");
+    if (values.size() != 1) continue;
+    const auto &field = values.first();
+    expect(field.summary == c.display, QString("display %1 / %2: %3").arg(c.oad, c.wire, field.summary));
+    const auto wire = QByteArray::fromHex(c.wire);
+    expect(field.value == QString(wire.left(1).toHex().toUpper()) + " " + QString(wire.mid(2).toHex().toUpper()),
+           "raw type and payload bytes preserved");
+  }
+  const auto formatted = parseValues("A0200200", "0904C0A80A1B").value(0);
+  const auto plain = parseValues("A0200300", "0904C0A80A1B").value(0);
+  expect(formatted.offset == plain.offset && formatted.length == plain.length && formatted.indent == plain.indent,
+         "formatting preserves byte-location and tree metadata");
+  expect(manager.loadXml(sourceRoot + "/protocol_xml/698_protocol.xml"), "restore real dictionary for IPv4 display");
+  const auto stations = parseValues("45100300", "010202020904C0A80A1B1205DD020209047A6019CE1213EC");
+  expect(stations.size() == 2 && stations[0].summary == "192.168.10.27" && stations[1].summary == "122.96.25.206",
+         "real 4510 station array repeats XML definition and uses received addresses");
+  const auto network = parseValues("45100400", "020616010904C0A808780904FFFFFF000904C0A808010A000A00");
+  expect(network.size() == 3 && network[0].summary == "192.168.8.120" && network[1].summary == "255.255.255.0"
+             && network[2].summary == "192.168.8.1", "real 4510 network IP, mask and gateway display");
+}
 } // namespace
 int main(int argc,char **argv) {
   QCoreApplication app(argc,argv);
   const QString sourceRoot=argc>1?QString::fromLocal8Bit(argv[1]):QStringLiteral(PROT698_TEST_SOURCE_DIR);
-  testPrimitiveBoundaries();testIndependentFloatAndResponseVectors();testDatesStringsAndContainers();testDynamicDataAndOptions();testFrameBoundaries();testAtomicDictionary();testServiceStatusesAndSchema(sourceRoot);testSyntheticAllServices(sourceRoot);testReviewBoundaryRegressions(sourceRoot);
+  testPrimitiveBoundaries();testIndependentFloatAndResponseVectors();testDatesStringsAndContainers();testDynamicDataAndOptions();testFrameBoundaries();testAtomicDictionary();testServiceStatusesAndSchema(sourceRoot);testSyntheticAllServices(sourceRoot);testReviewBoundaryRegressions(sourceRoot);testIpv4Display(sourceRoot);
   QTextStream(stdout)<<"prot698 boundary checks: "<<checks<<", failures: "<<failures<<'\n';return failures?1:0;
 }

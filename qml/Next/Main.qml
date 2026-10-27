@@ -973,6 +973,34 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
+            Row {
+                objectName: "parse-diff-navigation-" + targetModelId
+                visible: mainWindow.currentPage === 2 && mainWindow.enableDiffLogic && targetModelId <= 2
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                y: 3
+                spacing: 6
+                Repeater {
+                    model: 2
+                    delegate: StyledButton {
+                        required property int index
+                        objectName: (index === 0 ? "parse-diff-prev-" : "parse-diff-next-") + targetModelId
+                        height: 28
+                        text: index === 0 ? "上一个差异" : "下一个差异"
+                        onClicked: {
+                            var currentIdx = parseTable.listView.currentIndex;
+                            var diffIdx = index === 0 ? backend.findPrevDiff(currentIdx) : backend.findNextDiff(currentIdx);
+                            if (diffIdx !== -1) {
+                                pane1.listView.positionViewAtIndex(diffIdx, ListView.Beginning);
+                                pane2.listView.positionViewAtIndex(diffIdx, ListView.Beginning);
+                                pane1.listView.currentIndex = diffIdx;
+                                pane2.listView.currentIndex = diffIdx;
+                            }
+                        }
+                    }
+                }
+            }
+
             Rectangle {
                 id: selectedFrame
                 x: 12; y: 37; width: parent.width - 24; height: showInput ? 0 : 84
@@ -1798,13 +1826,11 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.preferredHeight: statusRows.implicitHeight + 8
             color: "transparent"
-            ColumnLayout {
+            RowLayout {
                 id: statusRows
+                objectName: "parse-status-bar"
                 anchors.left: parent.left; anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 5
-            RowLayout {
-                Layout.fillWidth: true
                 spacing: 15
 
                 Timer {
@@ -1818,7 +1844,7 @@ ApplicationWindow {
                 Connections {
                     target: backend
                     function onParseResultChanged() {
-                        if (mainWindow.currentPage !== 1) return;
+                        if (mainWindow.currentPage !== 1 && mainWindow.currentPage !== 2) return;
                         statusTimer.stop();
                         statusLabel.text = backend.parseResult || "就绪";
                     }
@@ -1830,110 +1856,74 @@ ApplicationWindow {
                     }
                 }
 
+                // 协议状态显示
+                Label {
+                    objectName: "parse-protocol-status"
+                    Layout.minimumWidth: 0
+                    Layout.maximumWidth: mainContentLayout.width * 0.4
+                    elide: Text.ElideRight
+                    text: backend.protocolType === 0 ? ("检测协议: " + backend.currentProtocolName) : ("当前协议: " + backend.currentProtocolName)
+                    font.pixelSize: 12
+                    color: backend.currentProtocolName === "自动检测" ? theme.subText : theme.accent
+                    visible: backend.currentProtocolName !== "自动检测"
+                }
                 Label {
                     id: statusLabel
                     objectName: "parseStatus"
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     elide: Text.ElideRight
                     text: "就绪"
                     font.pixelSize: 12
                     color: theme.text
                 }
 
-                // 协议状态显示
-                Label {
-                    Layout.maximumWidth: mainContentLayout.width * 0.58
-                    elide: Text.ElideRight
-                    text: backend.protocolType === 0 ? ("| 检测协议: " + backend.currentProtocolName) : ("| 当前协议: " + backend.currentProtocolName)
-                    font.pixelSize: 12
-                    color: backend.currentProtocolName === "自动检测" ? theme.subText : theme.accent
-                    visible: backend.currentProtocolName !== "自动检测"
-                }
-            }
                 RowLayout {
-                    Layout.fillWidth: true
-                    visible: theme.isDiffMode && mainWindow.enableDiffLogic || backend.currentProtocolName.indexOf("698") !== -1
-            RowLayout {
-                visible: theme.isDiffMode && mainWindow.enableDiffLogic
-                spacing: 10
+                    objectName: "parse-address-controls"
+                    spacing: 10
+                    visible: backend.currentProtocolName.indexOf("698") !== -1
 
-                StyledButton {
-                    text: "上一个差异"
-                    Layout.preferredHeight: 30
-                    onClicked: {
-                        var currentIdx = pane1.listView.currentIndex;
-                        var prevDiff = backend.findPrevDiff(currentIdx);
-                        if (prevDiff !== -1) {
-                            pane1.listView.positionViewAtIndex(prevDiff, ListView.Beginning);
-                            pane2.listView.positionViewAtIndex(prevDiff, ListView.Beginning);
-                            pane1.listView.currentIndex = prevDiff;
-                            pane2.listView.currentIndex = prevDiff;
+                    Label {
+                        text: "地址:"
+                        font.pixelSize: 12
+                        color: theme.text
+                    }
+
+                    Next.GlassTextField {
+                        id: addrEdit698
+                        placeholderText: ""
+                        Layout.preferredWidth: 140
+                        font.pixelSize: 12
+                        color: theme.text
+                    }
+
+                    Label {
+                        text: "逻辑地址:"
+                        font.pixelSize: 12
+                        color: theme.text
+                    }
+
+                    Next.GlassTextField {
+                        id: logicAddrEdit698
+                        placeholderText: ""
+                        text: ""
+                        Layout.preferredWidth: 52
+                        font.pixelSize: 12
+                        color: theme.text
+                    }
+
+                    StyledButton {
+                        text: "更改"
+                        Layout.preferredHeight: 30
+                        Layout.preferredWidth: 50
+                        onClicked: {
+                            if (pane1.manualParseInput.text !== "") {
+                                var newHex = backend.replace698Address(pane1.manualParseInput.text, addrEdit698.text, logicAddrEdit698.text);
+                                pane1.manualParseInput.text = newHex;
+                                performParse(newHex, 1);
+                            }
                         }
                     }
-                }
-
-                StyledButton {
-                    text: "下一个差异"
-                    Layout.preferredHeight: 30
-                    onClicked: {
-                        var currentIdx = pane1.listView.currentIndex;
-                        var nextDiff = backend.findNextDiff(currentIdx);
-                        if (nextDiff !== -1) {
-                            pane1.listView.positionViewAtIndex(nextDiff, ListView.Beginning);
-                            pane2.listView.positionViewAtIndex(nextDiff, ListView.Beginning);
-                            pane1.listView.currentIndex = nextDiff;
-                            pane2.listView.currentIndex = nextDiff;
-                        }
-                    }
-                }
-            }
-                    Item { Layout.fillWidth: true }
-            RowLayout {
-                spacing: 10
-                visible: backend.currentProtocolName.indexOf("698") !== -1
-
-                Label {
-                    text: "地址:"
-                    font.pixelSize: 12
-                    color: theme.text
-                }
-
-                Next.GlassTextField {
-                    id: addrEdit698
-                    placeholderText: ""
-                    Layout.preferredWidth: 140
-                    font.pixelSize: 12
-                    color: theme.text
-                }
-
-                Label {
-                    text: "逻辑地址:"
-                    font.pixelSize: 12
-                    color: theme.text
-                }
-
-                Next.GlassTextField {
-                    id: logicAddrEdit698
-                    placeholderText: ""
-                    text: ""
-                    Layout.preferredWidth: 52
-                    font.pixelSize: 12
-                    color: theme.text
-                }
-
-                StyledButton {
-                    text: "更改"
-                    Layout.preferredHeight: 30
-                    Layout.preferredWidth: 50
-                    onClicked: {
-                        if (pane1.manualParseInput.text !== "") {
-                            var newHex = backend.replace698Address(pane1.manualParseInput.text, addrEdit698.text, logicAddrEdit698.text);
-                            pane1.manualParseInput.text = newHex;
-                            performParse(newHex, 1);
-                        }
-                    }
-                }
-            }
                 }
             }
         }
