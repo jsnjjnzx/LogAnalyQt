@@ -268,4 +268,12 @@
 
 | 任务 | 对应需求 | 当前记录与验收 |
 |---|---|---|
-| T49 提交上传累计修订并发布 v5.1.0 | RELEASE-14、15、PROCESS-01、LOCAL-05 | 进行中：用户已确认 T48 可用并授权全部累计修订一并提交/上传/发布；先核对版本、变更说明、正式测试与六份文档，再执行同提交双平台构建、标签、正式附件及公开更新门禁 |
+| T49 提交上传累计修订并发布 v5.1.0 | RELEASE-14、15、PROCESS-01、LOCAL-05 | 已完成：发行源码 cb5aed2 已推 main，构建 40810131774 双平台全部成功且来源/有效期门禁通过后推 v5.1.0 标签；正式 latest/7 附件/公开清单摘要及发布与双平台公开更新 40811752614 全部通过；唯一本地应用更新 5.1.0，证据见下方及测试/审查记录 |
+
+### T49 发布完成记录
+
+- 发行源码：`cb5aed22060de9c4415a8a965b410a9e2bd20558`，累计 T41～T48 与版本/主要说明/正式测试及流程记录已提交上传；v5.1.0 标签指向同一源码，未移动或覆盖标签。
+- [双平台构建 40810131774](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40810131774)：Windows x64、macOS arm64 均 success；实际执行 `find_validated_build.py`，确认同 main 提交、同仓库和两份未过期产物后才创建并推送标签。
+- [正式 Release v5.1.0](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.1.0)：2026-10-29 11:22（Asia/Shanghai）公开，非草稿/非预发布且 latest；EXE、DMG、更新 ZIP、3 个摘要与 update.json 共 7 附件，标签、中文标签、大小及摘要均核对通过。
+- [发布与公开更新 40811752614](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40811752614)：发布及双平台公开更新全 success；日志确认模拟旧安装客户端实际公开下载、SHA256、替换并重启 5.1.0，测试工作区草稿及便携数据保留。
+- `build/v5.1.0-release-evidence/verification.json` 记录远端与公开清单/摘要的独立校验；本地 `build/macos-debug/v5.1.0-local-verification.json` 记录唯一应用的 Cocoa 完整回归、126 个 Mach-O/签名及 2048 项文件/链接一致性。release_package 只含 `通联工坊.app`，未纳入个人配置/备份或生成附件。

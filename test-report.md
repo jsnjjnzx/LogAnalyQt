@@ -690,3 +690,18 @@ CI/合成样例不代表Windows实机、企业网络或真实SSH/计量设备现
 | 本地独立包静态检查 | `/tmp/loganalyqt-v510-package.log` | Info.plist 为 5.1.0，126 个 Mach-O 架构/依赖及 deep strict 签名通过；完整 Cocoa 成品回归仍在执行，提交时不提前记为通过 |
 
 已核对六份根流程文件及当前待提交范围，AGENTS 规则保持，diff 空白检查通过。不提交本地应用、生成证据、个人配置或备份；T41～T48 历史测试不冒充远端 5.1.0 结果。同提交双平台 CI、标签、正式附件与公开更新验收将按实际结果补记。
+
+### T49 最终发行与公开更新验收
+
+| 检查 | 实际证据 | 结果 |
+|---|---|---|
+| 唯一本地 5.1.0 成品 | `/tmp/loganalyqt-v510-packaged-runtime.log`；`build/macos-debug/v5.1.0-local-verification.json` | 清理开发变量的 Cocoa 完整 UI/MQTT/迁移/工作区/规则回归通过；126 个 Mach-O 架构/依赖、deep strict 签名通过；固定应用与验收包 2048 项文件/符号链接一致，交付目录只含应用 |
+| 同提交双平台 CI | [40810131774](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40810131774) | Windows x64/macOS arm64 均 success：版本/发布工具、QML 与稳定性、构建、原生/集成/应用测试、打包、独立成品运行及更新 HTTPS 检查均通过 |
+| 标签前来源与有效期 | `build/v5.1.0-release-evidence/build-gate.log`、`build-gate.txt` | `find_validated_build.py` 实际核对 cb5aed2 的 push/main 成功运行、同仓库同提交、两个成功平台与两份未过期产物，返回 40810131774 后才推标签 |
+| 正式发行及公开元数据 | [v5.1.0](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.1.0)；`build/v5.1.0-release-evidence/verification.json` | 正式非草稿/非预发布且 latest，标签解析到 cb5aed2；7 附件及中文标签/大小/API digest 完整，正文来自 CHANGELOG 主要变更 |
+| 独立公开清单与校验文件 | `verify_release.py`、`verification.log`、`update.json`（均在上述证据目录） | 公开下载 update.json 摘要与远端一致，正文/版本/六个附件条目及 URL/大小/SHA256 全部一致；公开三个 checksum 文件真实摘要及其目标摘要均通过 |
+| 双平台真实公开更新 | [40811752614](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40811752614)；证据目录 `windows-public-update.log`、`macos-public-update.log` | 发布及两个更新作业全 success，日志均出现下载/校验/替换/重启 5.1.0/测试工作区与便携数据保留的 PASS；macOS 另含签名检查，不把合成旧安装测试等同任意用户环境 |
+
+首次对临时证据脚本执行 py_compile 时，宿主 Python 的默认缓存前缀指向不可写的用户缓存目录；改用内存 compile 完成语法检查。正式核验脚本随后已实际完整执行通过，未增加产品依赖或弱化校验。GitHub 插件一次传输失败后沿用既有 gh CLI 与项目门禁完成全流程，未将失败调用记成成功。
+
+已逐一复核六份根文档和实际提交/版本/结果一致，AGENTS 无需修改规则正文，diff 空白检查通过。发行源码和标签固定 cb5aed2；仅补记结果文档，不重建、替换正式附件或移动标签。远端双平台 CI 与公开更新通过不代表实体 Windows、真实用户 SSH 网络/设备或 Apple 公证验收。
