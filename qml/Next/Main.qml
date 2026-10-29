@@ -650,6 +650,8 @@ ApplicationWindow {
         // 是否锁定列宽（禁用自动调整）
         property bool autoFitLocked: false
         property bool paneSettingsReady: false
+        FontMetrics { id: manualFrameMetrics; font: manualParseInput.font }
+        FontMetrics { id: selectedFrameMetrics; font: selectedFrameText.font }
 
         function autoFitCols() {
             parseTable.autoFit();
@@ -869,7 +871,7 @@ ApplicationWindow {
                 id: inputCard
                 objectName: "input-card-" + targetModelId
                 title: titlePrefix + "手动报文解析"
-                implicitHeight: 42 + Math.max(inputActions.implicitHeight, 112) + 12
+                implicitHeight: 42 + Math.max(inputActions.implicitHeight, Math.ceil(manualFrameMetrics.lineSpacing * 8) + manualParseInput.topPadding + manualParseInput.bottomPadding) + 10
                 Layout.minimumHeight: implicitHeight
                 Layout.preferredWidth: 3
                 Layout.fillWidth: true
@@ -886,6 +888,7 @@ ApplicationWindow {
                     ScrollView {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        clip: true
                         TextArea {
                             id: manualParseInput
                             objectName: "parse-input-" + targetModelId
@@ -1017,11 +1020,14 @@ ApplicationWindow {
 
             Rectangle {
                 id: selectedFrame
-                x: 12; y: 37; width: parent.width - 24; height: showInput ? 0 : 84
+                x: 12; y: 37; width: parent.width - 24; height: showInput ? 0 : 23 + frameScroll.height
                 visible: !showInput; color: "transparent"
                 Label { text: "当前选中报文"; color: theme.subText; font.pixelSize: 13 }
                 ScrollView {
-                    anchors.top: parent.top; anchors.topMargin: 23; width: parent.width; height: 54
+                    id: frameScroll
+                    anchors.top: parent.top; anchors.topMargin: 23; width: parent.width
+                    height: Math.ceil(selectedFrameMetrics.lineSpacing * 8) + selectedFrameText.topPadding + selectedFrameText.bottomPadding
+                    clip: true
                     TextArea { id: selectedFrameText; objectName: "selected-frame-" + targetModelId; text: frameText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 13; color: theme.accent; selectionColor: theme.tableHighlight; background: Rectangle { color: theme.controlBackground; radius: 6 } }
                 }
                 Connections { target: backend; function onHighlightRange(start, end, modelId) { if (!showInput && modelId === targetModelId) selectedFrameText.select(start,end); } }
@@ -1104,8 +1110,9 @@ ApplicationWindow {
     }
     Navigation {
         id: navigation
+        objectName: "main-navigation"
         targetWindow: mainWindow
-        width: mainWindow.currentPage === 15 ? 190 : mainWindow.width < 1340 ? 226 : 244
+        width: collapsed ? 88 : mainWindow.currentPage === 15 ? 190 : mainWindow.width < 1340 ? 226 : 244
         anchors.top: customTitleBar.bottom; anchors.bottom: parent.bottom
         theme: mainWindow.uiTheme; currentPage: mainWindow.currentPage; version: mainWindow.appVersion
         onNavigate: page => mainWindow.navigate(page)

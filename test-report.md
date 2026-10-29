@@ -1,5 +1,18 @@
 # 测试结果
 
+## 2026-10-28 AI 默认提示词维护（T41 / PROMPT-01、02）
+
+| 范围 | 执行方式 | 实际结果 |
+|---|---|---|
+| 默认资源及相关测试构建 | `cmake --build build/macos-debug --target ai_controller_tests ai698_tools_tests protocol_sync_tests -j 4`；文案断言修正后重建控制器测试 | 成功；两个使用提示词资源的测试目标均已重新打包新版文本 |
+| 控制器、工具及提示词同步回归 | `ctest --test-dir build/macos-debug -R '^(ai_controller_tests\|ai698_tools_tests\|protocol_sync_tests)$' --output-on-failure` | 最终 3/3 通过，5.34 秒；覆盖缺失默认释放、不覆盖个人文本、当前请求快照、下一任务生效、非法文本拒绝、经验追加及同步边界；使用模拟网络/凭据及本地协议工具 |
+| 文本格式与资源范围 | Python 临时断言检查 UTF-8、非空、无 NUL、64 KiB 上限、七节、五个现有工具；核对 CMake 资源清单 | 默认文本 5051 字节，检查通过；维护指南未加入提示词资源 |
+| 原文规则及六份流程文件 | 原版与新版逐项自审、读取调用路径、`git diff --check` | 关键约束保留；spec/backlog/notes/测试/审查记录对应 T41；AGENTS.md 已核对，无需改协作规则；格式检查通过 |
+
+首轮工具及同步通过，控制器 376 项检查中的 3 项因旧整句文本匹配失败；核对含义后更新这三处断言（含 TSA 空格），最终重建并运行上述三项目标全部通过。未移除目标冲突、业务地址或澄清依据检查。
+
+未调用真实模型，未执行维护指南中的人工业务用例、Windows 或真实设备验证；未构建/更新 `release_package/通联工坊.app`，未修改本机用户提示词、提交或发布。自动回归不能证明模型必然遵循新文本，需按 `prompts/README.md` 试跑业务场景。
+
 目标：spec.md 中 PARSE-01～06、RELEASE-01～03、PROCESS-01。建立于 2026-10-26。
 
 ## 2026-10-25 本地实现与交付证据（补录）
@@ -554,3 +567,126 @@ CI/合成样例不代表Windows实机、企业网络或真实SSH/计量设备现
 | 最终流程与提交范围 | 六份根文档核对、git diff --check | 与最终功能/版本/验收一致；应用、生成证据、个人配置与历史备份不纳入提交，结果补记不移动发行标签 |
 
 正式结果文件build/v5.0.5-release-evidence/verification.json；[构建](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40512943078)、[发布及更新](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/40515669865)、[正式下载](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.0.5)。CI和合成样例不代表Windows实机、企业网络或真实设备验收；macOS仍为ad-hoc，未通过Apple公证。
+
+## 2026-10-28 主导航折叠（T42）
+
+| 范围 | 执行与证据 | 实际结果 |
+|---|---|---|
+| 本机构建 | cmake --build --preset macos-debug --target appLogAnalyQt；/tmp/loganalyqt-nav-build.log | 成功；沿用已有OpenSSL重复链接警告 |
+| QML组件回归 | python3 tests/prot698_qml_tests.py；/tmp/loganalyqt-nav-qml.log | 92 passed、0 failed；新增玻璃/不透明、原生/自绘窗口数据行，覆盖折叠、全部图标居中、隐藏文字、不同图标、鼠标路由、Space展开和原生拖动区不重叠 |
+| 开发应用回归 | test_ui_migration_runtime.py，临时配置、本机回环；/tmp/loganalyqt-nav-runtime.log | 完整UI/MQTT、迁移、11标签页与工作区重启保留通过；新增侧栏宽度/正文扩展、设置/帮助导航、MQTT保持折叠/展开宽度、1200×740末项真实点击通过 |
+| 最终独立成品 | 清理QT/QML/DYLD开发环境变量，QT_QPA_PLATFORM=cocoa运行相同测试器，目标navigation-package/通联工坊.app；/tmp/loganalyqt-nav-packaged-runtime.log | 完整原生Cocoa UI/MQTT、迁移、工作区/配置重启保留及全部导航断言通过；expanded/collapsed/minimum三张截图已查看，图标、折叠宽度及布局无重叠；grabWindow不包含系统原生按钮，未将其当作原生按钮的人工验收 |
+| 依赖/签名/交付一致性 | fix_macos_bundle_ids.py、codesign --verify --deep --strict、check_build.py --macos-bundle、全普通文件SHA256及符号链接清单；/tmp/loganalyqt-nav-bundle-check.log、build/macos-debug/navigation-verification.json | 125个Mach-O全部含arm64且只依赖随包/系统库，ad-hoc签名通过；已验收成品与固定release_package/通联工坊.app的2047项文件/链接一致；仅更新应用，无压缩包/附件/备份混入交付目录 |
+
+初次指定过滤器只给TestCase名称，runner未匹配函数；改为运行现有整组。新增SignalSpy首次使用未限定作用域的navigation，3项失败并有ReferenceError，修为TestCase显式id后92项通过。完整回归首次在沙箱中无法分配MQTT回环端口；放行后最小窗口断言发现末菜单裁切，缩小折叠分组留白后重新通过。初次截图发现预置报文误用了现有Icons.database中的错误码位，改用MDI数据库0xF01BC；最终成品以修正后截图及回归为准。
+
+本次未执行全量CTest、Windows构建/实机、真实网络或设备测试、独立审查、提交推送或发布，ad-hoc不代表Apple公证。已有T41修改保留；应用版本保持5.0.5。已逐一核对AGENTS/spec/backlog/notes/test-report/review-record与本次变更一致，AGENTS规则无需修改；git diff --check通过。
+
+## 2026-10-28 折叠入口层级修正（T43）
+
+| 范围 | 执行与证据 | 实际结果 |
+|---|---|---|
+| 本机构建 | cmake --build --preset macos-debug --target appLogAnalyQt；/tmp/loganalyqt-nav-edge-build.log | 成功；已有OpenSSL重复链接警告保持 |
+| 导航与既有QML | python3 tests/prot698_qml_tests.py；/tmp/loganalyqt-nav-edge-qml.log | 92 passed、0 failed；新增直接归属Navigation、旧菜单页-1不存在、展开/折叠位置跟随边界、24像素点击宽度、按钮外侧点击不触发navigate；原Space展开等检查保留 |
+| 开发应用及截图 | test_ui_migration_runtime.py；/tmp/loganalyqt-nav-edge-runtime.log；build/macos-debug/navigation-edge.*.png | 完整UI/MQTT、迁移、工作区重启保留通过；展开/折叠及1200×740截图已查看，菜单中无“收起导航”行，边界箭头独立显示 |
+| 最终独立成品 | 清理QT/QML/DYLD开发环境，QT_QPA_PLATFORM=cocoa运行相同测试器；/tmp/loganalyqt-nav-edge-packaged-runtime.log、/tmp/loganalyqt-nav-edge-package.log | 完整Cocoa UI/MQTT及新增位置/归属/最小窗口/MQTT避让断言通过；125个Mach-O架构/随包依赖及deep strict签名通过；macdeployqt提示沿用已有qt.conf，经读取确认插件与QML路径指向包内 |
+| 固定路径交付 | codesign --verify --deep --strict、全部普通文件SHA256和符号链接清单；build/macos-debug/navigation-edge-verification.json | release_package/通联工坊.app已更新，与验收成品2047项文件/链接一致；无压缩包、测试附件或备份混入交付目录 |
+
+本轮测试用临时配置和本机MQTT回环服务。T42旧入口已被用户否定，本轮验证仅覆盖修正后的边界按钮；未把T42通过记录当作新设计验收。未做全量CTest、Windows实机、真实设备、独立审查、Apple公证或发布。
+
+已逐一核对六份根文档与本次修改，AGENTS规则适用且无需修改正文；git diff --check通过。保留T41等已有未提交内容，版本保持5.0.5，最终视觉认可仍以用户反馈为准。
+
+## 2026-10-28 报文显示高度（T44）
+
+- macOS debug 构建成功，仍有原有 OpenSSL 重复链接警告。
+- `python3 tests/prot698_qml_tests.py`：93 项通过；独立解析窗口最小高度下检查 8 行、超长内容滚动范围和字段高亮选择。
+- `test_ui_migration_runtime.py ... --parse-table-only` 离屏通过；检查日志、手动、差异解析及字段选择，人工查看日志与手动截图。
+- 沙箱内 Cocoa 启动遇到系统剪贴板和窗口服务连接失败；授权后可启动，但现有解析表回归在底部状态栏布局断言失败，未完成原生界面验收。未验证 Windows、真实设备或独立审查。
+
+独立应用完成 Qt 部署及 ad-hoc 签名，113 个 Mach-O 架构/依赖检查通过；固定交付应用签名验证通过，1576 个文件/链接与部署副本一致。独立包仅带 Cocoa 平台插件，不能执行 offscreen 测试；Cocoa 解析表回归同样停在上述底栏断言。
+
+## 2026-10-29 SSH 终端粘贴截断（T45）
+
+| 检查 | 执行与证据 | 结果 |
+|---|---|---|
+| 修复前实际快捷键复现 | `python3 tests/stage10_qml_tests.py --filter SshMonitorWorkspace::test_terminalPasteShortcutPreservesFullClipboard`；`/tmp/loganalyqt-ssh-paste-before.log` | 多行及长文本 2 项失败：22→21 单元、60,010→32,767 单元；备用快捷键通过，定位到 TextInput 的内置粘贴路径 |
+| 修复后完整 SSH QML | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-ssh-paste-qml-final.log` | 114 passed / 0 failed；新增 5 个数据用例/边界检查覆盖真实快捷键、原始换行、中文/表情、长文本、会话隔离、配置粘贴、停止接收和断线；仅既有字体别名及 offscreen raise 提示 |
+| macOS Cocoa 原生粘贴 | 同一测试器通过 `/tmp/loganalyqt-qml-cocoa-runner.py` 将平台参数替换为 cocoa，运行粘贴数据用例；`/tmp/loganalyqt-ssh-paste-cocoa.log` | 6 passed / 0 failed（4 项数据用例及初始化/清理）；使用系统剪贴板，生产 QML 加隔离后端；出现一条 macOS IMK mach port 诊断，未影响断言 |
+| SSH 流/模型原生回归 | `ctest --test-dir build/macos-debug -R '^ssh_stream_tests$' --output-on-failure`；`/tmp/loganalyqt-ssh-paste-native.log` | 1/1 通过，发送/输入调度、流/模型、编码等既有检查保持 |
+| 应用构建 | `cmake --build --preset macos-debug --target appLogAnalyQt bundle_macos_updater ssh_stream_tests`，最终应用再次构建；`/tmp/loganalyqt-ssh-paste-build*.log` | 成功；保留既有 OpenSSL 重复链接警告 |
+| 完整应用隔离回归 | `QT_QPA_PLATFORM=offscreen python3 tests/test_ui_migration_runtime.py build/macos-debug/appLogAnalyQt.app/Contents/MacOS/appLogAnalyQt`；`/tmp/loganalyqt-ssh-paste-app-final.log` | 数据目录/迁移、提示词与工作区重启保留、多会话监控规则、MQTT 回环和助手清理全部通过；首次沙箱内无法创建测试端口，允许本机回环后原测试通过，未降低断言 |
+
+首次扩展测试 111 passed / 3 failed：配置用例错误地向连接后禁用的主机框请求焦点，另两项备用快捷键暴露旧窗口级 Shortcut 对窗口激活状态的依赖。改用可编辑的名称框，并将两种粘贴统一到已有按键路由后，上述完整回归通过。未将中间结果记为通过。
+
+本轮没有连接真实 SSH 设备或执行远端命令；Cocoa 粘贴检查的后端为隔离替代，并非真实网络端到端验收。未执行 Windows 构建/实机、全量 CTest、独立审查、公证或正式发布。独立包与固定路径交付结果在验证后补记。
+
+## 2026-10-29 右键菜单及合并验证（T46 / T45）
+
+| 检查 | 执行与证据 | 结果 |
+|---|---|---|
+| 最终共用终端 QML | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-ssh-terminal-qml-final.log` | 118 passed / 0 failed，新增真实右键测试覆盖无选区/此前单击 HEX 行、菜单长文本粘贴、全选历史与实时尾行、复制全部目标会话、清屏及空缓冲/离线/暂停可用性；原双击选 HEX 后右键解析仍通过 |
+| 输入控件位置右键 | 最终补充断言后专项运行 `SshMonitorWorkspace::test_terminalRightClickWithoutSelectionShowsCommonActions`；`/tmp/loganalyqt-ssh-terminal-menu.log` | 4 passed / 0 failed，含 2 个数据用例；普通行及终端 TextInput 区域均显示常用菜单，右键不改变既有行选中状态 |
+| 原生 Cocoa 右键/菜单粘贴 | 同一专项通过 Cocoa 包装器运行；`/tmp/loganalyqt-ssh-terminal-menu-cocoa.log` | 4 passed / 0 failed，含原生窗口的实际右键、48,004 单元中文/CRLF/表情长文本菜单粘贴和焦点恢复；后端隔离，不连接 SSH |
+| 最终构建与独立包静态检查 | `/tmp/loganalyqt-ssh-terminal-build-final.log`、`/tmp/loganalyqt-ssh-terminal-package-final.log` | 应用构建成功（既有 OpenSSL 重复链接提示）；最终主程序依赖重定位后重新 ad-hoc 签名，deep strict 验证成功，126 个 Mach-O 的 arm64 架构及随包/系统依赖检查通过 |
+
+上述检查覆盖 T45 与追加 T46 的最终产品代码；T45 的 114 项记录是追加菜单前的历史结果，最终合并结果以本节为准。未修改全量 CTest 或既有解析底栏断言，也未宣称历史 T44 的原生专项问题已修复。
+
+### T45 / T46 最终成品及交付
+
+- 最终独立应用在清除 QT/QML/DYLD 开发环境变量后，通过 Cocoa 的 `test_ui_migration_runtime.py` 完整回归：临时数据迁移、提示词提取、工作区重启、监控规则、多会话、真实本机 MQTT 发布订阅和助手清理全部通过；日志 `/tmp/loganalyqt-ssh-terminal-packaged-runtime.log`。未使用个人配置或真实 SSH 连接。
+- 已同步到唯一 `release_package/通联工坊.app`，版本 5.0.5。`codesign --verify --deep --strict` 成功，2048 项普通文件 SHA256/符号链接与验收独立包完全一致；release_package 只含应用，不生成压缩包、测试附件或旧应用备份。证据 `build/macos-debug/ssh-terminal-verification.json`。
+- 已逐一检查 spec.md、backlog.md、AGENTS.md、notes.md、test-report.md、review-record.md 与本次范围一致；AGENTS 规则适用无需修改正文，`git diff --check` 通过。保留既有工作区修改；无提交、推送或发布。未验证真实 SSH 设备/网络、Windows、Apple 公证或独立审查；原 1 MiB 待发送队列保护未变。
+
+## 2026-10-29 用户截图中的跨行 shell 回显（T47）
+
+| 检查 | 执行与证据 | 结果 |
+|---|---|---|
+| 修复前真实回显回归 | 生产 `ssh_stream_tests` 增加本机 bash PTY 捕获的原始回显；`/tmp/loganalyqt-pty-before.log` | 失败于 `real bash wrapped paste preserves the full iptables command instead of overwriting its prefix`，证实截图现象没有被 T45 覆盖 |
+| 修复后原生流/模型/日志 | 构建并运行 `build/macos-debug/ssh_stream_tests`；`/tmp/loganalyqt-pty-after.log` | 458 项断言通过；覆盖用户完整命令、7 种读取分片、CR 重复/延迟换行边界、中文列宽、8192 单元分段及下一逻辑行重绘；原编码、流/模型、日志回归保持 |
+| 实际本机 shell 动态重放 | 80×24 PTY 启动无用户配置的 `/bin/bash --noprofile --norc -i`，输入用户文本但不发送 Return，捕获回显后逐字节送入直接编译的生产 SshLogStream；`/tmp/loganalyqt-pty-real-shell.log` | 完整显示 `csg@SMIOS:~# ` 加 97 字符命令，cursor=110、已完成记录数=0；随后终止隔离 shell。iptables 未执行，未连接用户设备 |
+| 既有终端 QML | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-pty-qml.log` | 118 passed / 0 failed，保留 T45 快捷键/菜单粘贴与 T46 有无选区右键操作 |
+| 构建/成品静态检查 | `/tmp/loganalyqt-pty-build.log`、`/tmp/loganalyqt-pty-final-build.log`、`/tmp/loganalyqt-pty-package.log` | 应用构建通过（既有 OpenSSL 重复链接提示）；最终独立包重新依赖重定位及 ad-hoc 签名，126 个 Mach-O 架构/依赖、deep strict 签名通过 |
+
+完整应用回归新增真实回显经生产 SshTerminal 缓冲与刷新后的完整文本/光标、QML 实际 `text` 断言，以及可选原生截图。`build/macos-debug/pty-echo.png` 已实际查看，完整命令顺序正常、无前缀覆盖；测试数据通过已有 MonitorInput 隔离注入，并非真实 SSH 连接。最终完整运行与固定应用交付在完成后补记。
+
+中间分段用例曾将 8280 误当 80 列整数行，修正为 8320 后通过；临时动态重放工具初次编译缺少 iconv 链接，补齐现有系统库后通过。未将这些中间失败记成通过。本轮未验证用户远端 shell、真实 SSH 网络、Windows、独立审查或 Apple 公证；不宣称支持跨已提交历史行的完整屏幕终端编辑。
+
+### T47 最终运行与交付
+
+- 最终独立成品在清理 QT/QML/DYLD 开发变量的原生 Cocoa 环境执行完整 `test_ui_migration_runtime.py`，新增真实回显的生产模型/末端光标/QML 显示断言以及原迁移、提示词/工作区重启保留、监控规则、多会话、MQTT 回环、助手清理均通过；`/tmp/loganalyqt-pty-packaged-runtime.log`。截图 `build/macos-debug/pty-echo.png` 已实际查看。
+- 固定 `release_package/通联工坊.app` 已重新更新，5.0.5 版本保持；签名 deep strict 通过，与本次验收独立包 2048 项文件/链接完全一致。交付目录只保留应用，无新压缩包或旧应用备份；证据 `build/macos-debug/pty-echo-verification.json`。前次 `ssh-terminal-verification.json` 是 T45/T46 的历史证据，T47 当前交付以本次文件为准。
+- 六份根流程文件逐一核对，AGENTS 规则无须修改，`git diff --check` 通过。用户截图问题在本机真实 PTY 回显与独立应用重放范围已修复；未把本机通过等同用户设备验收，也未提交、推送或发布。
+
+## 2026-10-29 连接状态与旧失败提示（T48）
+
+| 检查 | 执行与证据 | 结果 |
+|---|---|---|
+| 修复前成功通知 | 新增 connectedChanged 同步观察状态/错误/提示快照，构建运行原生测试；`/tmp/loganalyqt-state-before.log` | 失败于 `success observers see Connected state and cleared error before connectedChanged`；旧通知早于状态/错误更新 |
+| 修复前界面序列 | 新增重试状态序列专项；`/tmp/loganalyqt-state-qml-before.log` | 缺少重试进度项导致失败；源码确认旧顶部错误仅依赖 lastError，按钮仅依赖 sessionActive，截图中的 Reconnecting 因而仍呈现旧红字/“断开” |
+| 修复后原生测试 | `build/macos-debug/ssh_stream_tests`；`/tmp/loganalyqt-state-native.log` | 464 项断言通过；新增成功通知快照、停止旧重试定时器、生产 worker 对关闭回环端口的真实 TCP 错误/最终通知状态；测试允许本机随机端口，使用临时配置，无用户设备连接 |
+| 终端 QML 完整回归 | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-state-qml.log` | 120 passed / 0 failed；主区及分离窗口均覆盖 Reconnecting→Connecting→Connected（故意保留 mock 历史错误以验证防御显示）→Failed→Disconnected，以及原有菜单/粘贴/选择/监控功能 |
+| 构建与独立包静态检查 | `/tmp/loganalyqt-state-build.log`、`/tmp/loganalyqt-state-final-build.log`、`/tmp/loganalyqt-state-package.log` | 构建成功，既有 OpenSSL 重复链接提示保持；126 个 Mach-O arm64/依赖检查、ad-hoc deep strict 签名通过 |
+
+完整应用新增生产后端回调到实际 QML 的可见性/操作文字断言和 retry/connected 原生截图，使用临时测试数据与合成回调，不代表真实 SSH 握手验收。最终运行、截图查看及固定路径交付完成后补记。
+
+当前环境未提供 Paramiko，未额外安装依赖或将回调注入标为加密 SSH 成功测试；真实 TCP 拒绝使用生产 worker 单独验证。用户设备具体首次连接失败原因尚未复现，新系统错误信息用于后续实际诊断；未做 Windows、独立审查、Apple 公证或正式发布。
+
+### T48 最终成品及交付
+
+- 最终独立应用在清理 QT/QML/DYLD 开发环境后，以 Cocoa 执行完整 `test_ui_migration_runtime.py`：新增生产状态→QML 的重试/成功显示检查及原迁移、提示词/工作区重启、规则、多会话、MQTT 回环和助手清理全部通过；日志 `/tmp/loganalyqt-state-packaged-runtime.log`。
+- `build/macos-debug/connection-state.retry.png` 与 `.connected.png` 均已实际查看：重试为黄色进度和“取消”，成功后旧错误/进度栏消失，状态为已连接与“断开”。截图来自隔离状态注入，未作为真实 SSH 握手成功证据。
+- 固定 `release_package/通联工坊.app` 已更新为当前 5.0.5 自测构建，deep strict 签名通过，与验收成品 2048 项普通文件 SHA256/符号链接完全一致；交付目录只含应用，无新压缩包、附件或旧应用备份。当前证据 `build/macos-debug/connection-state-verification.json`，T47 等旧记录保留其历史含义。
+- 六份根流程文件已逐一检查，AGENTS 规则适用且无需修改正文，diff 空白检查通过；保留所有此前工作区修改，未提交、推送或发布。状态显示/通知一致性已按本次范围验证，真实用户设备首次 TCP 失败原因仍未知。
+
+## 2026-10-29 v5.1.0 提交前验证（T49）
+
+| 检查 | 执行与证据 | 结果 |
+|---|---|---|
+| 版本与完整编译 | `cmake --preset macos-debug`、`cmake --build --preset macos-debug`；`/tmp/loganalyqt-v510-configure.log`、`/tmp/loganalyqt-v510-build.log` | 5.1.0 全目标构建成功；保留既有 OpenSSL 重复链接/弃用提示，无构建失败 |
+| 解析/导航 QML | `python3 tests/prot698_qml_tests.py`；`/tmp/loganalyqt-v510-qml-next.log` | 93 passed / 0 failed，含导航折叠与 8 行原文检查 |
+| SSH 与状态 QML | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-v510-qml-stage10.log` | 120 passed / 0 failed，含长文本/菜单粘贴、选区菜单、连接/重试/失败/取消与独立窗口 |
+| 发布工具 | `python3 -m unittest tests.test_release_automation tests.test_ci_packages tests.test_github_release tests.test_ci_workflow -v`；`/tmp/loganalyqt-v510-release-tests.log` | 38/38 通过，发布输出为 mock 测试，不是正式发布 |
+| 一般原生/集成 CTest | `QT_QPA_PLATFORM=offscreen ctest --test-dir build/macos-debug --output-on-failure --no-tests=error -E '^(prot698_qml_tests\|stage10_qml_tests\|ui_migration_runtime\|macos_window_activation)$'`；`/tmp/loganalyqt-v510-ctest-general.log` | 28/28 通过，含 AI 控制器/工具/同步、SSH 流与安全、解析表、协议及更新替换回归；允许本机临时端口，使用隔离测试数据 |
+| 本地独立包静态检查 | `/tmp/loganalyqt-v510-package.log` | Info.plist 为 5.1.0，126 个 Mach-O 架构/依赖及 deep strict 签名通过；完整 Cocoa 成品回归仍在执行，提交时不提前记为通过 |
+
+已核对六份根流程文件及当前待提交范围，AGENTS 规则保持，diff 空白检查通过。不提交本地应用、生成证据、个人配置或备份；T41～T48 历史测试不冒充远端 5.1.0 结果。同提交双平台 CI、标签、正式附件与公开更新验收将按实际结果补记。

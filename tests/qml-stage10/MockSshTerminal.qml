@@ -194,7 +194,8 @@ QtObject {
         lineCountChanged()
     }
     function copyLineToClipboard(index) {}
-    function copyBufferToClipboard() {}
+    property int copyBufferCalls: 0
+    function copyBufferToClipboard() { ++copyBufferCalls }
     function selectedText(firstId, firstOffset, lastId, lastOffset) {
         const first = firstId - firstLineId, last = lastId - firstLineId
         if (first < 0 || last < first || last > currentLineCount) return ""

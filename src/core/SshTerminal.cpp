@@ -23,10 +23,13 @@
 #include <cerrno>
 #include <QSocketNotifier>
 #include <algorithm>
+#include <system_error>
 
 
 // libssh2 和 socket 头文件
 #include <libssh2.h>
+static_assert(LIBSSH2_TERM_WIDTH == SshLogStream::TerminalColumns,
+              "SSH PTY width must match the stream's physical row width");
 #ifdef Q_OS_WIN
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -45,6 +48,13 @@
 #define closesocket close
 #endif
 
+static int lastSocketError() {
+#ifdef Q_OS_WIN
+  return WSAGetLastError();
+#else
+  return errno;
+#endif
+}
 static bool validSshIdentity(const QString &host, int port, const QString &user) {
   auto hasControl = [](const QString &value) {
     for (const QChar c : value) if (c.category() == QChar::Other_Control) return true;
@@ -141,6 +151,7 @@ public slots:
     if (!m_stream.encodingAvailable()) { fail(QStringLiteral("当前系统不支持所选 SSH 字符编码"), true); return; }
     m_host = host;
     m_port = port;
+    m_lastConnectError = 0;
     m_user = user;
     m_password = password.toUtf8();
     m_useSystemCredentials = useSystemCredentials;
@@ -291,12 +302,16 @@ private:
         length = sizeof(*addr);
       } else continue;
       m_sock = socket(storage.ss_family, SOCK_STREAM, 0);
-      if (m_sock == INVALID_SOCKET) continue;
+      if (m_sock == INVALID_SOCKET) { m_lastConnectError = lastSocketError(); continue; }
 #ifdef Q_OS_WIN
       u_long mode = 1;
-      if (ioctlsocket(m_sock, FIONBIO, &mode) != 0) continue;
+      if (ioctlsocket(m_sock, FIONBIO, &mode) != 0) {
+        m_lastConnectError = lastSocketError(); closesocket(m_sock); m_sock = INVALID_SOCKET; continue;
+      }
 #else
-      if (fcntl(m_sock, F_SETFL, fcntl(m_sock, F_GETFL) | O_NONBLOCK) < 0) continue;
+      if (fcntl(m_sock, F_SETFL, fcntl(m_sock, F_GETFL) | O_NONBLOCK) < 0) {
+        m_lastConnectError = lastSocketError(); closesocket(m_sock); m_sock = INVALID_SOCKET; continue;
+      }
       int noSigPipe = 1;
 #ifdef SO_NOSIGPIPE
       setsockopt(m_sock, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
@@ -308,16 +323,20 @@ private:
         qWarning() << "SSH TCP_NODELAY unavailable; retaining default TCP buffering";
       }
       const int result = ::connect(m_sock, reinterpret_cast<sockaddr *>(&storage), length);
+      const int error = result == 0 ? 0 : lastSocketError();
 #ifdef Q_OS_WIN
-      const bool pending = WSAGetLastError() == WSAEWOULDBLOCK;
+      const bool pending = error == WSAEWOULDBLOCK;
 #else
-      const bool pending = errno == EINPROGRESS;
+      const bool pending = error == EINPROGRESS;
 #endif
       if (result == 0 || pending) { m_phase = TcpConnecting; return; }
+      m_lastConnectError = error;
       closesocket(m_sock);
       m_sock = INVALID_SOCKET;
     }
-    fail(QStringLiteral("连接 SSH 服务器失败，请检查网络和端口"));
+    fail(m_lastConnectError ? QStringLiteral("连接 SSH 服务器失败（系统错误 %1：%2），请检查网络和端口")
+        .arg(m_lastConnectError).arg(QString::fromLocal8Bit(std::system_category().message(m_lastConnectError).c_str()))
+        : QStringLiteral("连接 SSH 服务器失败，请检查网络和端口"));
   }
   void fail(const QString &error, bool securityFailure = false) {
     const auto generation = m_generation;
@@ -410,6 +429,7 @@ private:
       socklen_t size = sizeof(error);
       if (getsockopt(m_sock, SOL_SOCKET, SO_ERROR,
                      reinterpret_cast<char *>(&error), &size) != 0 || error) {
+        m_lastConnectError = error ? error : lastSocketError();
         tryNextAddress(); return;
       }
       static const int initialized = libssh2_init(0);
@@ -626,6 +646,7 @@ private:
   quint64 m_generation = 0;
   QString m_host, m_user, m_requestId;
   int m_port = 22;
+  int m_lastConnectError = 0;
   QByteArray m_password, m_hostKey, m_outgoing, m_writeInFlight, m_replay;
   qsizetype m_replayOffset = 0;
   bool m_credentialsLoaded = false;
@@ -1588,6 +1609,7 @@ void SshTerminal::onWorkerConnected() {
 
   m_manualDisconnectRequested = false;
   m_reconnectPending = false;
+  m_reconnectTimer->stop();
   if (m_reconnectAttempt != 0) {
     emit linesAboutToChange();
     m_lineModel->appendLines({QStringLiteral("[%1] SSH 已重新连接成功")
@@ -1596,11 +1618,11 @@ void SshTerminal::onWorkerConnected() {
     m_reconnectAttempt = 0;
     emit reconnectAttemptChanged();
   }
-  setConnected(true);
-  setConnectionState(ConnectionState::Connected);
   setLastError({});
   setStatusMessage(configurationSaved ? QStringLiteral("已连接")
       : QStringLiteral("已连接；连接配置保存失败，请检查便携目录写入权限：") + settings.fileName());
+  setConnectionState(ConnectionState::Connected);
+  setConnected(true);
   m_flushTimer->start();
 }
 
@@ -1608,9 +1630,9 @@ void SshTerminal::onWorkerError(const QString &errorStr) {
   flushFinalPendingData();
   setLastError(errorStr);
   setStatusMessage(errorStr);
-  emit connectionError(errorStr);
   setConnected(false);
   scheduleReconnect(errorStr);
+  emit connectionError(errorStr);
 }
 
 void SshTerminal::onWorkerDisconnected() {

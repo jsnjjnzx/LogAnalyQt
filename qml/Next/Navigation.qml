@@ -8,10 +8,12 @@ Rectangle {
     id: nav
     required property var theme
     property int currentPage: 0
+    property bool collapsed: false
     property string version: ""
     property var targetWindow: null
     readonly property bool nativeWindowControls: !!(targetWindow && targetWindow.nativeTitleBar)
     signal navigate(int page)
+    z: 1
     color: theme.sidebar
     readonly property var items: [
         {section:"分析工作台"},
@@ -27,7 +29,7 @@ Rectangle {
         {section:"通信调试"},
         {page:15,title:"MQTT 调试",icon:0xF0318},
         {section:"资源管理"},
-        {page:7,title:"预置报文",icon:0xF09EE},
+        {page:7,title:"预置报文",icon:0xF01BC},
         {page:8,title:"协议同步",icon:0xF04E6}
     ]
     FontLoader { id: mdi; source: "qrc:/qt/qml/LogAnalyQt/assets/materialdesignicons-webfont.ttf" }
@@ -42,6 +44,29 @@ Rectangle {
             else nav.targetWindow.showMaximized();
         }
     }
+    Next.GlassButton {
+        objectName: "nav-collapse-toggle"
+        anchors.right: parent.right; anchors.rightMargin: -12
+        anchors.verticalCenter: parent.verticalCenter
+        width: 24; height: 44; padding: 0; horizontalPadding: 0
+        z: 2
+        Accessible.name: nav.collapsed ? "展开导航" : "收起导航"
+        ToolTip.visible: hovered
+        ToolTip.delay: 600
+        ToolTip.text: Accessible.name
+        onClicked: nav.collapsed = !nav.collapsed
+        background: Rectangle {
+            radius: 12
+            color: parent.hovered ? nav.theme.surfaceHover : nav.theme.sidebar
+            border.color: parent.visualFocus ? nav.theme.accent : nav.theme.groupBorder
+        }
+        contentItem: Text {
+            text: String.fromCodePoint(nav.collapsed ? 0xF0142 : 0xF0141)
+            font.family: mdi.name; font.pixelSize: 18
+            color: parent.hovered ? nav.theme.text : nav.theme.subText
+            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+        }
+    }
     Flickable {
         objectName: "nav-menu"
         x: 14; y: 22; width: parent.width - 28
@@ -50,20 +75,27 @@ Rectangle {
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar {}
         Column {
-            id: menu; width: parent.width; spacing: 5
+            id: menu; width: parent.width; spacing: nav.collapsed ? 4 : 5
             Repeater {
                 model: nav.items
                 delegate: Item {
                     required property var modelData
                     required property int index
                     width: menu.width
-                    height: modelData.section ? (index === 0 ? 24 : (nav.height < 800 ? 36 : 43)) : (nav.height < 800 ? 38 : 43)
-                    Text { objectName: "nav-section-" + index; visible: !!modelData.section && !(index === 0 && nav.nativeWindowControls); x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; text: modelData.section || ""; font.pixelSize: 12; font.weight: Font.DemiBold; color: nav.theme.subText }
+                    height: modelData.section ? (index === 0 ? 24 : nav.collapsed ? 10 : (nav.height < 800 ? 36 : 43)) : (nav.height < 800 ? 38 : 43)
+                    Text { objectName: "nav-section-" + index; visible: !!modelData.section && !nav.collapsed && !(index === 0 && nav.nativeWindowControls); x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; text: modelData.section || ""; font.pixelSize: 12; font.weight: Font.DemiBold; color: nav.theme.subText }
+                    Rectangle {
+                        visible: nav.collapsed && !!modelData.section && index > 0
+                        anchors.centerIn: parent; width: 20; height: 1; color: nav.theme.separator
+                    }
                     Next.GlassButton {
                         objectName: modelData.section ? "" : "nav-" + modelData.page
                         anchors.fill: parent; visible: !modelData.section
                         hoverEnabled: true
                         Accessible.name: modelData.title || ""
+                        ToolTip.visible: hovered && nav.collapsed
+                        ToolTip.delay: 600
+                        ToolTip.text: modelData.title || ""
                         onClicked: nav.navigate(modelData.page)
                         background: Rectangle {
                             radius: 10
@@ -71,10 +103,9 @@ Rectangle {
                             border.width: parent.visualFocus ? 1 : 0
                             border.color: parent.activeFocus ? nav.theme.accent : nav.theme.groupBorder
                         }
-                        contentItem: RowLayout {
-                            spacing: 15
-                            Text { text: String.fromCodePoint(modelData.icon || 0); font.family: mdi.name; font.pixelSize: 20; color: nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.subText; Layout.leftMargin: 7 }
-                            Text { text: modelData.title || ""; font.pixelSize: 14; color: nav.theme.text; Layout.fillWidth: true }
+                        contentItem: Item {
+                            Text { objectName: "nav-icon-" + modelData.page; text: String.fromCodePoint(modelData.icon || 0); font.family: mdi.name; font.pixelSize: 20; color: nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.subText; anchors.verticalCenter: parent.verticalCenter; x: nav.collapsed ? (parent.width - width) / 2 : 7 }
+                            Text { objectName: "nav-label-" + modelData.page; visible: !nav.collapsed; anchors.verticalCenter: parent.verticalCenter; x: 42; text: modelData.title || ""; font.pixelSize: 14; color: nav.theme.text }
                         }
                     }
                 }
@@ -85,7 +116,7 @@ Rectangle {
         id: footer
         objectName: "nav-footer"
         anchors.bottom: parent.bottom; anchors.bottomMargin: 16
-        x: 18; width: parent.width - 36; spacing: 8
+        x: nav.collapsed ? 14 : 18; width: parent.width - 2 * x; spacing: 8
         Rectangle { width: parent.width; height: 1; color: nav.theme.groupBorder }
         Repeater {
             model: [{page:9,title:"系统设置",icon:0xF08BB},{page:10,title:"帮助与更新",icon:0xF0625}]
@@ -94,18 +125,21 @@ Rectangle {
                 objectName: "nav-" + modelData.page
                 width: parent.width; height: 39
                 Accessible.name: modelData.title
+                ToolTip.visible: hovered && nav.collapsed
+                ToolTip.delay: 600
+                ToolTip.text: Accessible.name
                 onClicked: nav.navigate(modelData.page)
                 background: Rectangle { radius: 9; color: nav.currentPage === modelData.page ? nav.theme.navigationSelected : parent.hovered ? nav.theme.surfaceHover : "transparent"; border.color: parent.visualFocus ? nav.theme.accent : "transparent" }
-                contentItem: RowLayout {
-                    spacing: 15
-                    Text { text: String.fromCodePoint(modelData.icon); font.family: mdi.name; font.pixelSize: 20; color: nav.theme.subText }
-                    Text { text: modelData.title; color: nav.theme.text; font.pixelSize: 14; Layout.fillWidth: true }
+                contentItem: Item {
+                    Text { objectName: "nav-icon-" + modelData.page; text: String.fromCodePoint(modelData.icon); font.family: mdi.name; font.pixelSize: 20; color: nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.subText; anchors.verticalCenter: parent.verticalCenter; x: nav.collapsed ? (parent.width - width) / 2 : 0 }
+                    Text { objectName: "nav-label-" + modelData.page; visible: !nav.collapsed; anchors.verticalCenter: parent.verticalCenter; x: 35; text: modelData.title; color: nav.theme.text; font.pixelSize: 14 }
                 }
             }
         }
         Rectangle { width: parent.width; height: 1; color: nav.theme.separator }
         RowLayout {
             objectName: "nav-brand"
+            visible: !nav.collapsed
             width: parent.width; height: 44; spacing: 10
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 3

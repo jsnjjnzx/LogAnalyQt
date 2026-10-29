@@ -18,7 +18,7 @@ Item {
     }
     Component {
         id: navigationComponent
-        Next.Navigation { width: 244; height: 650; theme: testTheme; targetWindow: target }
+        Next.Navigation { width: collapsed ? 88 : 244; height: 650; theme: testTheme; targetWindow: target }
     }
     Component {
         id: realWindowComponent
@@ -35,6 +35,7 @@ Item {
         }
     }
     TestCase {
+        id: navigationTest
         name: "NativeNavigationChrome"
         when: windowShown
         property var navigation
@@ -46,6 +47,48 @@ Item {
             verify(navigation !== null); wait(20)
         }
         function dragArea() { return findChild(navigation, "nav-window-drag") }
+        SignalSpy { id: navigationSpy; target: navigationTest.navigation; signalName: "navigate" }
+        function test_collapsePreservesIconsAndNavigation_data() {
+            return [{tag:"native-glass", native:true, opaque:false},
+                    {tag:"native-opaque", native:true, opaque:true},
+                    {tag:"custom-opaque", native:false, opaque:true}]
+        }
+        function test_collapsePreservesIconsAndNavigation(data) {
+            target.nativeTitleBar = data.native
+            testTheme.nativeBackdropAvailable = data.native
+            testTheme.reducedTransparency = data.opaque
+            const toggle = findChild(navigation, "nav-collapse-toggle")
+            verify(toggle !== null)
+            compare(toggle.parent, navigation)
+            compare(findChild(navigation, "nav--1"), null)
+            compare(toggle.x + toggle.width / 2, navigation.width)
+            compare(toggle.y + toggle.height / 2, navigation.height / 2)
+            verify(toggle.width >= 24 && toggle.height >= 24)
+            navigationSpy.clear()
+            mouseClick(toggle, toggle.width - 2, toggle.height / 2); wait(20)
+            compare(navigationSpy.count, 0)
+            compare(navigation.collapsed, true); compare(navigation.width, 88)
+            compare(toggle.x + toggle.width / 2, navigation.width)
+            verify(!findChild(navigation, "nav-brand").visible)
+            for (const page of [0, 1, 2, 3, 4, 14, 5, 6, 15, 7, 8, 9, 10]) {
+                const icon = findChild(navigation, "nav-icon-" + page)
+                verify(icon.visible)
+                verify(!findChild(navigation, "nav-label-" + page).visible)
+                verify(Math.abs(icon.mapToItem(navigation, icon.width / 2, 0).x - 44) < 1)
+            }
+            for (const index of [0, 7, 10, 12]) verify(!findChild(navigation, "nav-section-" + index).visible)
+            verify(findChild(navigation, "nav-icon-0").text !== findChild(navigation, "nav-icon-7").text)
+            const log = findChild(navigation, "nav-0")
+            verify(log.mapToItem(navigation, 0, 0).y >= dragArea().height)
+            navigationSpy.clear()
+            mouseClick(log); compare(navigationSpy.count, 1); compare(navigationSpy.signalArguments[0][0], 0)
+            mouseClick(findChild(navigation, "nav-9")); compare(navigationSpy.signalArguments[1][0], 9)
+            mouseClick(findChild(navigation, "nav-10")); compare(navigationSpy.signalArguments[2][0], 10)
+            toggle.forceActiveFocus(); keyClick(Qt.Key_Space); wait(20)
+            compare(navigation.collapsed, false); compare(navigation.width, 244)
+            verify(findChild(navigation, "nav-label-7").visible)
+            verify(findChild(navigation, "nav-brand").visible)
+        }
         function test_doubleClickMaximizesAndRestores() {
             for (let cycle = 0; cycle < 2; ++cycle) {
                 mouseDoubleClickSequence(dragArea(), 200, 15)

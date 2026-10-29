@@ -121,6 +121,19 @@ Item {
             compare(shared.indentWidth, table.indentWidth);
             popup.destroy();
         }
+        function test_frameShowsEightLinesAndScrolls() {
+            const popup = popupFactory.createObject(null, {parsedHex: Array(21).join("AA BB\n"), height: 360, visible: true});
+            verify(popup !== null);
+            const frame = findChild(popup, "test-popup-frame");
+            const scroll = findChild(popup, "test-popup-frame-scroll");
+            const metrics = Qt.createQmlObject('import QtQuick; FontMetrics {}', popup);
+            metrics.font = frame.font;
+            tryVerify(() => scroll.height >= Math.ceil(metrics.lineSpacing * 8) + frame.topPadding + frame.bottomPadding);
+            tryVerify(() => scroll.contentHeight > scroll.height);
+            mockBackend.highlightRange(0, 2, 7);
+            compare(frame.selectedText, "AA");
+            popup.destroy();
+        }
         function test_resetWhileDetailsAreSelected() {
             mouseClick(field(1));
             compare(field(1).height, 48);

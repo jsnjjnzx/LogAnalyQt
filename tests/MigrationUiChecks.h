@@ -55,6 +55,9 @@ struct SshTerminalTestAccess {
           terminal.m_buffer->bytes += line.storageBytes(); terminal.m_buffer->lines.push_back(std::move(line));
         }
         terminal.m_buffer->partial = partial;
+        terminal.m_buffer->cursorColumn = stream.cursorColumn();
+        terminal.m_buffer->cursorPosition = stream.cursorPosition();
+        terminal.m_buffer->cursorPadding = stream.cursorPadding();
         if (!matcher.hit().data.isEmpty()) terminal.m_buffer->monitorHit = matcher.hit();
       }
       terminal.flushPendingData();
@@ -178,6 +181,50 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     auto *titleBar = uiItem("main-title-bar");
     auto *pageDeck = uiItem("page-deck");
     require(titleBar && pageDeck, "window chrome or page deck missing");
+    trace("main navigation collapse");
+    auto *mainNavigation = uiItem("main-navigation");
+    require(mainNavigation, "main navigation missing");
+    auto checkCollapseControl = [&] {
+      auto *toggle = uiItem("nav-collapse-toggle");
+      require(toggle && toggle->parentItem() == mainNavigation, "collapse control must be separate from menu and footer");
+      const auto center = toggle->mapToScene(QPointF(toggle->width() / 2, toggle->height() / 2));
+      require(qAbs(center.x() - mainNavigation->width()) < 1 && qAbs(center.y() - (mainNavigation->y() + mainNavigation->height() / 2)) < 1,
+              "collapse control must follow the sidebar boundary");
+      require(toggle->mapToScene(QPointF(toggle->width(), 0)).x() <= pageDeck->mapToScene(QPointF()).x(), "collapse control overlaps page content");
+    };
+    checkCollapseControl();
+    const auto expandedNavigationWidth = mainNavigation->width();
+    const auto expandedDeckWidth = pageDeck->width();
+    const auto navigationCapture = qEnvironmentVariable("LOGANALYQT_NAV_SCREENSHOT");
+    if (!navigationCapture.isEmpty()) require(window->grabWindow().save(navigationCapture + ".expanded.png"), "expanded navigation capture failed");
+    click(uiItem("nav-collapse-toggle"));
+    checkCollapseControl();
+    require(mainNavigation->width() == 88 && pageDeck->width() >= expandedDeckWidth + expandedNavigationWidth - 88 - 1,
+            "collapsed navigation must return width to the page");
+    require(!uiItem("nav-label-0")->isVisible() && !uiItem("nav-brand")->isVisible(), "collapsed navigation still has labels");
+    require(uiItem("nav-icon-0")->property("text") != uiItem("nav-icon-7")->property("text"), "preset and log icons must differ");
+    if (!navigationCapture.isEmpty()) require(window->grabWindow().save(navigationCapture + ".collapsed.png"), "collapsed navigation capture failed");
+    const auto navigationWindowSize = window->size();
+    window->resize(1200, 740); settle();
+    checkCollapseControl();
+    const auto lastMenuBottom = uiItem("nav-8")->mapToScene(QPointF(0, uiItem("nav-8")->height())).y();
+    require(lastMenuBottom < uiItem("nav-footer")->mapToScene(QPointF()).y(), "collapsed menu is clipped at the minimum window size");
+    if (!navigationCapture.isEmpty()) require(window->grabWindow().save(navigationCapture + ".minimum.png"), "minimum navigation capture failed");
+    click(uiItem("nav-8"));
+    require(window->property("currentPage").toInt() == 8, "last collapsed menu entry is unreachable");
+    window->resize(navigationWindowSize); settle();
+    click(uiItem("nav-9"));
+    require(window->property("currentPage").toInt() == 9 && mainNavigation->width() == 88, "collapsed settings navigation failed");
+    click(uiItem("nav-10"));
+    require(window->property("currentPage").toInt() == 10, "collapsed help navigation failed");
+    navigate(15);
+    require(mainNavigation->width() == 88, "MQTT page must preserve collapsed navigation");
+    checkCollapseControl();
+    click(uiItem("nav-collapse-toggle"));
+    require(mainNavigation->width() == 190, "MQTT navigation expanded width changed");
+    checkCollapseControl();
+    navigate(0);
+    require(mainNavigation->width() == expandedNavigationWidth && uiItem("nav-label-0")->isVisible(), "expanded navigation did not restore");
 #ifdef Q_OS_MACOS
     require(!window->flags().testFlag(Qt::FramelessWindowHint) && !titleBar->isVisible() && titleBar->height() == 0,
             "macOS must use native window controls without a custom title bar");
@@ -268,6 +315,51 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     auto *ssh = livePage ? livePage->findChild<SshTerminal *>("ssh-terminal-backend") : nullptr;
     require(ssh, "live log backend is missing");
     ssh->clearBuffer();
+    {
+      const bool configExpanded = livePage->property("connectionConfigExpanded").toBool();
+      const bool reconnectEnabled = ssh->autoReconnectEnabled();
+      const int reconnectInterval = ssh->reconnectIntervalMs();
+      livePage->setProperty("connectionConfigExpanded", false);
+      ssh->setAutoReconnectEnabled(true); ssh->setReconnectIntervalMs(60000);
+      require(QMetaObject::invokeMethod(ssh, "onWorkerError", Q_ARG(QString, QStringLiteral("synthetic previous TCP failure"))),
+              "retry state injection failed");
+      settle();
+      auto *error = uiItem("ssh-current-connection-error");
+      auto *progress = uiItem("ssh-connection-progress");
+      const auto buttonName = "ssh-session-connect-" + livePage->property("sessionId").toString();
+      require(!ssh->isConnected() && ssh->connectionState() == SshTerminal::Reconnecting
+                  && error && !error->isVisible() && progress && progress->isVisible()
+                  && uiItem(buttonName)->property("text").toString() == QString::fromUtf8("取消"),
+              "retry still presents a previous error or implies an established connection");
+      const auto screenshot = qEnvironmentVariable("LOGANALYQT_SSH_STATE_SCREENSHOT");
+      if (!screenshot.isEmpty()) require(window->grabWindow().save(screenshot + ".retry.png"), "retry state capture failed");
+      require(QMetaObject::invokeMethod(ssh, "onWorkerConnected"), "success state injection failed");
+      settle();
+      require(ssh->isConnected() && ssh->lastError().isEmpty() && !error->isVisible() && !progress->isVisible()
+                  && !uiItem("ssh-connection-panel")->isVisible()
+                  && uiItem(buttonName)->property("text").toString() == QString::fromUtf8("断开"),
+              "connected session retains a previous error, retry progress, or wrong action");
+      if (!screenshot.isEmpty()) require(window->grabWindow().save(screenshot + ".connected.png"), "connected state capture failed");
+      ssh->disconnectFromHost();
+      ssh->setAutoReconnectEnabled(reconnectEnabled); ssh->setReconnectIntervalMs(reconnectInterval);
+      livePage->setProperty("connectionConfigExpanded", configExpanded);
+      ssh->clearBuffer();
+    }
+    {
+      SshTerminalTestAccess::MonitorInput shellEcho;
+      const QString expected = QStringLiteral("csg@SMIOS:~# iptables -t nat -A PREROUTING -p tcp -d 192.168.127.242 --dport 1883 -j DNAT --to 172.17.0.1:1883");
+      shellEcho.feed(*ssh, "csg@SMIOS:~# iptables -t nat -A PREROUTING -p tcp -d 192.168.127.242 --dport 188 \r");
+      shellEcho.feed(*ssh, "3 -j DNAT --to 172.17.0.1:1883");
+      settle();
+      require(ssh->liveLine() == expected && ssh->cursorPosition() == expected.size(),
+              "real shell wrapped paste lost its command prefix or cursor in the terminal model");
+      auto *liveText = uiItem("ssh-terminal-live-line");
+      require(liveText && liveText->property("text").toString() == expected,
+              "terminal QML does not display the complete wrapped shell command");
+      const auto screenshot = qEnvironmentVariable("LOGANALYQT_SSH_PASTE_SCREENSHOT");
+      if (!screenshot.isEmpty()) require(window->grabWindow().save(screenshot), "wrapped shell paste capture failed");
+      ssh->clearBuffer();
+    }
     ssh->lineModel()->appendLines({"RX 68 04 07 00 00 00", "RX 05 01 02 40 00 02 00 00"});
     ssh->lineCountChanged(); settle();
     for (int row = 0; row < 2; ++row) {

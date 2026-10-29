@@ -36,6 +36,7 @@ struct SshLogLine {
 // Worker-owned stream state; a socket read is not a character, escape sequence or line boundary.
 class SshLogStream {
 public:
+  static constexpr int TerminalColumns = 80;
   static constexpr qsizetype SegmentCharacters = 8192;
   static constexpr qsizetype PendingBytes = 4 * 1024 * 1024;
   static constexpr qsizetype HistoryBytes = 32 * 1024 * 1024;
@@ -84,6 +85,7 @@ private:
   QString m_csi;
   int m_column = 0;
   int m_lineColumns = 0;
+  int m_rowStart = 0; // May be negative when a display segment starts partway through a PTY row.
   bool m_continuation = false;
   int m_pendingUtf8 = 0;
 };

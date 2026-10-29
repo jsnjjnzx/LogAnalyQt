@@ -61,7 +61,7 @@ void SshLogStream::reset(const QString &encoding, bool clearedPartialLine) {
   m_gb = encoding.startsWith("GB", Qt::CaseInsensitive);
   m_utf8 = QStringDecoder(QStringConverter::Utf8);
   m_pendingBytes.clear(); m_partial.clear();
-  m_state = State::Text; m_csi.clear(); m_column = m_lineColumns = 0; m_continuation = clearedPartialLine; m_pendingUtf8 = 0;
+  m_state = State::Text; m_csi.clear(); m_column = m_lineColumns = m_rowStart = 0; m_continuation = clearedPartialLine; m_pendingUtf8 = 0;
   ++m_logicalId;
   m_logicalOffset = 0;
 #ifndef Q_OS_WIN
@@ -157,6 +157,7 @@ QByteArray SshLogStream::encode(const QString &text, const QString &encoding) {
 }
 
 void SshLogStream::emitLine(std::vector<SshLogLine> &lines, bool continues) {
+  m_rowStart = continues ? m_rowStart - columns(m_partial) : 0;
   m_logicalOffset = continues ? m_logicalOffset + m_partial.size() : 0;
   lines.push_back({std::exchange(m_partial, {}), m_logicalId, m_continuation, continues});
   m_column = m_lineColumns = 0;
@@ -175,6 +176,7 @@ void SshLogStream::append(QStringView text, std::vector<SshLogLine> &lines) {
           + QString(qMax(0, end.column - m_column - width), ' ');
       m_partial.replace(start.index, end.index - start.index, replacement);
       m_column += width; m_lineColumns = columns(m_partial);
+      m_rowStart += qMax(0, (m_column - m_rowStart - 1) / TerminalColumns) * TerminalColumns;
       text = text.sliced(length);
       if (m_partial.size() > SegmentCharacters) {
         auto split = SegmentCharacters;
@@ -195,6 +197,8 @@ void SshLogStream::append(QStringView text, std::vector<SshLogLine> &lines) {
     if (m_partial.isEmpty()) m_partial = text.first(take).toString();
     else m_partial.append(text.first(take));
     m_lineColumns += columns(text.first(take)); m_column = m_lineColumns;
+    // The last cell wraps only when another printable cell arrives.
+    m_rowStart += qMax(0, (m_column - m_rowStart - 1) / TerminalColumns) * TerminalColumns;
     text = text.sliced(take);
   }
 }
@@ -230,7 +234,7 @@ void SshLogStream::consume(QStringView text, std::vector<SshLogLine> &lines) {
       if (c == '\n') {
         emitLine(lines, false);
       } else if (c == '\r') {
-        m_column = 0;
+        m_column = qMax(0, m_rowStart);
       } else if (c == '\b') {
         m_column = qMax(0, m_column - 1);
       } else if (c == '\t') {

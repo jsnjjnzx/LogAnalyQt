@@ -7,9 +7,11 @@
 #include <stdexcept>
 #include <QTemporaryDir>
 #include <QSignalSpy>
+#include <QTcpServer>
 
 struct SshTerminalTestAccess {
   static void inputSchedulingChecks();
+  static void connectionStateChecks();
   static void queue(SshTerminal &terminal, const SshLogLine &line, const SshLogLine &partial) {
     QMutexLocker lock(&terminal.m_buffer->mutex);
     terminal.m_buffer->lines.push_back(line);
@@ -78,6 +80,39 @@ static void streamChecks() {
   check(terminal.partialLine() == QString::fromUtf8("test$ 中  ") && terminal.cursorColumn() == 8, "remote deletion preserves preceding Chinese characters");
   terminal.feed("\r\x1b[2Ktest$ \x1b[2DXY");
   check(terminal.partialLine() == "testXY" && terminal.cursorColumn() == 6, "CSI cursor movement edits the current remote line");
+  // Captured from a real 80-column bash PTY; this input was never executed.
+  const QByteArray prompt = "csg@SMIOS:~# ";
+  const QByteArray command = "iptables -t nat -A PREROUTING -p tcp -d 192.168.127.242 --dport 1883 -j DNAT --to 172.17.0.1:1883";
+  const QByteArray echo = prompt + "iptables -t nat -A PREROUTING -p tcp -d 192.168.127.242 --dport 188 \r3 -j DNAT --to 172.17.0.1:1883";
+  for (int block : {1, 2, 7, 79, 80, 81, 4096}) {
+    SshLogStream wrapped;
+    for (qsizetype offset = 0; offset < echo.size(); offset += block)
+      check(wrapped.feed(QByteArrayView(echo).sliced(offset, qMin(qsizetype(block), echo.size() - offset))).empty(),
+            "shell paste remains a live line until Return");
+    check(wrapped.partialLine() == QString::fromUtf8(prompt + command),
+          "real bash wrapped paste preserves the full iptables command instead of overwriting its prefix");
+    check(wrapped.cursorColumn() == prompt.size() + command.size(), "wrapped shell echo retains its logical cursor");
+  }
+  for (int length : {79, 80, 81, 159, 160, 161}) {
+    SshLogStream wrapped;
+    wrapped.feed(QByteArray(length, 'x'));
+    wrapped.feed("\rZ\rY");
+    QString expected(length, 'x');
+    const int start = ((length - 1) / SshLogStream::TerminalColumns) * SshLogStream::TerminalColumns;
+    expected[start] = 'Y';
+    check(wrapped.partialLine() == expected && wrapped.cursorColumn() == start + 1,
+          "CR stays on its physical row, including delayed wrap and repeated CR");
+  }
+  SshLogStream wideWrapped;
+  wideWrapped.feed((QString(40, QChar(0x4e2d)) + " \rZ").toUtf8());
+  check(wideWrapped.partialLine() == QString(40, QChar(0x4e2d)) + 'Z' && wideWrapped.cursorColumn() == 81,
+        "physical rows count Chinese terminal cells instead of UTF-16 units");
+  SshLogStream segmentedWrapped;
+  auto wrappedSegments = segmentedWrapped.feed(QByteArray(8320, 'x') + " \rZ");
+  check(flattened(wrappedSegments) + segmentedWrapped.partialLine() == QString(8320, 'x') + 'Z',
+        "physical row phase survives the 8192-unit display segment boundary");
+  check(flattened(segmentedWrapped.feed("\r\nnext\rNEXT\n")) == QString(128, 'x') + "Z\nNEXT\n",
+        "newline resets physical row origin while preserving the full previous logical line");
   SshLogStream reset;
   reset.feed("old-part"); reset.reset("UTF-8", true);
   const auto afterClear = reset.feed("new-tail\nnew\n");
@@ -475,15 +510,52 @@ static void currentConnectionErrorChecks() {
   check(QMetaObject::invokeMethod(&terminal, "onWorkerError", Q_ARG(QString, failure)), "current connection error callback executes");
   check(terminal.lastError() == failure && terminal.statusMessage() == failure, "current connection error remains visible in state");
   check(terminal.getBufferText() == output, "connection failures are not appended to remote output");
+  bool coherentSuccess = false;
+  QObject::connect(&terminal, &SshTerminal::connectedChanged, &terminal, [&] {
+    if (terminal.isConnected()) coherentSuccess = terminal.connectionState() == SshTerminal::Connected
+        && terminal.lastError().isEmpty() && terminal.statusMessage() == "已连接";
+  });
   check(QMetaObject::invokeMethod(&terminal, "onWorkerConnected"), "connection recovery callback executes");
+  check(coherentSuccess, "success observers see Connected state and cleared error before connectedChanged");
   check(terminal.isConnected() && terminal.lastError().isEmpty() && terminal.statusMessage() == "已连接", "success clears the current connection error");
   check(terminal.getBufferText() == output, "recovery preserves genuine remote ERROR content");
+}
+
+void SshTerminalTestAccess::connectionStateChecks() {
+  QTemporaryDir directory;
+  SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), directory.path());
+  terminal.setProperty("persistSettings", false);
+  terminal.setUseSystemCredentials(false);
+  terminal.setAutoReconnectEnabled(true); terminal.setReconnectIntervalMs(10000);
+  terminal.onWorkerError("previous TCP failure");
+  check(terminal.connectionState() == SshTerminal::Reconnecting && !terminal.isConnected()
+      && terminal.m_reconnectTimer->isActive(), "failed attempt is waiting for retry instead of Connected");
+  terminal.onWorkerConnected();
+  check(!terminal.m_reconnectTimer->isActive() && terminal.lastError().isEmpty()
+      && terminal.reconnectAttempt() == 0, "successful recovery stops the previous retry timer and clears its error");
+  terminal.disconnectFromHost();
+
+  QTcpServer port;
+  check(port.listen(QHostAddress::LocalHost, 0), "reserve an isolated loopback TCP test port");
+  const int closedPort = port.serverPort(); port.close();
+  terminal.setHost("127.0.0.1"); terminal.setPort(closedPort); terminal.setUsername("test");
+  terminal.setAutoReconnectEnabled(false);
+  bool coherentError = false;
+  QObject::connect(&terminal, &SshTerminal::connectionError, &terminal, [&](const QString &) {
+    coherentError = !terminal.isConnected() && terminal.connectionState() == SshTerminal::Failed;
+  });
+  QSignalSpy errors(&terminal, &SshTerminal::connectionError);
+  terminal.connectToHost();
+  check(errors.wait(3000), "production worker reports a refused loopback TCP connection");
+  check(coherentError && terminal.lastError().contains(QString::fromUtf8("系统错误")),
+        "TCP failure includes its real system reason and observers see the final failure state");
+  terminal.disconnectFromHost();
 }
 
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); currentConnectionErrorChecks();
+    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); currentConnectionErrorChecks(); SshTerminalTestAccess::connectionStateChecks();
     QTextStream(stdout) << "PASS: " << checks << " SSH stream/model/session-log assertions; files used isolated temporary directories\n";
     return 0;
   } catch (const std::exception &error) {

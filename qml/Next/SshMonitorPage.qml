@@ -711,7 +711,8 @@ GlassPage {
                                     }
                                     Next.GlassButton {
                                         objectName: "ssh-session-connect-" + sessionRow.modelData.sessionId
-                                        text: sessionRow.modelData.sessionActive || sessionRow.modelData.pendingSshAction ? "断开" : "连接"
+                                        text: sessionRow.modelData.terminal.connected ? "断开"
+                                            : sessionRow.modelData.sessionActive || sessionRow.modelData.pendingSshAction ? "取消" : "连接"
                                         implicitWidth: 51; implicitHeight: 26; padding: 0; horizontalPadding: 0
                                         font.pixelSize: 11
                                         enabled: !sessionRow.modelData.passwordOperationId

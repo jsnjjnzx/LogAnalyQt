@@ -12,6 +12,7 @@ Window {
     property string sessionName: "协议解析"
     property string namePrefix: "parse"
     readonly property var parseResultModel: backend && parseSessionId >= 4 ? backend.parseModel(parseSessionId) : null
+    FontMetrics { id: frameMetrics; font: parseFrameText.font }
     function resetSelection() { parseFrameText.deselect(); parseFrameText.cursorPosition = 0; }
     function autoFit() { parseTable.autoFit(); }
     objectName: namePrefix + "-window"
@@ -53,8 +54,10 @@ Window {
             color: theme ? theme.subText : "#666666"
         }
         ScrollView {
+            objectName: parseOutputWindow.namePrefix + "-frame-scroll"
             Layout.fillWidth: true
-            Layout.preferredHeight: 54
+            Layout.preferredHeight: Math.ceil(frameMetrics.lineSpacing * 8) + parseFrameText.topPadding + parseFrameText.bottomPadding
+            clip: true
             TextArea {
                 id: parseFrameText
                 objectName: parseOutputWindow.namePrefix + "-frame"

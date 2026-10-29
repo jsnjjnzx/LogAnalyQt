@@ -831,6 +831,7 @@ Item {
             verify(!panel.visible)
             verify(item(a, "ssh-pause").visible)
             a.terminal.lastError = "synthetic connection failure"; wait(20)
+            a.terminal.connectionState = 4; wait(20)
             verify(panel.visible && item(a, "ssh-current-connection-error").visible)
             a.terminal.lastError = ""; wait(20); verify(!panel.visible)
             a.terminal.logging = true; wait(20)
@@ -850,10 +851,45 @@ Item {
             const a = page.activeSession, status = item(a, "ssh-current-connection-error")
             verify(!status.visible)
             a.terminal.lastError = "当前连接失败"
+            a.terminal.connectionState = 4
             verify(status.visible); verify(status.text.indexOf("当前连接失败") >= 0)
             compare(a.terminal.currentLineCount, 0)
             a.terminal.lastError = ""; connected(a)
             verify(!status.visible)
+        }
+        function test_connectionRetryDoesNotPresentPreviousErrorAsCurrentFailure_data() {
+            return [{tag: "docked", detached: false}, {tag: "detached", detached: true}]
+        }
+        function test_connectionRetryDoesNotPresentPreviousErrorAsCurrentFailure(data) {
+            make()
+            const a = page.activeSession
+            a.connectionConfigExpanded = false
+            const error = item(a, "ssh-current-connection-error")
+            const progress = item(a, "ssh-connection-progress")
+            const button = item(page, "ssh-session-connect-" + a.sessionId)
+            if (data.detached) { verify(page.detachSession(a)); wait(30) }
+            a.terminal.lastError = "上一轮 TCP 失败"
+            a.terminal.connectionState = 3
+            a.terminal.statusMessage = "连接中断，0.5秒后尝试重连 (1/5)"
+            wait(20)
+            verify(!error.visible); verify(progress.visible)
+            compare(progress.text, a.terminal.statusMessage); compare(button.text, "取消")
+            a.terminal.connectionState = 1
+            a.terminal.statusMessage = "正在重连 (1/5)..."
+            wait(20)
+            verify(!error.visible); verify(progress.visible); compare(button.text, "取消")
+            a.terminal.connectionState = 2; a.terminal.connected = true
+            wait(20)
+            verify(!error.visible && !progress.visible)
+            compare(item(a, "ssh-connection-panel").visible, data.detached)
+            compare(button.text, "断开")
+            a.terminal.connected = false; a.terminal.connectionState = 4
+            wait(20)
+            verify(error.visible && !progress.visible)
+            verify(error.text.indexOf("上一轮 TCP 失败") >= 0); compare(button.text, "连接")
+            a.terminal.connectionState = 5
+            wait(20); verify(!error.visible && !progress.visible)
+            compare(a.terminal.currentLineCount, 0)
         }
         function test_longLinesSupportHorizontalScrollingAndWrappedSelection() {
             make()
@@ -1414,6 +1450,121 @@ Item {
             b.pasteTerminal()
             compare(b.terminal.rawInput[1], "粘贴内容\nsecond-line")
             compare(b.terminalInput.text, "")
+        }
+        function test_terminalPasteShortcutPreservesFullClipboard_data() {
+            return [
+                {tag: "multiline", value: "粘贴内容\nsecond-line\r\n末行😀"},
+                {tag: "long", value: "begin-" + "中文😀abcdef".repeat(6000) + "-end"},
+                {tag: "alternate", value: "中文\nsecond-line", alternate: true},
+                {tag: "alternate-long", value: "中文\n😀".repeat(8000), alternate: true}
+            ]
+        }
+        function test_terminalRightClickWithoutSelectionShowsCommonActions_data() {
+            return [{tag: "untouched", selectLine: false}, {tag: "previous-line-click", selectLine: true}]
+        }
+        function test_terminalRightClickWithoutSelectionShowsCommonActions(data) {
+            make()
+            const a = page.activeSession; connected(a)
+            a.terminal.appendTestLines(["RX 68 04 07 00 00 00"], 10); wait(30)
+            const row = item(a, "ssh-log-line-0")
+            if (data.selectLine) {
+                mouseClick(row, 30, row.height / 2); wait(20)
+                compare(a.parseableHexText, "68 04 07 00 00 00")
+            }
+            verify(!a.hasTextSelection)
+            const selectedId = a.selectedLineId
+            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            verify(item(a, "ssh-terminal-actions-menu").visible)
+            verify(!item(a, "ssh-terminal-parse-menu").visible)
+            verify(!a.hasTextSelection); compare(a.selectedLineId, selectedId)
+            const text = "中文\r\n" + "abcdef😀".repeat(6000)
+            clipboard(text); a.terminal.clipboardContents = text
+            mouseClick(item(a, "ssh-terminal-paste")); wait(20)
+            compare(a.terminal.rawInput.length, 1); compare(a.terminal.rawInput[0], text)
+            verify(a.terminalInput.activeFocus); compare(a.terminalInput.text, "")
+            mouseClick(a.terminalInput, 10, a.terminalInput.height / 2, Qt.RightButton); wait(20)
+            verify(item(a, "ssh-terminal-actions-menu").visible)
+            keyClick(Qt.Key_Escape)
+        }
+        function test_terminalCommonActionsSelectCopyAndClearOnlyCurrentBuffer() {
+            make()
+            const a = page.activeSession
+            a.terminal.appendTestLines(["first", "中文 second"], 10)
+            a.terminal.liveLine = "test$ tail"
+            const b = page.addSession(); b.terminal.appendTestLines(["other"], 10); select(0); wait(20)
+            const row = item(a, "ssh-log-line-0")
+            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            mouseClick(item(a, "ssh-terminal-select-all")); wait(20)
+            verify(a.hasTextSelection); verify(!a.autoScroll)
+            a.copyTextSelection(); compare(clipboard(), "first\n中文 second\ntest$ tail")
+            verify(!b.hasTextSelection)
+            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            verify(item(a, "ssh-terminal-parse-menu").visible)
+            verify(!item(a, "ssh-terminal-actions-menu").visible)
+            verify(item(a, "ssh-copy-selection").enabled)
+            verify(!item(a, "ssh-parse-auto").enabled)
+            keyClick(Qt.Key_Escape); a.clearTextSelection()
+            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            mouseClick(item(a, "ssh-terminal-copy-all")); wait(20)
+            compare(a.terminal.copyBufferCalls, 1); compare(b.terminal.copyBufferCalls, 0)
+            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            mouseClick(item(a, "ssh-terminal-clear")); wait(20)
+            compare(a.terminal.currentLineCount, 0); compare(b.terminal.currentLineCount, 1)
+        }
+        function test_terminalCommonActionsDisableUnavailableOperations() {
+            make()
+            const a = page.activeSession
+            const area = item(a, "ssh-text-selection-area")
+            mouseClick(area, 40, area.height - 40, Qt.RightButton); wait(20)
+            verify(item(a, "ssh-terminal-actions-menu").visible)
+            for (const name of ["paste", "select-all", "copy-all", "clear"])
+                verify(!item(a, "ssh-terminal-" + name).enabled, name)
+            keyClick(Qt.Key_Escape); connected(a); a.terminal.receptionPaused = true
+            mouseClick(area, 40, area.height - 40, Qt.RightButton); wait(20)
+            verify(!item(a, "ssh-terminal-paste").enabled)
+            keyClick(Qt.Key_Escape); a.terminal.receptionPaused = false
+            mouseClick(area, 40, area.height - 40, Qt.RightButton); wait(20)
+            verify(item(a, "ssh-terminal-paste").enabled)
+            keyClick(Qt.Key_Escape)
+        }
+        function test_terminalPasteShortcutPreservesFullClipboard(data) {
+            make()
+            const a = page.activeSession; connected(a)
+            const b = page.addSession(); connected(b); select(0)
+            clipboard(data.value)
+            a.terminal.clipboardContents = data.value
+            a.terminalInput.forceActiveFocus(); wait(20)
+            verify(a.terminalInput.activeFocus)
+            keyClick(Qt.Key_V, data.alternate ? Qt.ControlModifier | Qt.ShiftModifier : Qt.ControlModifier)
+            compare(a.terminal.rawInput.length, 1)
+            compare(a.terminal.rawInput[0].length, data.value.length)
+            compare(a.terminal.rawInput[0], data.value)
+            compare(a.terminalInput.text, "")
+            compare(b.terminal.rawInput.length, 0)
+        }
+        function test_terminalPasteKeepsConfigEditingAndRespectsConnectionState() {
+            make()
+            const a = page.activeSession; connected(a)
+            const text = "pasted.example"
+            clipboard(text); a.terminal.clipboardContents = text
+            a.connectionConfigExpanded = true
+            wait(40)
+            const field = item(a, "ssh-session-name")
+            field.text = ""; field.forceActiveFocus(); wait(20)
+            verify(field.activeFocus)
+            keyClick(Qt.Key_V, Qt.ControlModifier)
+            compare(field.text, text); compare(a.terminal.rawInput.length, 0)
+            field.text = ""; field.forceActiveFocus()
+            keyClick(Qt.Key_V, Qt.ControlModifier | Qt.ShiftModifier)
+            compare(a.terminal.rawInput.length, 0)
+            a.terminal.receptionPaused = true
+            a.terminalInput.forceActiveFocus(); wait(20)
+            keyClick(Qt.Key_V, Qt.ControlModifier)
+            a.pasteTerminal()
+            compare(a.terminal.rawInput.length, 0)
+            a.terminal.receptionPaused = false; a.terminal.connected = false
+            a.pasteTerminal()
+            compare(a.terminal.rawInput.length, 0)
         }
         function test_ctrlWheelZoomKeepsTextMetricsSelectionAndSessions() {
             make()

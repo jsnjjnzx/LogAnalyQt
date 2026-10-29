@@ -106,6 +106,10 @@ GlassPage {
     property bool passwordNoticeError: false
     property var pendingHostKey: null
     readonly property bool sessionActive: sshTerminal.connected || sshTerminal.connectionState === SshTerminal.Connecting || sshTerminal.connectionState === SshTerminal.Reconnecting || sshTerminal.hostKeyPending
+    readonly property bool connectionInProgress: !sshTerminal.connected
+        && (sshTerminal.connectionState === SshTerminal.Connecting || sshTerminal.connectionState === SshTerminal.Reconnecting)
+    readonly property string currentConnectionError: !sshTerminal.connected && sshTerminal.connectionState === SshTerminal.Failed
+        ? sshTerminal.lastError : ""
     function currentTarget() { return {host: hostInput.text.trim(), port: Number(portInput.text), username: userInput.text.trim()} }
     function sameTarget(a, b) { return !!a && !!b && a.host === b.host && a.port === b.port && a.username === b.username }
     function targetMatchesBackend() { return sameTarget(currentTarget(), {host: sshTerminal.host, port: sshTerminal.port, username: sshTerminal.username}) }
@@ -673,6 +677,11 @@ GlassPage {
         textSelectionAnchor = null;
         textSelectionFocus = null;
     }
+    function selectAllTerminalText() {
+        textSelectionAnchor = {id: sshTerminal.firstLineId, position: 0};
+        textSelectionFocus = {id: liveSelectionId, position: sshTerminal.liveLine.length};
+        autoScroll = false;
+    }
     function selectionContains(id) {
         return textSelectionRange !== null && id >= textSelectionRange.firstId && id <= textSelectionRange.lastId;
     }
@@ -779,6 +788,13 @@ GlassPage {
     }
     function routeTerminalKey(event) {
         if (!sshTerminal.connected || sshTerminal.receptionPaused) return false;
+        // TextInput 的内置粘贴会改写换行并截断长文本。
+        if (event.matches(StandardKey.Paste)
+                || event.key === Qt.Key_V && event.modifiers === (Qt.ControlModifier | Qt.ShiftModifier)) {
+            pasteTerminal();
+            event.accepted = true;
+            return true;
+        }
         const mac = Qt.platform.os === "osx";
         const control = !!(event.modifiers & (mac ? Qt.MetaModifier : Qt.ControlModifier));
         const alt = !!(event.modifiers & Qt.AltModifier);
@@ -1139,7 +1155,38 @@ GlassPage {
     }
 
     Next.GlassMenu {
+        id: terminalActionsMenu
+        objectName: "ssh-terminal-actions-menu"
+        Next.GlassMenuItem {
+            objectName: "ssh-terminal-paste"
+            text: "粘贴"
+            enabled: sshTerminal.connected && !sshTerminal.receptionPaused
+            onTriggered: liveLogDialog.pasteTerminal()
+        }
+        Next.GlassMenuItem {
+            objectName: "ssh-terminal-select-all"
+            text: "全选"
+            enabled: sshTerminal.currentLineCount > 0 || sshTerminal.liveLine !== ""
+            onTriggered: liveLogDialog.selectAllTerminalText()
+        }
+        Next.GlassMenuItem {
+            objectName: "ssh-terminal-copy-all"
+            text: "复制全部"
+            enabled: sshTerminal.currentLineCount > 0 || sshTerminal.liveLine !== ""
+            onTriggered: sshTerminal.copyBufferToClipboard()
+        }
+        Next.GlassMenuSeparator {}
+        Next.GlassMenuItem {
+            objectName: "ssh-terminal-clear"
+            text: "清屏"
+            enabled: sshTerminal.currentLineCount > 0 || sshTerminal.liveLine !== ""
+            onTriggered: { monitorHit = null; monitorNotice = null; sshTerminal.clearBuffer(); }
+        }
+    }
+
+    Next.GlassMenu {
         id: terminalContextMenu
+        objectName: "ssh-terminal-parse-menu"
 
         Next.GlassMenuItem {
             objectName: "ssh-parse-auto"
@@ -1229,12 +1276,6 @@ GlassPage {
         sequence: "Ctrl+Shift+A"
         onActivated: sshTerminal.copyBufferToClipboard()
     }
-    Shortcut {
-        enabled: liveLogDialog.visible && sshTerminal.connected && liveLogDialog.Window.window && liveLogDialog.Window.window.active
-        sequences: [StandardKey.Paste, "Ctrl+Shift+V"]
-        onActivated: liveLogDialog.pasteTerminal()
-    }
-
     readonly property color terminalBg: "#1a1d21"
     readonly property color terminalText: "#f2f4f8"
     readonly property color terminalMatchBg: "#5a4a00"
@@ -1414,7 +1455,8 @@ GlassPage {
         Rectangle {
             objectName: "ssh-connection-panel"
             visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.connectionConfigExpanded
-                || sshTerminal.lastError !== "" || sshTerminal.logging || sshTerminal.logBusy || sshTerminal.logError !== ""
+                || liveLogDialog.currentConnectionError !== "" || liveLogDialog.connectionInProgress
+                || sshTerminal.logging || sshTerminal.logBusy || sshTerminal.logError !== ""
             Layout.fillWidth: true
             Layout.preferredHeight: connectionRows.implicitHeight + 20
             color: cardBg; border.color: cardBorder; radius: 10
@@ -1536,10 +1578,18 @@ GlassPage {
 
                 }
                 Label {
+                    objectName: "ssh-connection-progress"
+                    Layout.fillWidth: true
+                    visible: liveLogDialog.connectionInProgress
+                    text: sshTerminal.statusMessage
+                    textFormat: Text.PlainText; wrapMode: Text.Wrap
+                    color: warningColor; font.pixelSize: 12
+                }
+                Label {
                     objectName: "ssh-current-connection-error"
                     Layout.fillWidth: true
-                    visible: sshTerminal.lastError !== ""
-                    text: "连接错误：" + sshTerminal.lastError
+                    visible: liveLogDialog.currentConnectionError !== ""
+                    text: "连接错误：" + liveLogDialog.currentConnectionError
                     textFormat: Text.PlainText; wrapMode: Text.Wrap
                     color: errorColor; font.pixelSize: 12
                 }
@@ -2193,12 +2243,8 @@ GlassPage {
                                 return;
                             }
                             if (mouse.button === Qt.RightButton) {
-                                if (!liveLogDialog.hasTextSelection) {
-                                    const point = mapToItem(logListView.contentItem, mouse.x, mouse.y);
-                                    const row = logListView.indexAt(1, point.y);
-                                    if (row >= 0) liveLogDialog.selectLineAndExtractHex(row);
-                                }
-                                terminalContextMenu.popup();
+                                if (liveLogDialog.hasTextSelection) terminalContextMenu.popup();
+                                else terminalActionsMenu.popup();
                                 return;
                             }
                             hexDoubleClick = false;
