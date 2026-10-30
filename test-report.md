@@ -783,3 +783,9 @@ CI/合成样例不代表Windows实机、企业网络或真实SSH/计量设备现
 本节不把 T50～T53 的 5.1.0 历史记录冒充 5.2.0 远端验收；同提交 CI、标签发布、公开清单与更新结果尚待完成。六份根流程文件与当前实际进度一致，AGENTS 规则保持，diff 空白检查通过。
 
 T54 本地成品最终结果：清除 DYLD_LIBRARY_PATH、DYLD_FRAMEWORK_PATH、QT_PLUGIN_PATH、QML2_IMPORT_PATH、QML_IMPORT_PATH 后的 Cocoa 完整回归通过（`/tmp/loganalyqt-v520-local-runtime.log`），含本机生产 SSH 回车启动、状态/菜单/拖动/规则/解析及工作区重启保留。固定本地应用已更新为 5.2.0，交付后签名与 2048 项文件/链接一致性通过，证据 `build/macos-debug/v5.2.0-local-verification.json`；远端验收仍待完成。
+
+### T54 首轮 CI 失败与就绪等待修订
+
+- 首轮构建 [41079407189](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41079407189) 对应 d631dcd：Windows x64 全部成功；macOS 监控 QML 134 passed/1 failed，失败在侧栏折叠后固定 20ms 的组合断言（第 985 行），未进入后续编译/打包。未推发布标签。
+- 测试改为点击前后等待布局就绪，分别等待原 sidebarCollapsed=true 和 width<=50；没有删除断言、重复点击直到成功或忽略警告。产品源码不变。
+- 修订用例本地连续 20 次通过（`/tmp/loganalyqt-v520-sidebar-stability.log`，每次 3 passed/0 failed），完整监控 QML 135 passed/0 failed（`/tmp/loganalyqt-v520-qml-stability.log`）。须用修订后的提交重新通过两平台 CI，不复用首轮 Windows 包到另一提交。
