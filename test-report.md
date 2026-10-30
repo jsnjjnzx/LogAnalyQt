@@ -789,3 +789,13 @@ T54 本地成品最终结果：清除 DYLD_LIBRARY_PATH、DYLD_FRAMEWORK_PATH、
 - 首轮构建 [41079407189](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41079407189) 对应 d631dcd：Windows x64 全部成功；macOS 监控 QML 134 passed/1 failed，失败在侧栏折叠后固定 20ms 的组合断言（第 985 行），未进入后续编译/打包。未推发布标签。
 - 测试改为点击前后等待布局就绪，分别等待原 sidebarCollapsed=true 和 width<=50；没有删除断言、重复点击直到成功或忽略警告。产品源码不变。
 - 修订用例本地连续 20 次通过（`/tmp/loganalyqt-v520-sidebar-stability.log`，每次 3 passed/0 failed），完整监控 QML 135 passed/0 failed（`/tmp/loganalyqt-v520-qml-stability.log`）。须用修订后的提交重新通过两平台 CI，不复用首轮 Windows 包到另一提交。
+
+### 2026-10-31 T54 发布最终结果
+
+- 正式源码/标签：`919d6ec833537a2320ca0b2b274366075c504c5d`，main 已推远端，v5.2.0 指向同一提交。
+- [同提交构建 41135276202](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41135276202)：Windows x64、macOS arm64 均 success；修订后的侧栏回归及后续编译/测试/打包通过。find_validated_build.py 来源/有效期门禁通过，记录 build/v5.2.0-release-evidence/build-gate.log、build-run.json、build-jobs.json、build-artifacts.json；未混用首轮构建包。
+- [发布及公开更新 41146072515](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41146072515)：发布作业及 Windows x64、macOS arm64 更新作业全部 success。两平台日志均报告模拟旧客户端检查 GitHub、下载、SHA256、保存、替换、重启 5.2.0 并保留工作区草稿/便携数据通过，日志为 public-update-windows.log、public-update-macos.log（同上证据目录）。
+- [正式 Release v5.2.0](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.2.0) 于北京时间 2026-10-31 07:43:10 发布，为 latest、非 draft/预发布。7 个附件完整；独立核验标签提交、附件名/大小/API SHA256/中文标签/公开 URL、公开 update.json 与三份校验文件、清单与 Release 说明/CHANGELOG 一致，全通过，证据 verification.json、update.json。
+- 本地固定 release_package/通联工坊.app 版本再次读取为 5.2.0；本地完整编译、QML 135/93、发布工具 38、CTest 28/28、独立 Cocoa 成品回归和包签名/交付一致性依据本节此前实际记录。
+
+六份根流程文件已逐一核对，AGENTS 规则不变；最终文档补记单独提交，不移动 v5.2.0。首轮失败保留记录。未执行用户实体 Windows、真实 SSH 全场景、多屏物理手势全组合或 Apple 公证；CI 公开更新验证不替代这些验收。

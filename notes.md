@@ -422,3 +422,9 @@ T54 本地提交准备完成：5.2.0 完整构建、135/93 项 QML、38 项发�
 ### T54 首轮远端门禁与布局等待修正
 
 首轮源码 d631dcd 的构建 41079407189：Windows x64 success；macOS 在监控 QML 的 test_configurationSidebarAndTabMenusKeepIndependentWindowActions 第 985 行失败，完整日志留 `build/v5.2.0-release-evidence/macos-failed-job.log`，尚未进入 macOS 编译/打包，未推标签。断言在点击后只等 20ms，合并检查 sidebarCollapsed 与 width；改为点击前/后等待布局就绪，分别等待原折叠状态和 <=50 宽度，不重试点击、不删除条件或忽略警告。产品源码及版本不变，修订测试后须重新通过同提交双平台门禁。
+
+### 2026-10-31 T54 正式发布完成
+
+修订后源码 `919d6ec833537a2320ca0b2b274366075c504c5d` 已推 main；构建 41135276202 的 Windows x64/macOS arm64 全部成功。独立运行 find_validated_build.py 核对同提交、main push、两平台作业、未过期且来源匹配的两份产物，成功后才推 v5.2.0 标签。发布工作流 41146072515 复用这批产物，不重新编译。
+
+正式 Release 于北京时间 2026-10-31 07:43:10 发布，地址 https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.2.0 ，为 latest、非 draft/预发布，7 附件齐全。两平台公开更新均完成下载、SHA256、保存、替换、重启到 5.2.0 并保留工作区草稿及便携数据。另行核对标签精确提交、附件名/大小/摘要/公开 URL、update.json 和三份校验文件、Release 说明与 CHANGELOG 一致，全部通过；证据在 build/v5.2.0-release-evidence/verification.json 及公开更新日志。最终记录单独以文档提交推送，版本标签保持不动。未扩展为用户实体 Windows/真实 SSH 全场景或 Apple 公证验收。
