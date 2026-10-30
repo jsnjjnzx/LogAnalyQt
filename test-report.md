@@ -705,3 +705,81 @@ CI/合成样例不代表Windows实机、企业网络或真实SSH/计量设备现
 首次对临时证据脚本执行 py_compile 时，宿主 Python 的默认缓存前缀指向不可写的用户缓存目录；改用内存 compile 完成语法检查。正式核验脚本随后已实际完整执行通过，未增加产品依赖或弱化校验。GitHub 插件一次传输失败后沿用既有 gh CLI 与项目门禁完成全流程，未将失败调用记成成功。
 
 已逐一复核六份根文档和实际提交/版本/结果一致，AGENTS 无需修改规则正文，diff 空白检查通过。发行源码和标签固定 cb5aed2；仅补记结果文档，不重建、替换正式附件或移动标签。远端双平台 CI 与公开更新通过不代表实体 Windows、真实用户 SSH 网络/设备或 Apple 公证验收。
+
+## 2026-10-30 376.2 全局预览地址（T50 / PREVIEW-04）
+
+- 修复前新增截图报文回归，旧实现实际失败：`376.2 frame without A must not show information field R as its address`（`/tmp/loganalyqt-t50-before.log`）。
+- 本机 Debug 应用编译通过（`/tmp/loganalyqt-t50-build.log`）；仅链接器已有重复 OpenSSL 静态库警告，无编译错误。
+- `ctest --test-dir build/macos-debug -R '^ui_migration_runtime$' --output-on-failure` 通过，1/1，29.03 秒（`/tmp/loganalyqt-t50-runtime.log`）。新增检查覆盖用户截图无地址帧、0～7 级中继完整 A 域、地址域之前所有截断长度、模块标志清除、方向/帧序号/AFN 不变，以及 9 条日志经实际扫描后源模型/筛选模型地址一致；沿用完整 UI/MQTT/迁移/多解析页工作区回归。
+- 首次修复后集成用例未设置文件夹，因 `loadFile` 的既有前置条件没有加载日志；测试改为先 `openFolder` 再加载。随后受限环境的 MQTT 本机端口分配失败，允许本机临时端口后原完整回归通过；未修改 MQTT 或削弱断言。
+- 打包后 `scripts/ci/check_build.py --macos-bundle build/macos-debug/t50-package/通联工坊.app` 通过：126 个 Mach-O 均含 arm64，依赖仅系统或包内路径（`/tmp/loganalyqt-t50-bundle-check.log`）；deep strict ad-hoc 签名通过。
+- Cocoa 独立成品完整隔离回归通过（`QT_QPA_PLATFORM=cocoa python3 tests/test_ui_migration_runtime.py build/macos-debug/t50-package/通联工坊.app/Contents/MacOS/appLogAnalyQt`，`/tmp/loganalyqt-t50-packaged-runtime.log`）；包括新增地址检查和 UI/MQTT/迁移/工作区/规则及重启保留检查。运行环境的 DYLD_LIBRARY_PATH、DYLD_FRAMEWORK_PATH、QT_PLUGIN_PATH、QML2_IMPORT_PATH、QML_IMPORT_PATH 均未设置。首次成品启动的自动权限审批超时，按工具许可重试一次后完成，不把超时记为测试失败或通过。
+- 已更新唯一 `release_package/通联工坊.app`，版本仍为 5.1.0；交付后 deep strict 签名再次通过，与验收包 2048 项文件摘要/符号链接完全一致。交付目录无新增可见附件，未生成压缩包；证据 `build/macos-debug/3762-address-verification.json`。
+- 六份根流程文件逐一核对，AGENTS 规则保持，`git diff --check` 通过。未执行 Windows 编译/实机、真实用户日志文件或设备验收；截图报文来自用户所给内容，其余地址帧为合成样例。未提交、推送或发布。
+
+## 2026-10-30 SSH 标签监控工作区（T51 / SSHTAB-01～04）
+
+| 检查 | 执行及证据 | 实际结果 |
+|---|---|---|
+| 完整编译 | `cmake --preset macos-debug`、`cmake --build --preset macos-debug`；最终 `/tmp/loganalyqt-t51-build-accepted.log` | 5.1.0 Debug arm64 通过，仅已有重复 OpenSSL 静态库链接警告 |
+| 监控 QML | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-t51-qml-accepted.log` | 128 passed、0 failed；覆盖双击多开、配置行身份保持/命名/搜索、排序、左右/跨窗/拖出/Escape、菜单移动、窗口关闭收回、v1 迁移/v2 恢复、保存失败和 64 会话上限，以及原输入/复制/粘贴/规则/日志/解析/快捷命令 |
+| 解析及公共控件 QML | `python3 tests/prot698_qml_tests.py`；`/tmp/loganalyqt-t51-prot698-qml.log` | 93 passed、0 failed |
+| 原生及集成 | `ctest --test-dir build/macos-debug --output-on-failure --no-tests=error`，排除两套单独执行的 QML、完整 UI 和 macos_window_activation；`/tmp/loganalyqt-t51-ctest-final.log` | 28/28 通过，含 SSH 流/安全、MQTT、协议、AI、配置及更新替换；首次受限环境的本机端口失败不计通过，允许隔离端口后执行完整集合通过 |
+| 开发应用 Cocoa | `/tmp/loganalyqt-t51-runtime-cocoa.log`、`/tmp/loganalyqt-t51-pointer-runtime.log` | 完整应用回归通过；后者在实际渲染窗口发送鼠标按下/移动/松开和 Escape，确认排序、右侧分组和取消，不只调用布局函数 |
+| 最终独立成品 | 清除 DYLD_LIBRARY_PATH、DYLD_FRAMEWORK_PATH、QT_PLUGIN_PATH、QML2_IMPORT_PATH、QML_IMPORT_PATH 后，`QT_QPA_PLATFORM=cocoa python3 tests/test_ui_migration_runtime.py build/macos-debug/t51-package/通联工坊.app/Contents/MacOS/appLogAnalyQt`；`/tmp/loganalyqt-t51-accepted-runtime.log` | 完整原生回归通过：新增实际鼠标、左右清屏隔离、后端/缓冲身份，及原窗口最大化/收回、规则/解析/MQTT/迁移/工作区和重启保留；只用隔离测试配置和合成数据 |
+| 依赖及签名 | `scripts/ci/check_build.py --macos-bundle build/macos-debug/t51-package/通联工坊.app`；`/tmp/loganalyqt-t51-bundle-accepted.log`、`/tmp/loganalyqt-t51-package-accepted.log` | 126 个 Mach-O 含 arm64，依赖仅系统或随包库；deep strict ad-hoc 签名和 5.1.0 版本检查通过 |
+| 视觉核对 | `design-qa.md`；`build/macos-debug/t51-accepted-tabs.split.png`、`.menu.png`、`.single.png` | 与设计图按 1586×992 逻辑视口及 Retina 2×核对；无未处理 P0/P1/P2，保留现有监控组件和真实用户数据入口 |
+| 本地更新 | `/tmp/loganalyqt-t51-delivery.log`、`build/macos-debug/ssh-tabs-verification.json` | 已原子替换 `release_package/通联工坊.app`；替换前检查无额外文件，更新后签名通过，与验收包 2048 项文件 SHA256/符号链接一致；交付目录仅应用，无压缩包/附件/旧应用备份 |
+
+回归中修正了活动标签通知时机、旧侧栏断言迁移、关闭菜单后查可见项的测试空指针、移动后旧窗口引用、配置更新重建行影响双击、保存配置名称被标签编号覆盖，以及移动菜单须先捕获会话。保留原日志/规则/状态断言覆盖。额外将离屏 QML 测试器切换 Cocoa 时场景未正常呈现，不作为原生通过；随后使用真正渲染的完整成品鼠标事件验证并通过。
+
+六份根流程文件与实际实现、验证和交付一致，AGENTS 规则保持，`git diff --check` 通过。保留 T50，未提交/推送/发布，版本仍为 5.1.0。未验证 Windows 编译/实机、真实用户 SSH 设备/网络、物理鼠标/触控板多显示器组合或 Apple 公证；多连接受远端 SSH 并发限制。
+
+## 2026-10-30 细标签、菜单操作与边缘预览（T52）
+
+| 检查 | 实际执行与证据 | 结果 |
+|---|---|---|
+| macOS 完整构建 | `cmake --build --preset macos-debug`；最终 `/tmp/loganalyqt-t52-build-delivery.log` | 5.1.0 arm64 Debug 通过，仅已有重复 OpenSSL 静态库链接警告 |
+| 监控 QML 全套 | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-t52-qml-delivery.log` | 130 passed、0 failed；包括实际右键、菜单/子菜单复选连续切换和键盘、规则选择/搜索、会话隔离、26 像素/三行删除、左右半区预览未提前提交、浮标不截断、松手分组/合并，及已有输入/粘贴/日志/规则/解析/配置持久化 |
+| 解析及公共控件 QML | `python3 tests/prot698_qml_tests.py`；`/tmp/loganalyqt-t52-protocol-qml.log` | 93 passed、0 failed |
+| 原生与集成回归 | `QT_QPA_PLATFORM=offscreen ctest --test-dir build/macos-debug --output-on-failure --no-tests=error -E '^(prot698_qml_tests\|stage10_qml_tests\|ui_migration_runtime\|macos_window_activation)$'`；`/tmp/loganalyqt-t52-ctest.log` | 28/28 通过；SSH 流/安全、MQTT、AI、协议、配置与更新替换，使用隔离本机测试端口 |
+| 完整开发应用 | `QT_QPA_PLATFORM=cocoa python3 tests/test_ui_migration_runtime.py build/macos-debug/appLogAnalyQt.app/Contents/MacOS/appLogAnalyQt`；`/tmp/loganalyqt-t52-runtime-first.log` | 真实渲染的完整 UI/MQTT/迁移/规则/重启保留回归通过，使用新菜单入口与实际鼠标事件 |
+| 最终独立成品 | 清除 DYLD_LIBRARY_PATH、DYLD_FRAMEWORK_PATH、QT_PLUGIN_PATH、QML2_IMPORT_PATH、QML_IMPORT_PATH 后运行 `QT_QPA_PLATFORM=cocoa python3 tests/test_ui_migration_runtime.py build/macos-debug/t52-package/通联工坊.app/Contents/MacOS/appLogAnalyQt`；`/tmp/loganalyqt-t52-accepted-runtime.log` | 完整原生回归通过；菜单内复制/跟随/接收/清屏、子菜单规则库、排序、左右边缘实际鼠标拖放、松手前组数不变、Escape、分离收回、后端/缓冲/解析身份和原监控行为均有断言 |
+| 独立包依赖与签名 | `scripts/ci/check_build.py --macos-bundle build/macos-debug/t52-package/通联工坊.app`、deep strict codesign；`/tmp/loganalyqt-t52-bundle-delivery.log`、`/tmp/loganalyqt-t52-package-delivery.log` | 126 个 Mach-O 含 arm64，依赖仅系统或包内库，ad-hoc 签名与 5.1.0 版本通过 |
+| 视觉核对 | `design-qa.md` T52；`build/macos-debug/t52-accepted-tabs.*.png` | 同逻辑视口/Retina 密度检查菜单、单组、左右及右边缘预览；修正浮标截断后无未处理 P0/P1/P2；仅合成测试数据 |
+| 固定本地交付 | `/tmp/loganalyqt-t52-delivery.log`、`build/macos-debug/ssh-compact-tabs-verification.json` | 已原子更新 `release_package/通联工坊.app`，与验收成品 2048 项文件 SHA256/符号链接一致，交付后 deep strict 签名通过；无新增压缩包、附件或旧应用备份 |
+
+旧按钮断言已迁到实际标签菜单与子菜单，关闭子菜单时也关闭根菜单再检查终端选区；没有用隐藏按钮替代用户入口。新增预览坐标用例等待布局完成后计算位置。原生实图发现浮标靠边截断，加入显示范围约束并回归后通过。为规则条移除补齐底栏暂停、接收、命中、错误状态及快照入口；保留原规则搜索/管理。
+
+六份根流程文件与代码、测试及交付一致，AGENTS 规则保持，空白检查通过，保留 T50/T51。未提交、推送、发布或更改版本。尚待用户人工检查；Windows 编译/实机、真实用户 SSH 网络/设备、物理鼠标/触控板与多显示器组合及 Apple 公证未执行，不将隔离注入或程序鼠标事件当成这些环境通过。
+
+## 2026-10-30 一级菜单、回车连接及细分隔（T53）
+
+| 检查 | 执行及证据 | 实际结果 |
+|---|---|---|
+| 完整构建 | `cmake --build --preset macos-debug`；`/tmp/loganalyqt-t53-build-delivery.log` | 5.1.0 arm64 Debug 通过，仅已有重复 OpenSSL 静态库链接警告 |
+| 监控 QML | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-t53-qml-final.log` | 135 passed、0 failed；四项一级勾选/连续切换、唯一配置入口、焦点边界、Return/Enter 启动/重试、连接中/凭据等待/重复按键保护、已连接 CR 保留、编辑/菜单不触发连接、平直框架、细分隔实际拖动/布局恢复及已有监控回归 |
+| 解析 QML | `python3 tests/prot698_qml_tests.py`；`/tmp/loganalyqt-t53-protocol-qml.log` | 93 passed、0 failed |
+| 原生/集成集合 | `QT_QPA_PLATFORM=offscreen ctest --test-dir build/macos-debug --output-on-failure --no-tests=error -E '^(prot698_qml_tests\|stage10_qml_tests\|ui_migration_runtime\|macos_window_activation)$'`；`/tmp/loganalyqt-t53-ctest.log` | 28/28 通过；SSH 流/安全、MQTT、AI、协议、配置及更新替换，使用本机隔离测试端口 |
+| 开发应用 Cocoa | `/tmp/loganalyqt-t53-runtime-fourth.log` | 完整 UI/MQTT/规则/解析/重启回归通过；临时标签访问无握手响应的本机 TCP 端口，实际 Return 使生产 SSH 后端进入 Connecting，再次 Enter/重复 Return 仍为同一次尝试；完成后断开并移除临时会话 |
+| 最终独立成品 | 清除 DYLD_LIBRARY_PATH、DYLD_FRAMEWORK_PATH、QT_PLUGIN_PATH、QML2_IMPORT_PATH、QML_IMPORT_PATH 后运行 `QT_QPA_PLATFORM=cocoa python3 tests/test_ui_migration_runtime.py build/macos-debug/t53-package/通联工坊.app/Contents/MacOS/appLogAnalyQt`；`/tmp/loganalyqt-t53-accepted-runtime.log` | 完整原生回归通过，包含实际回车与连接中保护、一级菜单、鼠标排序/左右分组/取消、原后端/缓冲/解析身份、日志/规则及工作区和重启保留；只用隔离配置/合成数据 |
+| 依赖/签名/版本 | `scripts/ci/check_build.py --macos-bundle build/macos-debug/t53-package/通联工坊.app`，deep strict codesign；`/tmp/loganalyqt-t53-bundle-delivery.log`、`/tmp/loganalyqt-t53-package-delivery.log` | 126 个 Mach-O 含 arm64，依赖仅系统或包内库；ad-hoc 签名及 5.1.0 版本检查通过 |
+| 视觉 | `design-qa.md` T53；`build/macos-debug/t53-accepted-tabs.menu.png`、`.split.png` 等 | 一级菜单、平直正文/标签框架、1 像素线及底栏核对通过；悬停提示移开后抓图，无未处理 P0/P1/P2 |
+| 固定自测交付 | `/tmp/loganalyqt-t53-delivery.log`；`build/macos-debug/ssh-menu-enter-verification.json` | 已原子更新 `release_package/通联工坊.app`，交付后签名通过，与验收包 2048 项文件 SHA256/符号链接一致；无压缩包/额外附件/旧应用备份 |
+
+首次原生回车测试发现点击未连接正文后焦点留在主窗口，已在实际选区鼠标事件入口明确取焦点并复测。临时连接的手动断开曾影响后续既有重试断言，现改为独立临时标签，原重试用例继续保留。分隔 handle 创建早于外层参数赋值时的命名访问警告已修正，最终测试不忽略绑定警告。细分隔专项从透明命中区实际拖动并确认比例恢复，不只断言线宽。
+
+本机端口只证明连接尝试和重复键保护，不是加密 SSH 握手/认证成功验收。六份根文件与实际代码、测试和交付一致，AGENTS 规则保持，空白检查通过，保留 T50～T52。未提交、推送、发布或升级版本。Windows 编译/实机、真实 SSH 网络/设备、物理键鼠/触控板多显示器组合与 Apple 公证未执行，待用户人工检查。
+
+## 2026-10-30 v5.2.0 发布前验证（T54）
+
+- `python3 scripts/ci/check_build.py` 确认项目版本 5.2.0，CMake/README/CHANGELOG 已一致。
+- `cmake --preset macos-debug` 和完整构建通过，日志 `/tmp/loganalyqt-v520-configure.log`、`/tmp/loganalyqt-v520-build.log`。
+- 监控 QML 135 passed/0 failed（`/tmp/loganalyqt-v520-qml.log`），解析/控件 QML 93 passed/0 failed（`/tmp/loganalyqt-v520-protocol-qml.log`）。
+- 发布工具 38 项通过（`/tmp/loganalyqt-v520-release-tools.log`）。首次受限环境的三项本机 HTTP 端口分配失败，允许隔离端口后完整执行通过；没有改实现或测试来跳过检查。
+- 一般原生/集成 CTest 28/28 通过（`/tmp/loganalyqt-v520-ctest.log`），保留 SSH、MQTT、协议、AI、配置及更新替换覆盖。
+- 本地独立包 `build/macos-debug/v5.2.0-local-package/通联工坊.app` 的 Info.plist 为 5.2.0，126 个 Mach-O/依赖和 deep strict ad-hoc 签名通过（`/tmp/loganalyqt-v520-bundle-check.log`、`/tmp/loganalyqt-v520-package.log`）。清理开发变量的完整 Cocoa 回归结果按实际补记。
+
+本节不把 T50～T53 的 5.1.0 历史记录冒充 5.2.0 远端验收；同提交 CI、标签发布、公开清单与更新结果尚待完成。六份根流程文件与当前实际进度一致，AGENTS 规则保持，diff 空白检查通过。
+
+T54 本地成品最终结果：清除 DYLD_LIBRARY_PATH、DYLD_FRAMEWORK_PATH、QT_PLUGIN_PATH、QML2_IMPORT_PATH、QML_IMPORT_PATH 后的 Cocoa 完整回归通过（`/tmp/loganalyqt-v520-local-runtime.log`），含本机生产 SSH 回车启动、状态/菜单/拖动/规则/解析及工作区重启保留。固定本地应用已更新为 5.2.0，交付后签名与 2048 项文件/链接一致性通过，证据 `build/macos-debug/v5.2.0-local-verification.json`；远端验收仍待完成。

@@ -109,83 +109,14 @@ bool Prot3762Parser::isValidFrame(const QByteArray &data) {
 ProtocolSummary Prot3762Parser::getSummary(const QByteArray &data) {
   ProtocolSummary summary;
 
-  // LogBackend Logic:
-  // Address: data.mid(4, 5).toHex().toUpper()
-  // AFN: data[9]
-  // SEQ: data[10]
-
   if (data.size() >= 12) {
-    // C(1) R(6) -> R is 6 bytes.
-    // R starts at Offset 3 (68 L L C R...).
-    // Wait, Header: 68(0) L(1) L(2) C(3) R(4,5,6,7,8,9)?
-    // LogBackend says: addrBytes = data.mid(4, 5).
-    // If 68 L L C R...
-    // 0  1 2 3 4
-    // So LogBackend treats Offset 4 as start of Address?
-    // In 376.2, R is "Information Field" (6 bytes). Starts at Offset 3+1 = 4.
-    // So R = data.mid(4, 6).
-    // LogBackend uses 5 bytes? Maybe excluding module ID?
-    // Let's use 6 bytes for accuracy or follow LogBackend's visual preference.
-    // Let's use 6 bytes as R consists of Route(5) + ModuleID(1) usually?
-    // Or ModuleID + Route?
-    // Standard:
-    // R (6 bytes):
-    // Byte 1: Module ID (or similar)
-    // Byte 2-6: Route / Address?
-    // Actually, 376.2 R field:
-    // Byte 1: 终端类型/模块标识
-    // Byte 2-6: 地址 (5 bytes)
-    // So LogBackend taking 5 bytes at offset 4 might be taking Byte 1-5?
-    // Wait, LogBackend: mid(4, 5) -> Offsets 4,5,6,7,8.
-    // R ends at 3+6 = 9.
-    // So it takes the first 5 bytes of R.
-
-    QByteArray addrBytes = data.mid(4, 6); // Take full R (6 bytes)
-    summary.address = addrBytes.toHex().toUpper();
-
-    // Control Field C is at Offset 3.
     uint8_t C = (uint8_t)data[3];
     if (C & 0x80)
       summary.direction = "S->C(上行/从->主)";
     else
       summary.direction = "C->S(下行/主->从)";
-
-    // AFN location?
-    // 68(1) L(2) C(1) R(6) ...
-    // 1+2+1+6 = 10.
-    // Next is Address A (conditional).
-    // LogBackend assumes A is not present? Or hardcoded for specific structure?
-    // LogBackend logic: AFN at 9?
-    // If 68(0) L(1,2) C(3) R(4..9) ... AFN should be at 10?
-    // LogBackend: "uint8_t afn = data[9];"
-    // If data[9] is the last byte of R?
-    // Maybe LogBackend logic was slightly off or based on a specific truncated
-    // frame? Let's verify standard 376.2 offset. 68(0) L1(1) L2(2) C(3) R1(4)
-    // R2(5) R3(6) R4(7) R5(8) R6(9). So offset 9 is R6. Offset 10 is Start of A
-    // (if exists) or AFN (if no A). Usually local comms 376.2 often no A. So
-    // AFN at 10. LogBackend used 9? Let's CHECK LogBackend again. "uint8_t afn
-    // = static_cast<uint8_t>(data[9]);" -> This reads R6. In 376.2, R6 often
-    // contains Sequence or similar? No, R is Address stuff. Let's look at 376.2
-    // Frame: Byte 10: AFN (if no A). Maybe LogBackend meant 10? The previously
-    // read LogBackend code: "uint8_t afn = static_cast<uint8_t>(data[9]);"
-    // "uint8_t seq = static_cast<uint8_t>(data[10]);"
-    // This suggests LogBackend expects AFN at 9, SEQ at 10.
-    // This matches a frame structure: 68 L L C R(5) ...?
-    // No standard frame is like that.
-    // I will assume LogBackend was buggy or targeting a specific non-standard
-    // variant. I will implement Correct 376.2: AFN at 10. And use DT (11,12)
-    // for more Info.
-
-    // Frame Sequence: C (Offset 3) has FCB?
   }
 
-  // To provide a summary, we need to parse enough to determine AFN and
-  // potentially DT. This requires knowing if Address Field A is present. For a
-  // quick summary, we can assume the most common case (no A field) or try to
-  // determine it from R[0].
-
-  // Minimal frame for AFN: 68 L L C R(6) AFN(1) = 1+2+1+6+1 = 11 bytes.
-  // If data.size() < 11, we can't even get AFN.
   if (data.size() < 11) {
     return summary; // Return empty summary if too short
   }
@@ -201,6 +132,8 @@ ProtocolSummary Prot3762Parser::getSummary(const QByteArray &data) {
     // Address field A is present
     int addrLen = 12 + 6 * relay_level;
     afnOffset = 10 + addrLen; // AFN comes after R (6 bytes) + A (addrLen bytes)
+    if (data.size() >= afnOffset)
+      summary.address = data.mid(10, addrLen).toHex().toUpper();
   }
 
   if (data.size() > afnOffset) {

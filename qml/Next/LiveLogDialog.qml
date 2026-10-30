@@ -10,15 +10,16 @@ GlassPage {
     visible: false
     title: "实时终端监控"
     color: theme ? theme.surface : "#ffffff"
+    background.visible: !workspaceManaged
     palette.highlight: theme ? theme.accentMuted : "#1976D2"
 
     property var backend
     property int sessionId: 0
     property string sessionName: "监控"
     property bool persistConnectionSettings: true
+    readonly property real monitorPreviewBottom: terminalPane.y + terminalPane.height + terminalPane.parent.y
     property bool workspaceManaged: false
     property bool detached: false
-    property Item sessionActionHost: null
     property bool relocatingWindow: false
     property bool useSystemCredentials: false
     property var sharedCommands: null
@@ -44,6 +45,15 @@ GlassPage {
     function toggleMonitorRule(id, checked) {
         monitorRuleIds = checked ? monitorRuleIds.indexOf(id) >= 0 ? monitorRuleIds : monitorRuleIds.concat([id])
             : monitorRuleIds.filter(function(value) { return value !== id; });
+    }
+    function toggleFollowing() { if (autoScroll) autoScroll = false; else resumeFollowing(); }
+    function clearTerminal() { monitorHit = null; monitorNotice = null; sshTerminal.clearBuffer(); }
+    function showMatchDetails() { if (monitorEvent) matchDetails.open(); }
+    function openRulePicker() {
+        const point = mapToItem(rulePicker.parent, 8, 8);
+        rulePicker.x = Math.max(8, Math.min(point.x, rulePicker.parent.width - rulePicker.width - 8));
+        rulePicker.y = Math.max(8, Math.min(point.y, rulePicker.parent.height - rulePicker.implicitHeight - 8));
+        rulePicker.open();
     }
     function resumeFollowing() {
         monitorHit = null; monitorNotice = null; monitorError = ""; autoScroll = true;
@@ -150,6 +160,16 @@ GlassPage {
                 passwordNotice = action.kind === "save" ? "密码保存处理中，尚未确认完成…" : "密码清除处理中，尚未确认完成…"
             } else { passwordNotice = sshTerminal.credentialError || "凭据操作未受理。"; passwordNoticeError = true }
         }
+    }
+    function focusTerminal() {
+        if (sshTerminal.connected && !sshTerminal.receptionPaused) terminalCapture.forceActiveFocus();
+        else terminalMainPane.forceActiveFocus();
+    }
+    function connectIfIdle() {
+        if (!workspaceManaged || !visible || sessionActive || pendingSshAction || passwordOperationId) return false;
+        connectAction();
+        if (!sessionActive && !pendingSshAction) connectionConfigExpanded = true;
+        return true;
     }
     function connectAction() {
         if (pendingSshAction || sessionActive) {
@@ -469,6 +489,7 @@ GlassPage {
     }
 
     function beginWindowMove() {
+        if (relocatingWindow) return;
         relocatingWindow = true;
         captureLogViewport();
         hostKeyDialog.close();
@@ -480,7 +501,7 @@ GlassPage {
         logListView.forceLayout();
         applyLogViewport();
         if (pendingHostKey && visible) hostKeyDialog.open();
-        else if (visible && sshTerminal.connected) terminalCapture.forceActiveFocus();
+        else if (visible) focusTerminal();
     }
 
     function openDialog() { requested(); }
@@ -787,6 +808,12 @@ GlassPage {
         sendTerminalText(sshTerminal.clipboardText());
     }
     function routeTerminalKey(event) {
+        if (workspaceManaged && !sshTerminal.connected && event.modifiers === Qt.NoModifier
+                && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+            if (!event.isAutoRepeat) connectIfIdle();
+            event.accepted = true;
+            return true;
+        }
         if (!sshTerminal.connected || sshTerminal.receptionPaused) return false;
         // TextInput 的内置粘贴会改写换行并截断长文本。
         if (event.matches(StandardKey.Paste)
@@ -1449,12 +1476,12 @@ GlassPage {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.margins: 10
+        anchors.margins: liveLogDialog.workspaceManaged ? 0 : 10
         spacing: 6
 
         Rectangle {
             objectName: "ssh-connection-panel"
-            visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.connectionConfigExpanded
+            visible: !liveLogDialog.workspaceManaged || liveLogDialog.connectionConfigExpanded
                 || liveLogDialog.currentConnectionError !== "" || liveLogDialog.connectionInProgress
                 || sshTerminal.logging || sshTerminal.logBusy || sshTerminal.logError !== ""
             Layout.fillWidth: true
@@ -1486,12 +1513,12 @@ GlassPage {
                 }
                 RowLayout {
                     id: connectionActions
-                    visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached
+                    visible: !liveLogDialog.workspaceManaged
                     Layout.fillWidth: true
                     spacing: 8
                     StyledButton {
                         objectName: "ssh-config-toggle"
-                        visible: (!liveLogDialog.workspaceManaged || liveLogDialog.detached) && !liveLogDialog.connectionConfigExpanded
+                        visible: !liveLogDialog.workspaceManaged && !liveLogDialog.connectionConfigExpanded
                         text: liveLogDialog.connectionConfigExpanded ? "▾ 收起配置" : "▸ 连接配置"
                         Accessible.name: "连接配置"
                         Accessible.description: liveLogDialog.connectionConfigExpanded ? "已展开" : "已折叠"
@@ -1499,7 +1526,7 @@ GlassPage {
                     }
                     StyledButton {
                         objectName: "sshConnectAction"
-                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached
+                        visible: !liveLogDialog.workspaceManaged
                         implicitWidth: 96
                         enabled: !liveLogDialog.passwordOperationId
                         palette.button: connBtnBg
@@ -1521,38 +1548,31 @@ GlassPage {
                     }
 
                     StyledButton {
-                        objectName: "ssh-pause"
-                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.sessionActionHost !== null
-                        parent: liveLogDialog.sessionActionHost ? liveLogDialog.sessionActionHost.followHost : connectionActions
-                        anchors.fill: liveLogDialog.sessionActionHost ? parent : null
-                        implicitHeight: liveLogDialog.sessionActionHost ? 26 : 36
-                        horizontalPadding: liveLogDialog.sessionActionHost ? 0 : 14
-                        padding: liveLogDialog.sessionActionHost ? 0 : 8
-                        font.pixelSize: liveLogDialog.sessionActionHost ? 11 : 13
+                        objectName: liveLogDialog.workspaceManaged ? "" : "ssh-pause"
+                        implicitHeight: 36
+                        horizontalPadding: 14
+                        padding: 8
+                        font.pixelSize: 13
                         text: autoScroll ? "暂停跟随" : "继续跟随"
-                        implicitWidth: liveLogDialog.sessionActionHost ? 51 : 96
+                        implicitWidth: 96
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
                         ToolTip.text: autoScroll ? "只停止自动滚动到底部，后台仍持续接收和更新日志。\n如需停止后台接收，请点击“停止刷屏”。"
                             : "回到最新日志，恢复自动跟随和新日志规则监测。\n如已停止刷屏，需点击“恢复接收”才能收到新日志。"
                         Accessible.description: ToolTip.text
                         onClicked: {
-                            if (autoScroll) autoScroll = false;
-                            else resumeFollowing();
+                            toggleFollowing();
                         }
                     }
 
                     StyledButton {
-                        objectName: "ssh-stop-reception"
-                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.sessionActionHost !== null
-                        parent: liveLogDialog.sessionActionHost ? liveLogDialog.sessionActionHost.receptionHost : connectionActions
-                        anchors.fill: liveLogDialog.sessionActionHost ? parent : null
-                        implicitHeight: liveLogDialog.sessionActionHost ? 26 : 36
-                        horizontalPadding: liveLogDialog.sessionActionHost ? 0 : 14
-                        padding: liveLogDialog.sessionActionHost ? 0 : 8
-                        font.pixelSize: liveLogDialog.sessionActionHost ? 11 : 13
+                        objectName: liveLogDialog.workspaceManaged ? "" : "ssh-stop-reception"
+                        implicitHeight: 36
+                        horizontalPadding: 14
+                        padding: 8
+                        font.pixelSize: 13
                         text: sshTerminal.receptionPaused ? "恢复接收" : "停止刷屏"
-                        implicitWidth: liveLogDialog.sessionActionHost ? 51 : 96
+                        implicitWidth: 96
                         checked: sshTerminal.receptionPaused
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
@@ -1563,17 +1583,14 @@ GlassPage {
                     }
 
                     StyledButton {
-                        objectName: "ssh-clear"
-                        visible: !liveLogDialog.workspaceManaged || liveLogDialog.detached || liveLogDialog.sessionActionHost !== null
-                        parent: liveLogDialog.sessionActionHost ? liveLogDialog.sessionActionHost.clearHost : connectionActions
-                        anchors.fill: liveLogDialog.sessionActionHost ? parent : null
-                        implicitHeight: liveLogDialog.sessionActionHost ? 26 : 36
-                        horizontalPadding: liveLogDialog.sessionActionHost ? 0 : 14
-                        padding: liveLogDialog.sessionActionHost ? 0 : 8
-                        font.pixelSize: liveLogDialog.sessionActionHost ? 11 : 13
+                        objectName: liveLogDialog.workspaceManaged ? "" : "ssh-clear"
+                        implicitHeight: 36
+                        horizontalPadding: 14
+                        padding: 8
+                        font.pixelSize: 13
                         text: "清屏"
-                        implicitWidth: liveLogDialog.sessionActionHost ? 51 : 96
-                        onClicked: { monitorHit = null; monitorNotice = null; sshTerminal.clearBuffer(); }
+                        implicitWidth: 96
+                        onClicked: clearTerminal()
                     }
 
                 }
@@ -1843,18 +1860,18 @@ GlassPage {
 
         Rectangle {
             objectName: "ssh-monitor-rule-bar"
-            visible: liveLogDialog.monitorRuleLibrary !== null
+            visible: !liveLogDialog.workspaceManaged && liveLogDialog.monitorRuleLibrary !== null
             Layout.fillWidth: true; height: 44; radius: 6
             color: monitorHit ? Qt.rgba(monitorHitColor.r, monitorHitColor.g, monitorHitColor.b, 0.18) : cardBg
             border.color: monitorHit ? monitorHitColor : cardBorder
             RowLayout {
                 anchors.fill: parent; anchors.margins: 6; spacing: 8
                 Next.GlassCheckBox {
-                    objectName: "ssh-monitor-enabled"; text: "启用规则监测"
+                    objectName: liveLogDialog.workspaceManaged ? "" : "ssh-monitor-enabled"; text: "启用规则监测"
                     checked: monitorEnabled; onToggled: liveLogDialog.monitorEnabled = checked
                 }
                 Next.GlassButton {
-                    id: ruleSelectButton; objectName: "ssh-rule-select"
+                    id: ruleSelectButton; objectName: liveLogDialog.workspaceManaged ? "" : "ssh-rule-select"
                     text: "选择规则（" + selectedMonitorRules.length + "）▾"; implicitHeight: 32
                     onClicked: {
                         const point = mapToItem(rulePicker.parent, 0, height + 6);
@@ -1966,12 +1983,13 @@ GlassPage {
             Layout.fillHeight: true
             color: "transparent"
             border.color: terminalBorder
-            radius: 6
+            border.width: liveLogDialog.workspaceManaged ? 0 : 1
+            radius: liveLogDialog.workspaceManaged ? 0 : 6
             clip: true
 
             RowLayout {
                 anchors.fill: parent
-                anchors.margins: 1
+                anchors.margins: liveLogDialog.workspaceManaged ? 0 : 1
                 spacing: 6
 
                 Rectangle {
@@ -1979,13 +1997,13 @@ GlassPage {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     color: terminalBg
-                    radius: 6
+                    radius: liveLogDialog.workspaceManaged ? 0 : 6
                     clip: true
                     focus: true
 
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
-                        onTapped: terminalCapture.forceActiveFocus()
+                        onTapped: liveLogDialog.focusTerminal()
                     }
 
                     Keys.onPressed: function (event) {
@@ -2247,6 +2265,7 @@ GlassPage {
                                 else terminalActionsMenu.popup();
                                 return;
                             }
+                            liveLogDialog.focusTerminal();
                             hexDoubleClick = false;
                             liveLogDialog.clearTextSelection();
                             selectedLineId = -1; selectedLineIndex = -1;
@@ -2436,6 +2455,8 @@ GlassPage {
 
         // ── 底部工具栏 ────────────────────────────────────────────
         RowLayout {
+            Layout.leftMargin: liveLogDialog.workspaceManaged ? 8 : 0
+            Layout.rightMargin: liveLogDialog.workspaceManaged ? 8 : 0
             Layout.fillWidth: true
             spacing: 4
 
@@ -2591,6 +2612,9 @@ GlassPage {
         RowLayout {
             id: footerRow
             objectName: "ssh-footer"
+            Layout.leftMargin: liveLogDialog.workspaceManaged ? 8 : 0
+            Layout.rightMargin: liveLogDialog.workspaceManaged ? 8 : 0
+            Layout.bottomMargin: liveLogDialog.workspaceManaged ? 4 : 0
             Layout.fillWidth: true
             spacing: 8
             Label {
@@ -2608,6 +2632,25 @@ GlassPage {
                 ToolTip.visible: footerHintHover.hovered && truncated
                 ToolTip.text: text
                 HoverHandler { id: footerHintHover }
+            }
+            Label {
+                objectName: "ssh-monitor-footer"
+                visible: liveLogDialog.workspaceManaged && liveLogDialog.monitorRuleLibrary !== null
+                Layout.minimumWidth: 0
+                Layout.maximumWidth: Math.max(80, liveLogDialog.width * 0.35)
+                Layout.alignment: Qt.AlignVCenter
+                text: monitorError || (monitorHit ? "命中：" + monitorHit.ruleName + " · 已暂停跟随" + (sshTerminal.receptionPaused ? " · 接收已停止" : "")
+                    : sshTerminal.receptionPaused ? "接收已停止"
+                    : !autoScroll ? "已暂停跟随"
+                    : !monitorEnabled ? "规则未启用"
+                    : !selectedMonitorRules.length ? "请选择规则"
+                    : monitorNotice ? "最近命中：" + monitorNotice.ruleName : "规则监测：" + selectedMonitorRules.length + " 条")
+                textFormat: Text.PlainText; elide: Text.ElideRight; font.pixelSize: 11
+                color: monitorError || sshTerminal.receptionPaused || !autoScroll ? warningColor : theme ? theme.subText : "#aaaaaa"
+                ToolTip.visible: footerRuleHover.hovered
+                ToolTip.text: text + (monitorEvent ? "\n点击查看命中原文" : "")
+                HoverHandler { id: footerRuleHover }
+                TapHandler { onTapped: liveLogDialog.showMatchDetails() }
             }
             // 状态指示器
             Row {

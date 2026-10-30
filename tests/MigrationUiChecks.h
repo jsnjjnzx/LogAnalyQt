@@ -24,6 +24,7 @@
 #include <QQuickWindow>
 #include <QScreen>
 #include <QTemporaryDir>
+#include <QTcpServer>
 #include <QTimeZone>
 #include <QUrl>
 #include <functional>
@@ -72,6 +73,59 @@ inline QString checkMigratedUi(QQuickWindow *window) {
   };
   try {
     checkParseResultPresentation();
+    {
+      const auto noAddress = QByteArray::fromHex("681700C300000000009714080126062510093010264716");
+      const auto summary = Prot3762Parser::getSummary(noAddress);
+      require(summary.address == "-", "376.2 frame without A must not show information field R as its address");
+      require(summary.direction == "S->C(上行/从->主)" && summary.frameSeq == "0" &&
+                  summary.messageType == QString::fromUtf8("路由数据抄读"),
+              "376.2 address fix changed other summary fields");
+      QTemporaryDir files;
+      QFile log(files.filePath("3762.log"));
+      require(files.isValid() && log.open(QIODevice::WriteOnly), "376.2 preview fixture failed");
+      QByteArray lines = noAddress.toHex() + '\n';
+      QStringList expectedAddresses{"-"};
+      for (int relay = 0; relay <= 7; ++relay) {
+        QByteArray address;
+        for (int byte = 0; byte < 12 + 6 * relay; ++byte) address.append(char(byte + 1));
+        auto frame = QByteArray::fromHex("68000043040000000097");
+        frame[4] = char(0x04 | (relay << 5));
+        frame.append(address);
+        frame.append(QByteArray::fromHex("140801"));
+        frame[1] = char(frame.size() + 2);
+        quint8 checksum = 0;
+        for (int byte = 3; byte < frame.size(); ++byte) checksum += quint8(frame[byte]);
+        frame.append(char(checksum));
+        frame.append(char(0x16));
+        require(Prot3762Parser::isValidFrame(frame), "invalid synthetic 376.2 frame");
+        const auto withAddress = Prot3762Parser::getSummary(frame);
+        require(withAddress.address == address.toHex().toUpper() &&
+                    withAddress.direction == "C->S(下行/主->从)" && withAddress.frameSeq == "0" &&
+                    withAddress.messageType == summary.messageType,
+                "376.2 summary must use the complete A field and keep the AFN offset");
+        for (int size = 0; size < 10 + address.size(); ++size)
+          require(Prot3762Parser::getSummary(frame.left(size)).address == "-",
+                  "truncated 376.2 address must not show R or a partial A field");
+        frame[4] = char(relay << 5);
+        require(Prot3762Parser::getSummary(frame).address == "-",
+                "376.2 relay bits must not imply an address when the module flag is clear");
+        frame[4] = char(0x04 | (relay << 5));
+        lines += frame.toHex() + '\n';
+        expectedAddresses.append(address.toHex().toUpper());
+      }
+      require(log.write(lines) == lines.size(), "376.2 preview fixture write failed");
+      log.close();
+      LogBackend backend;
+      backend.openFolder(files.path());
+      backend.loadFile("3762.log");
+      backend.scanGlobalPreview();
+      auto *preview = backend.globalPreviewModel();
+      require(preview->rowCount() == expectedAddresses.size(), "376.2 global preview lost fixture frames");
+      for (int row = 0; row < expectedAddresses.size(); ++row)
+        require(preview->index(row).data(GlobalPreviewModel::AddressRole).toString() == expectedAddresses[row] &&
+                    preview->filteredModel()->index(row, 0).data(GlobalPreviewModel::AddressRole).toString() == expectedAddresses[row],
+                "376.2 global preview address differs from A through the source/filter models");
+    }
     {
       GlobalPreviewModel source;
       const QStringList directions = {"S->C", "1", "DOWN", "C->S", "0", "UP", "-", ""};
@@ -314,7 +368,74 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     auto *livePage = liveWorkspace ? liveWorkspace->property("activeSession").value<QObject *>() : nullptr;
     auto *ssh = livePage ? livePage->findChild<SshTerminal *>("ssh-terminal-backend") : nullptr;
     require(ssh, "live log backend is missing");
+
+    auto monitorMenu = [&](QObject *session, const QString &submenu = QString()) -> QQuickItem * {
+      require(QMetaObject::invokeMethod(liveWorkspace, "openSessionMenu", Q_ARG(QVariant, QVariant::fromValue(session))), "cannot open tab context menu");
+      auto *item = qobject_cast<QQuickItem *>(session);
+      settle(item->window());
+      auto *group = session->property("group").value<QObject *>();
+      auto *menu = group ? group->property("menu").value<QObject *>() : nullptr;
+      require(menu, "tab group menu is missing");
+      if (!submenu.isEmpty()) {
+        menu = menu->findChild<QObject *>(submenu);
+        require(menu && QMetaObject::invokeMethod(menu, "open"), "monitor submenu is missing");
+        settle(item->window());
+      }
+      auto *content = menu->property("contentItem").value<QQuickItem *>();
+      require(content, "monitor menu content is missing");
+      return content;
+    };
+    auto monitorAction = [&](QObject *session, const QString &name, const QString &submenu = QString()) {
+      auto *action = findItem(monitorMenu(session, submenu), name);
+      require(action, qPrintable("monitor action is missing: " + name));
+      return action;
+    };
+    auto closeMonitorMenu = [&](QObject *session) {
+      auto *group = session->property("group").value<QObject *>();
+      auto *menu = group ? group->property("menu").value<QObject *>() : nullptr;
+      require(menu && QMetaObject::invokeMethod(menu, "close"), "cannot close monitor menu");
+      settle(qobject_cast<QQuickItem *>(session)->window());
+    };
+
     ssh->clearBuffer();
+    trace("Return starts the selected production SSH session without cancelling an active attempt");
+    {
+      click(uiItem("ssh-new-session")); settle();
+      auto *enterPage = liveWorkspace->property("activeSession").value<QObject *>();
+      auto *enterSsh = enterPage ? enterPage->findChild<SshTerminal *>("ssh-terminal-backend") : nullptr;
+      require(enterPage && enterPage != livePage && enterSsh, "Enter test needs its own isolated session");
+      QTcpServer peer;
+      require(peer.listen(QHostAddress::LocalHost, 0), "cannot reserve isolated Enter-connection peer");
+      QQmlExpression configure(qmlContext(enterPage), enterPage,
+          QString("(function() { const config = connectionConfiguration(); config.host = '127.0.0.1'; config.port = '%1'; config.username = 'synthetic'; config.password = 'synthetic-test-only'; config.autoReconnect = false; config.expanded = false; restoreConfiguration(config); })()").arg(peer.serverPort()));
+      configure.evaluate(); require(!configure.hasError(), "Enter test configuration failed");
+      int attempts = 0;
+      QObject counterOwner;
+      QObject::connect(enterSsh, &SshTerminal::connectionStateChanged, &counterOwner, [&] {
+        if (enterSsh->connectionState() == SshTerminal::Connecting) ++attempts;
+      });
+      window->raise(); window->requestActivate(); settle();
+      click(enterPage->findChild<QQuickItem *>("ssh-terminal-pane"));
+      auto enter = [&](int key, bool repeat = false) {
+        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier, "\r", repeat);
+        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier, "\r");
+        QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release); settle();
+      };
+      enter(Qt::Key_Return);
+      QElapsedTimer connectionWait; connectionWait.start();
+      while (attempts == 0 && connectionWait.elapsed() < 3000) settle();
+      require(attempts == 1 && enterSsh->connectionState() == SshTerminal::Connecting,
+              "Return did not start the active SSH session");
+      enter(Qt::Key_Enter); enter(Qt::Key_Return, true);
+      require(attempts == 1 && enterSsh->connectionState() == SshTerminal::Connecting,
+              "Enter repeated or cancelled an in-progress SSH attempt");
+      enterSsh->disconnectFromHost(); peer.close(); settle();
+      QVariant removed;
+      require(QMetaObject::invokeMethod(liveWorkspace, "removeSession", Q_RETURN_ARG(QVariant, removed),
+                  Q_ARG(QVariant, QVariant::fromValue(enterPage))) && removed.toBool(), "cannot remove isolated Enter test session");
+      settle();
+
+    }
     {
       const bool configExpanded = livePage->property("connectionConfigExpanded").toBool();
       const bool reconnectEnabled = ssh->autoReconnectEnabled();
@@ -327,9 +448,12 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       auto *error = uiItem("ssh-current-connection-error");
       auto *progress = uiItem("ssh-connection-progress");
       const auto buttonName = "ssh-session-connect-" + livePage->property("sessionId").toString();
+      auto *connectionAction = monitorAction(livePage, buttonName);
+      require(connectionAction, "monitor connection action is missing from the menu");
+      closeMonitorMenu(livePage);
       require(!ssh->isConnected() && ssh->connectionState() == SshTerminal::Reconnecting
                   && error && !error->isVisible() && progress && progress->isVisible()
-                  && uiItem(buttonName)->property("text").toString() == QString::fromUtf8("取消"),
+                  && connectionAction->property("text").toString() == QString::fromUtf8("取消"),
               "retry still presents a previous error or implies an established connection");
       const auto screenshot = qEnvironmentVariable("LOGANALYQT_SSH_STATE_SCREENSHOT");
       if (!screenshot.isEmpty()) require(window->grabWindow().save(screenshot + ".retry.png"), "retry state capture failed");
@@ -337,7 +461,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       settle();
       require(ssh->isConnected() && ssh->lastError().isEmpty() && !error->isVisible() && !progress->isVisible()
                   && !uiItem("ssh-connection-panel")->isVisible()
-                  && uiItem(buttonName)->property("text").toString() == QString::fromUtf8("断开"),
+                  && connectionAction->property("text").toString() == QString::fromUtf8("断开"),
               "connected session retains a previous error, retry progress, or wrong action");
       if (!screenshot.isEmpty()) require(window->grabWindow().save(screenshot + ".connected.png"), "connected state capture failed");
       ssh->disconnectFromHost();
@@ -426,13 +550,11 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(row && !uiItem("ssh-copy-all") && !findItem(qobject_cast<QQuickItem *>(livePage), "ssh-copy-on-select"),
               "selection-copy control must live in the session menu");
       auto toggleCopy = [&] {
-        click(uiItem("ssh-session-menu-" + livePage->property("sessionId").toString())); settle();
-        auto *option = uiItem("ssh-copy-on-select");
+        auto *option = monitorAction(livePage, "ssh-copy-on-select");
         require(option && option->isVisible(), "session menu copy toggle is missing");
         click(option); settle();
         require(option->isVisible(), "session menu must stay open after toggling copy");
-        auto *menu = option->property("menu").value<QObject *>();
-        require(menu && QMetaObject::invokeMethod(menu, "close"), "session menu failed to close"); settle();
+        closeMonitorMenu(livePage);
       };
       const qreal charWidth = livePage->property("charWidth").toReal();
       auto drag = [&] {
@@ -541,15 +663,15 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(window->grabWindow().save(monitorScreenshot + ".main.png"), "session sidebar capture failed");
       click(uiItem("ssh-sidebar-toggle")); settle();
       auto *sidebar = uiItem("ssh-session-sidebar");
-      auto *badge = uiItem("ssh-session-badge-" + livePage->property("sessionId").toString());
-      require(sidebar && sidebar->width() >= 60 && badge && badge->isVisible(),
-              "collapsed session rail has no visible session identifier");
+      auto *badge = uiItem("ssh-session-row-" + livePage->property("sessionId").toString());
+      require(sidebar && sidebar->width() <= 50 && badge && badge->isVisible(),
+              "collapsing configuration sidebar hid the session tab");
       require(window->grabWindow().save(monitorScreenshot + ".collapsed.png"), "collapsed session rail capture failed");
       const auto point = badge->mapToScene(QPointF(badge->width() / 2, badge->height() / 2));
       QMouseEvent press(QEvent::MouseButtonPress, point, window->mapToGlobal(point.toPoint()), Qt::RightButton, Qt::RightButton, Qt::NoModifier);
       QMouseEvent release(QEvent::MouseButtonRelease, point, window->mapToGlobal(point.toPoint()), Qt::RightButton, Qt::NoButton, Qt::NoModifier);
       QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release); settle();
-      auto *detachAction = uiItem("ssh-session-detach-" + livePage->property("sessionId").toString());
+      auto *detachAction = monitorAction(livePage, "ssh-session-detach-" + livePage->property("sessionId").toString(), "ssh-layout-menu");
       require(detachAction && detachAction->isVisible(), "collapsed session menu has no detached-window action");
       require(window->grabWindow().save(monitorScreenshot + ".options.png"), "session options menu capture failed");
       QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
@@ -575,6 +697,103 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(evidence.open(QIODevice::WriteOnly) && evidence.write(data) == data.size(),
               "cannot save native monitor verification result");
     }
+
+    trace("tab groups preserve production SSH backends, buffers and per-pane actions");
+    {
+      auto evaluateWorkspace = [&](const QString &script) {
+        QQmlExpression expression(qmlContext(liveWorkspace), liveWorkspace, script);
+        const auto result = expression.evaluate();
+        require(!expression.hasError(), qPrintable(expression.error().toString()));
+        return result;
+      };
+
+      evaluateWorkspace("sessions[0].connectionConfigExpanded = false; sessions[1].connectionConfigExpanded = false; activateSession(sessions[0])");
+      settle();
+      auto dragTab = [&](QQuickItem *tab, const QPointF &destination, bool cancel) {
+        require(tab && tab->isVisible(), "drag source tab is missing");
+        const auto beforeGroups = evaluateWorkspace("containers[0].groups.length").toInt();
+        const auto start = tab->mapToScene(QPointF(24, 13));
+        const auto step = tab->mapToScene(QPointF(50, 13));
+        auto send = [&](QEvent::Type type, const QPointF &position, Qt::MouseButton button, Qt::MouseButtons buttons) {
+          QMouseEvent event(type, position, window->mapToGlobal(position.toPoint()), button, buttons, Qt::NoModifier);
+          QCoreApplication::sendEvent(window, &event); settle();
+        };
+        send(QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+        send(QEvent::MouseMove, step, Qt::NoButton, Qt::LeftButton);
+        send(QEvent::MouseMove, destination, Qt::NoButton, Qt::LeftButton);
+        require(liveWorkspace->property("draggedSession").value<QObject *>() == livePage,
+                "production tab did not capture a real pointer drag");
+        require(evaluateWorkspace("containers[0].groups.length").toInt() == beforeGroups,
+                "drag preview committed the split before mouse release");
+        const auto previewSide = evaluateWorkspace("dragTarget && dragTarget.split ? dragTarget.side : ''").toString();
+        const auto previewCapture = qEnvironmentVariable("LOGANALYQT_SSH_TABS_SCREENSHOT");
+        if (!previewSide.isEmpty() && !previewCapture.isEmpty())
+          require(window->grabWindow().save(previewCapture + ".drag-" + previewSide + ".png"), "drag preview capture failed");
+        if (cancel) { QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier); QCoreApplication::sendEvent(window, &escape); }
+        send(QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
+      };
+      const auto tabName = "ssh-session-row-" + livePage->property("sessionId").toString();
+      auto *otherTab = uiItem("ssh-session-row-" + secondPage->property("sessionId").toString());
+      require(otherTab, "second monitor tab is missing");
+      dragTab(uiItem(tabName), otherTab->mapToScene(QPointF(otherTab->width() - 3, 13)), false);
+      require(evaluateWorkspace("containers[0].groups[0].tabs[1] === sessions[0]").toBool(), "pointer drag did not reorder tabs");
+      dragTab(uiItem(tabName), QPointF(-100, -100), true);
+      require(!livePage->property("detached").toBool(), "Escape failed to cancel dragging a tab out of the window");
+      dragTab(uiItem(tabName), firstMonitorItem->parentItem()->mapToScene(QPointF(firstMonitorItem->parentItem()->width() - 8, 100)), false);
+      settle();
+      require(firstMonitorItem->isVisible() && secondMonitorItem->isVisible()
+                  && firstMonitorItem->parentItem() != secondMonitorItem->parentItem()
+                  && firstMonitorItem->window() == window && secondMonitorItem->window() == window,
+              "left/right groups do not simultaneously show independent sessions");
+      require(firstMonitorItem->width() >= 340 && secondMonitorItem->width() >= 340,
+              "split monitoring leaves a panel unusably narrow");
+      auto *firstClear = monitorAction(livePage, "ssh-clear");
+      click(firstClear); closeMonitorMenu(livePage);
+      require(ssh->currentLineCount() == 0 && secondSsh->currentLineCount() == 1,
+              "split-pane clear crossed session boundaries");
+      ssh->lineModel()->appendLines({"RX 68 04 07 00 00 00"}); ssh->lineCountChanged(); settle();
+      evaluateWorkspace("moveSession(sessions[0], sessions[1].group, 0)"); settle();
+      require(firstMonitorItem->isVisible() && !secondMonitorItem->isVisible()
+                  && firstMonitorItem->parentItem() == secondMonitorItem->parentItem()
+                  && livePage->findChild<SshTerminal *>("ssh-terminal-backend") == ssh,
+              "moving tabs between groups recreated or lost a terminal");
+      dragTab(uiItem(tabName), firstMonitorItem->parentItem()->mapToScene(QPointF(8, 100)), false);
+      require(evaluateWorkspace("containers[0].groups[0].active === sessions[0] && containers[0].groups[1].active === sessions[1]").toBool(),
+              "left-edge pointer drop did not create the expected left/right groups");
+      settle();
+      const auto capture = qEnvironmentVariable("LOGANALYQT_SSH_TABS_SCREENSHOT");
+      if (!capture.isEmpty()) {
+        evaluateWorkspace("for (let i = 0; i < 2; ++i) { const config = sessions[i].connectionConfiguration(); config.name = '采集网关 · ' + (i + 1); config.host = '192.168.10.21'; config.username = 'root'; config.expanded = false; sessions[i].restoreConfiguration(config); } savedConnections = [Object.assign({}, sessions[0].connectionConfiguration(), {name:'采集网关'})]");
+        ssh->clearBuffer(); secondSsh->clearBuffer();
+        QMetaObject::invokeMethod(ssh, "onWorkerConnected"); QMetaObject::invokeMethod(secondSsh, "onWorkerConnected");
+        SshTerminalTestAccess::MonitorInput inputA, inputB;
+        for (int i = 0; i < 18; ++i) {
+          inputA.feed(*ssh, QString("[10:42:%1.184] RX 68 04 07 00 00 00  channel 01\n").arg(i, 2, 10, QChar('0')).toUtf8());
+          inputB.feed(*secondSsh, QString("[10:42:%1.902] TX 68 00 00 01 00 29  reply: OK\n").arg(i, 2, 10, QChar('0')).toUtf8());
+        }
+        window->resize(1586, 992); settle();
+        require(window->grabWindow().save(capture + ".split.png"), "split tab workspace capture failed");
+        monitorMenu(livePage);
+        const QPointF hoverPoint(window->width() - 24, window->height() - 60);
+        QMouseEvent hoverAway(QEvent::MouseMove, hoverPoint, window->mapToGlobal(hoverPoint.toPoint()), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &hoverAway); settle();
+        require(window->grabWindow().save(capture + ".menu.png"), "tab menu capture failed");
+        QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &escape); settle();
+        evaluateWorkspace("mergeGroups(containers[0])"); settle();
+        require(window->grabWindow().save(capture + ".single.png"), "single tab group capture failed");
+        dragTab(uiItem(tabName), firstMonitorItem->parentItem()->mapToScene(QPointF(firstMonitorItem->parentItem()->width() - 8, firstMonitorItem->parentItem()->height() * 0.35)), false);
+        evaluateWorkspace("mergeGroups(containers[0])"); settle();
+        ssh->disconnectFromHost(); secondSsh->disconnectFromHost();
+        ssh->clearBuffer(); secondSsh->clearBuffer();
+        ssh->lineModel()->appendLines({"RX 68 04 07 00 00 00"}); ssh->lineCountChanged();
+        secondSsh->lineModel()->appendLines({"RX 05 01 02 40 00 02 00 00"}); secondSsh->lineCountChanged();
+      }
+      evaluateWorkspace("mergeGroups(containers[0]); activateSession(sessions[0])"); settle();
+      require(ssh->currentLineCount() == 1 && secondSsh->currentLineCount() == 1,
+              "tab group merge lost a monitor buffer");
+    }
+
     trace("shared monitor rules, colored matches, native editor and independent-window resume");
     {
       auto addRule = [&](const QString &name, const QString &pattern, const QString &color, bool pause = true, bool wholeLine = true) {
@@ -625,7 +844,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       const auto ruleScreenshot = qEnvironmentVariable("LOGANALYQT_SSH_RULE_SCREENSHOT");
       if (!ruleScreenshot.isEmpty()) require(ruleEditor->grabWindow().save(ruleScreenshot + ".library.png"), "rule library capture failed");
       ruleEditor->close(); settle();
-      auto *followControl = uiItem("ssh-pause");
+      auto *followControl = monitorAction(livePage, "ssh-pause");
       require(followControl, "follow control is missing");
       QQmlExpression tooltipExpression(qmlContext(followControl), followControl, "ToolTip.toolTip");
       auto *sharedTooltip = tooltipExpression.evaluate().value<QObject *>();
@@ -633,20 +852,22 @@ inline QString checkMigratedUi(QQuickWindow *window) {
                   && sharedTooltip->objectName() == "workshop-tooltip"
                   && sharedTooltip->property("appTheme").value<QObject *>() == window->property("uiTheme").value<QObject *>(),
               "packaged application did not load its global tooltip style and theme");
-      click(followControl);
+      click(followControl); closeMonitorMenu(livePage);
       firstInput.feed(*ssh, "normal after resume\n"); settle();
       require(livePage->property("autoScroll").toBool(), "resuming rematched historical output");
       firstInput.feed(*ssh, "ERROR new after resume\n"); settle();
       require(!livePage->property("autoScroll").toBool() && livePage->property("monitorHitColor").value<QColor>() == QColor("#bb9cf5"),
               "new match after resume did not use the saved rule color");
       if (!ruleScreenshot.isEmpty()) require(window->grabWindow().save(ruleScreenshot + ".paused.png"), "colored paused monitor capture failed");
-      click(uiItem("ssh-rule-select"));
+      auto *ruleSubmenu = livePage->property("group").value<QObject *>()->property("menu").value<QObject *>()->findChild<QObject *>("ssh-rule-select");
+      monitorMenu(livePage); require(ruleSubmenu && QMetaObject::invokeMethod(ruleSubmenu, "open"), "rule selection submenu did not open"); settle();
       if (!ruleScreenshot.isEmpty()) require(window->grabWindow().save(ruleScreenshot + ".picker.png"), "rule picker capture failed");
-      QMetaObject::invokeMethod(livePage->findChild<QObject *>("ssh-rule-picker"), "close"); settle();
+      closeMonitorMenu(livePage);
       secondInput.feed(*secondSsh, "OFFLINE synthetic terminal\n"); settle();
       require(!secondPage->property("autoScroll").toBool() && secondPage->property("monitorHitColor").value<QColor>() == QColor("#80b9ff")
                   && livePage->property("monitorHitColor").value<QColor>() == QColor("#bb9cf5"), "background monitor colors are not isolated");
       require(QMetaObject::invokeMethod(liveWorkspace, "detachSession", Q_ARG(QVariant, QVariant::fromValue(livePage))), "cannot detach rule-triggered monitor");
+      firstMonitorWindow = qobject_cast<QQuickWindow *>(livePage->property("monitorWindow").value<QObject *>());
       settle(firstMonitorWindow);
       if (!ruleScreenshot.isEmpty()) require(firstMonitorWindow->grabWindow().save(ruleScreenshot + ".detached.png"), "detached rule monitor capture failed");
       auto clickMonitorControl = [&](QQuickItem *target) {
@@ -660,18 +881,14 @@ inline QString checkMigratedUi(QQuickWindow *window) {
         }
         settle(targetWindow);
       };
-      clickMonitorControl(findItem(firstMonitorWindow->contentItem(), "ssh-rule-select"));
-      clickMonitorControl(findItem(firstMonitorWindow->contentItem(), "ssh-rule-manage"));
+      auto *rules = livePage->property("group").value<QObject *>()->property("menu").value<QObject *>()->findChild<QObject *>("ssh-rule-select");
+      monitorMenu(livePage); require(rules && QMetaObject::invokeMethod(rules, "open"), "detached rule submenu did not open"); settle(firstMonitorWindow);
+      clickMonitorControl(findItem(rules->property("contentItem").value<QQuickItem *>(), "ssh-menu-rule-manage"));
       require(ruleEditor->isVisible() && ruleEditor->transientParent() == firstMonitorWindow,
               "independent monitor cannot select rules or open the shared rule manager");
       settle(ruleEditor); ruleEditor->close(); settle(firstMonitorWindow);
-      auto *resume = findItem(firstMonitorWindow->contentItem(), "ssh-pause");
-      const auto point = resume->mapToScene(QPointF(resume->width()/2, resume->height()/2));
-      for (auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
-        QMouseEvent event(type, point, firstMonitorWindow->mapToGlobal(point.toPoint()), Qt::LeftButton,
-                          type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
-        QCoreApplication::sendEvent(firstMonitorWindow, &event);
-      }
+      auto *resume = monitorAction(livePage, "ssh-pause");
+      clickMonitorControl(resume); closeMonitorMenu(livePage);
       firstInput.feed(*ssh, "normal detached output\n"); settle(firstMonitorWindow);
       require(livePage->property("autoScroll").toBool(), "detached continue-follow did not rearm new output monitoring");
       firstInput.feed(*ssh, "ERROR new detached match\n"); settle(firstMonitorWindow);
@@ -681,10 +898,10 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       firstInput.feed(*ssh, "RX 680407000000\n"); settle();
       const int receivedFrame = ssh->currentLineCount() - 1;
       const int stoppedRows = ssh->currentLineCount();
-      auto *pauseButton = findItem(qobject_cast<QQuickItem *>(liveWorkspace), "ssh-pause");
-      auto *stopButton = findItem(qobject_cast<QQuickItem *>(liveWorkspace), "ssh-stop-reception");
-      require(stopButton && pauseButton && stopButton->mapToScene(QPointF()).x() > pauseButton->mapToScene(QPointF()).x(), "stop-screen button must follow pause-follow in the sidebar");
-      click(stopButton);
+      auto *pauseButton = monitorAction(livePage, "ssh-pause");
+      auto *stopButton = monitorAction(livePage, "ssh-stop-reception");
+      require(stopButton && pauseButton && stopButton->y() > pauseButton->y(), "reception action must follow follow-scroll in the menu");
+      click(stopButton); closeMonitorMenu(livePage);
       require(ssh->receptionPaused(), "stop-screen button did not stop reception");
       firstInput.feed(*ssh, "output waits until reception resumes\n"); settle();
       require(!ssh->getBufferText().contains("output waits until reception resumes") && ssh->currentLineCount() == stoppedRows,
@@ -694,10 +911,11 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(backend->parseModel(livePage->property("parseSessionId").toInt())->rowCount() > 2, "received frame did not produce real parsed fields while stopped");
       livePage->setProperty("parseWindowVisible", false); settle();
       require(QMetaObject::invokeMethod(liveWorkspace, "detachSession", Q_ARG(QVariant, QVariant::fromValue(livePage))), "cannot move stopped session to independent window");
+      firstMonitorWindow = qobject_cast<QQuickWindow *>(livePage->property("monitorWindow").value<QObject *>());
       settle(firstMonitorWindow);
       const auto receptionScreenshot = qEnvironmentVariable("LOGANALYQT_SSH_RECEPTION_SCREENSHOT");
       if (!receptionScreenshot.isEmpty()) require(firstMonitorWindow->grabWindow().save(receptionScreenshot + ".stopped.png"), "stopped reception capture failed");
-      clickMonitorControl(findItem(firstMonitorWindow->contentItem(), "ssh-stop-reception"));
+      clickMonitorControl(monitorAction(livePage, "ssh-stop-reception")); closeMonitorMenu(livePage);
       firstInput.feed(*ssh, {}); settle(firstMonitorWindow);
       require(!ssh->receptionPaused() && ssh->lineAt(ssh->currentLineCount() - 1) == "output waits until reception resumes"
                   && !livePage->property("autoScroll").toBool(), "independent-window resume lost waiting input or changed follow state");
