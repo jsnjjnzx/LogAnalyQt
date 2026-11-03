@@ -209,13 +209,15 @@ Item {
             })
             compare(folderBorder.dashPattern.join(","), "2,2")
             compare(commandBorder.dashPattern.join(","), "7,4")
+            const initialPaneHeight = item("ssh-terminal-pane").height
             mouseClick(create)
             tryCompare(item("ssh-command-editor"), "visible", true)
             verify(item("ssh-command-cancel").visible && !create.enabled)
             verify(!item("ssh-command-add").contentItem.truncated)
             item("ssh-command-name").text = "未保存"
             item("ssh-command-content").text = "echo draft"
-            verify(waitForPolish(page)); wait(20)
+            verify(waitForPolish(page))
+            tryVerify(() => item("ssh-terminal-pane").height < initialPaneHeight - 20)
             const expandedHeight = item("ssh-terminal-pane").height
             mouseClick(item("ssh-command-cancel"))
             tryVerify(() => item("ssh-terminal-pane").height > expandedHeight + 20)
