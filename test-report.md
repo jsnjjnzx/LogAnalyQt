@@ -7,6 +7,7 @@
 - 首轮 main 构建 41663212898 的 macOS QML 预检失败：`test_sshCommandPlaceholderAndEditorLifecycle` 在编辑区布局尚未压缩终端高度前记录基准，CI 慢环境超时。增加“终端高度先减少”就绪等待后专项通过，源码修订为 `70f10cc`；旧的并发构建随新推送取消。
 - 最终同提交构建 [41664301455](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41664301455)：Windows x64 16m29s、macOS arm64 16m47s，均 success；`find_validated_build.py` 确认产物来源、提交及有效期通过。
 - [发布工作流 41667601337](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41667601337)：发布作业成功，Windows/macOS 公开更新作业均成功。[v5.3.0 Release](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.3.0) 为 latest、非 draft/预发布，7 附件完整；标签、远端 SHA 与本地均精确指向 `70f10ccb82b7ad6a43ad830c71b19858b2cd878e`，公开 update.json 返回 v5.3.0/6 个清单资产。
+- 本地交付：从正式 Release 下载 macOS arm64 update ZIP，校验/解压后同步 `release_package/通联工坊.app`；Info.plist 读取为5.3.0，deep strict签名通过，已正常启动。
 
 ## 2026-11-03 快捷命令文件夹（T61 / CMD-06～12）
 
