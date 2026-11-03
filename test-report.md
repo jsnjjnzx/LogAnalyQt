@@ -4,7 +4,9 @@
 
 - 版本与范围：CMake/README/CHANGELOG 统一为 5.3.0；提交范围包含 T55～T61 累计源码、正式测试、设计预览和流程记录，不包含个人配置、`build/`、`release_package/` 或生成证据。
 - 本地验证：完整监控 QML 157 passed / 0 failed；配置断言 133 passed；完整 macOS Debug 构建成功；`check_build.py` 确认版本 5.3.0；发布工具 38 passed / 0 failed（授权沙箱外执行回环端口测试）。
-- 远端发布待执行：main 同提交 Windows x64/macOS arm64 构建、来源/有效期门禁、v5.3.0 标签、7 附件、latest 与双平台公开更新演练。
+- 首轮 main 构建 41663212898 的 macOS QML 预检失败：`test_sshCommandPlaceholderAndEditorLifecycle` 在编辑区布局尚未压缩终端高度前记录基准，CI 慢环境超时。增加“终端高度先减少”就绪等待后专项通过，源码修订为 `70f10cc`；旧的并发构建随新推送取消。
+- 最终同提交构建 [41664301455](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41664301455)：Windows x64 16m29s、macOS arm64 16m47s，均 success；`find_validated_build.py` 确认产物来源、提交及有效期通过。
+- [发布工作流 41667601337](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41667601337)：发布作业成功，Windows/macOS 公开更新作业均成功。[v5.3.0 Release](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.3.0) 为 latest、非 draft/预发布，7 附件完整；标签、远端 SHA 与本地均精确指向 `70f10ccb82b7ad6a43ad830c71b19858b2cd878e`，公开 update.json 返回 v5.3.0/6 个清单资产。
 
 ## 2026-11-03 快捷命令文件夹（T61 / CMD-06～12）
 
