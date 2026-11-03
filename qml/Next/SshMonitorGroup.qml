@@ -7,9 +7,10 @@ Rectangle {
     id: root
     required property var workspace
     property var group: null
+    readonly property var theme: workspace.theme
     readonly property var page: group ? group.active : null
-    color: page ? page.terminalBg : "#1a1d21"; radius: 0
-    readonly property color frameColor: group && group.container.activeGroup === group ? "#465971" : "#343b46"
+    color: page ? page.terminalBg : theme ? theme.terminalBackground : "#1a1d21"; radius: 0
+    readonly property color frameColor: group && group.container.activeGroup === group ? (theme ? theme.monitorFrame : "#465971") : (theme ? theme.monitorFrameInactive : "#343b46")
     Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 1; color: root.frameColor }
     Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: root.frameColor }
     Rectangle { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 1; color: root.frameColor; visible: !root.group || root.group.container.groups.indexOf(root.group) === 0 }
@@ -46,7 +47,7 @@ Rectangle {
                     required property int index
                     objectName: "ssh-session-row-" + modelData.sessionId
                     width: Math.max(110, Math.min(196, label.implicitWidth + 38)); height: 26
-                    color: root.group && root.group.active === modelData ? "#2b3c53" : tabMouse.containsMouse ? "#29313c" : "#20262f"
+                    color: root.group && root.group.active === modelData ? (root.theme ? root.theme.monitorTabSelected : "#2b3c53") : tabMouse.containsMouse ? (root.theme ? root.theme.monitorTabHover : "#29313c") : (root.theme ? root.theme.monitorTab : "#20262f")
                     Accessible.role: Accessible.PageTab
                     Accessible.name: modelData.sessionName
                     Accessible.description: "双击新建同配置标签并连接；右键更多操作"
@@ -68,7 +69,7 @@ Rectangle {
                         text: tab.modelData.sessionName; textFormat: Text.PlainText; elide: Text.ElideRight
                         color: root.workspace.theme ? root.workspace.theme.text : "white"; font.pixelSize: 12
                     }
-                    Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: "#80b9ff"; visible: root.group && root.group.active === tab.modelData }
+                    Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: root.theme ? root.theme.accent : "#80b9ff"; visible: root.group && root.group.active === tab.modelData }
                     MouseArea {
                         id: tabMouse
                         objectName: "ssh-tab-pointer-" + tab.modelData.sessionId
@@ -109,7 +110,7 @@ Rectangle {
                         anchors.right: parent.right; anchors.rightMargin: 3; anchors.verticalCenter: parent.verticalCenter
                         text: "×"; implicitWidth: 20; implicitHeight: 20; padding: 0; horizontalPadding: 0
                         font.pixelSize: 12
-                        background: Rectangle { radius: 3; color: close.hovered || close.visualFocus ? "#394451" : "transparent" }
+                        background: Rectangle { radius: 3; color: close.hovered || close.visualFocus ? (root.theme && root.theme.lightMode ? root.theme.buttonHover : "#394451") : "transparent" }
                         Accessible.name: "关闭 " + tab.modelData.sessionName
                         onClicked: root.workspace.requestCloseSession(tab.modelData)
                     }
@@ -118,12 +119,12 @@ Rectangle {
                         objectName: "ssh-tab-drag-preview-" + tab.modelData.sessionId
                         parent: root
                         visible: tabMouse.drag.active
-                        width: tab.width; height: 26; radius: 5; color: "#34465e"; opacity: 0.9; z: 1000
-                        Label { anchors.centerIn: parent; text: tab.modelData.sessionName; color: "#eceef2"; font.pixelSize: 12 }
+                        width: tab.width; height: 26; radius: 5; color: root.theme && root.theme.lightMode ? root.theme.navigationSelected : "#34465e"; opacity: 0.9; z: 1000
+                        Label { anchors.centerIn: parent; text: tab.modelData.sessionName; color: root.theme ? root.theme.text : "#eceef2"; font.pixelSize: 12 }
                     }
                     Rectangle {
                         visible: root.workspace.dragTarget !== null && root.workspace.dragTarget.group === root.group && root.workspace.dragTarget.index === tab.index
-                        anchors.left: parent.left; width: 2; height: parent.height; color: "#80b9ff"
+                        anchors.left: parent.left; width: 2; height: parent.height; color: root.theme ? root.theme.accent : "#80b9ff"
                     }
                 }
 
@@ -150,12 +151,12 @@ Rectangle {
                 height: root.page ? Math.min(parent.height, root.page.monitorPreviewBottom) : parent.height
                 x: root.workspace.dragTarget && root.workspace.dragTarget.side === "left" ? 0 : parent.width - width
                 width: root.workspace.dragTarget && root.workspace.dragTarget.split ? parent.width / 2 : parent.width
-                color: "#304c80b9"; border.color: "#80b9ff"; border.width: 1
+                color: root.theme && root.theme.lightMode ? "#303478c5" : "#304c80b9"; border.color: root.theme ? root.theme.accent : "#80b9ff"; border.width: 1
                 Label {
                     anchors.centerIn: parent
                     visible: root.workspace.dragTarget !== null && root.workspace.dragTarget.split
                     text: root.workspace.dragTarget && root.workspace.dragTarget.side === "left" ? "松开后在左侧分组" : "松开后在右侧分组"
-                    color: "#eceef2"; font.pixelSize: 12
+                    color: root.theme ? root.theme.text : "#eceef2"; font.pixelSize: 12
                 }
             }
         }

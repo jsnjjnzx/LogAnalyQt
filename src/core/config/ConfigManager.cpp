@@ -9,6 +9,7 @@
 #include <QDomDocument>
 #include <QRegularExpression>
 #include <QUuid>
+#include <algorithm>
 
 namespace {
 QString hash(const QByteArray &bytes) { return QString::fromLatin1(ConfigMigration::digest(bytes).toHex()); }
@@ -92,9 +93,13 @@ QString ConfigManager::summary() const {
   QJsonObject root; QString error;
   if (!ConfigJson::read(QDir(m_root).filePath("settings.json"), &root, &error)) return error;
   const auto mqtt = root.value("mqtt").toObject();
+  const auto commands = root.value("ssh").toObject().value("customCommands").toArray();
+  const auto commandCount = std::count_if(commands.cbegin(), commands.cend(), [](const QJsonValue &value) {
+    return value.toObject().value("type").toString() != "folder";
+  });
   QString text = QStringLiteral("配置：%1\n格式版本：1\nMQTT 连接：%2；常用订阅：%3\nSSH 自定义命令：%4；预置报文：%5；组帧模板：%6\n解析标签：%7\n密码保存在系统凭据存储，不包含在备份中。\n协议、提示词和证书仍是独立资源；证书和私钥需另行保管。")
     .arg(QStringLiteral("settings.json（点击“打开数据目录”访问）")).arg(mqtt.value("connections").toArray().size()).arg(mqtt.value("commonSubscriptions").toArray().size())
-    .arg(root.value("ssh").toObject().value("customCommands").toArray().size()).arg(root.value("messages").toObject().value("presets").toArray().size())
+    .arg(commandCount).arg(root.value("messages").toObject().value("presets").toArray().size())
     .arg(root.value("framingTemplates").toObject().size()).arg(root.value("workspace").toObject().value("parse").toObject().value("tabs").toArray().size());
   const auto statePath = QDir(m_root).filePath("migration-state.json");
   if (QFile::exists(statePath)) {

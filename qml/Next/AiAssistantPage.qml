@@ -241,6 +241,7 @@ Item {
         hoverEnabled: true
         Accessible.name: text
         background: Next.ControlSurface {
+            flat: root.theme.lightMode
             radius: 8
             baseColor: button.primary ? root.theme.accentMuted : button.selected ? root.theme.tableHighlight
                 : button.hovered ? root.theme.surfaceHover : root.theme.buttonBackground

@@ -99,13 +99,14 @@ Rectangle {
                         onClicked: nav.navigate(modelData.page)
                         background: Rectangle {
                             radius: 10
-                            color: nav.currentPage === modelData.page ? nav.theme.navigationSelected : parent.hovered ? nav.theme.surfaceHover : "transparent"
-                            border.width: parent.visualFocus ? 1 : 0
-                            border.color: parent.activeFocus ? nav.theme.accent : nav.theme.groupBorder
+                            color: nav.currentPage === modelData.page ? (nav.theme.lightMode ? "#e6ffffff" : nav.theme.navigationSelected) : parent.hovered ? nav.theme.surfaceHover : "transparent"
+                            border.width: parent.visualFocus || (nav.theme.lightMode && nav.currentPage === modelData.page) ? 1 : 0
+                            border.color: parent.activeFocus ? nav.theme.accent : nav.theme.lightMode ? "white" : nav.theme.groupBorder
+                            Rectangle { visible: nav.theme.lightMode && nav.currentPage === modelData.page; x: 0; y: 10; width: 2; height: Math.max(0, parent.height - 20); radius: 1; color: nav.theme.accent }
                         }
                         contentItem: Item {
                             Text { objectName: "nav-icon-" + modelData.page; text: String.fromCodePoint(modelData.icon || 0); font.family: mdi.name; font.pixelSize: 20; color: nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.subText; anchors.verticalCenter: parent.verticalCenter; x: nav.collapsed ? (parent.width - width) / 2 : 7 }
-                            Text { objectName: "nav-label-" + modelData.page; visible: !nav.collapsed; anchors.verticalCenter: parent.verticalCenter; x: 42; text: modelData.title || ""; font.pixelSize: 14; color: nav.theme.text }
+                            Text { objectName: "nav-label-" + modelData.page; visible: !nav.collapsed; anchors.verticalCenter: parent.verticalCenter; x: 42; text: modelData.title || ""; font.pixelSize: 14; font.weight: nav.theme.lightMode && nav.currentPage === modelData.page ? Font.DemiBold : Font.Normal; color: nav.theme.lightMode && nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.text }
                         }
                     }
                 }
@@ -129,10 +130,15 @@ Rectangle {
                 ToolTip.delay: 600
                 ToolTip.text: Accessible.name
                 onClicked: nav.navigate(modelData.page)
-                background: Rectangle { radius: 9; color: nav.currentPage === modelData.page ? nav.theme.navigationSelected : parent.hovered ? nav.theme.surfaceHover : "transparent"; border.color: parent.visualFocus ? nav.theme.accent : "transparent" }
+                background: Rectangle {
+                    radius: 9
+                    color: nav.currentPage === modelData.page ? (nav.theme.lightMode ? "#e6ffffff" : nav.theme.navigationSelected) : parent.hovered ? nav.theme.surfaceHover : "transparent"
+                    border.color: parent.visualFocus ? nav.theme.accent : nav.theme.lightMode && nav.currentPage === modelData.page ? "white" : "transparent"
+                    Rectangle { visible: nav.theme.lightMode && nav.currentPage === modelData.page; x: 0; y: 10; width: 2; height: Math.max(0, parent.height - 20); radius: 1; color: nav.theme.accent }
+                }
                 contentItem: Item {
                     Text { objectName: "nav-icon-" + modelData.page; text: String.fromCodePoint(modelData.icon); font.family: mdi.name; font.pixelSize: 20; color: nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.subText; anchors.verticalCenter: parent.verticalCenter; x: nav.collapsed ? (parent.width - width) / 2 : 0 }
-                    Text { objectName: "nav-label-" + modelData.page; visible: !nav.collapsed; anchors.verticalCenter: parent.verticalCenter; x: 35; text: modelData.title; color: nav.theme.text; font.pixelSize: 14 }
+                    Text { objectName: "nav-label-" + modelData.page; visible: !nav.collapsed; anchors.verticalCenter: parent.verticalCenter; x: 35; text: modelData.title; font.weight: nav.theme.lightMode && nav.currentPage === modelData.page ? Font.DemiBold : Font.Normal; color: nav.theme.lightMode && nav.currentPage === modelData.page ? nav.theme.accent : nav.theme.text; font.pixelSize: 14 }
                 }
             }
         }

@@ -10,7 +10,8 @@ Item {
     QtObject {
         id: fakeBackend
         property var writes: ({})
-        function setUiSetting(key,value) { const next = Object.assign({}, writes); next[key] = value; writes = next; return true }
+        property bool failSave: false
+        function setUiSetting(key,value) { if (failSave) return false; const next = Object.assign({}, writes); next[key] = value; writes = next; return true }
     }
     Component { id: settingsComponent; Next.SystemSettingsPage { theme: testTheme; controller: control; backend: fakeBackend } }
     TestCase {
@@ -19,7 +20,7 @@ Item {
         property var page
         function init() {
             failOnWarning(/Binding loop|TypeError|ReferenceError|Unable to assign/)
-            control.reset(); fakeBackend.writes = ({}); testTheme.reducedTransparency = false
+            control.reset(); fakeBackend.writes = ({}); fakeBackend.failSave = false; testTheme.reducedTransparency = false; testTheme.lightMode = false
             page = createTemporaryObject(settingsComponent,scene,{width:1144,height:752}); verify(page); wait(30)
         }
         function item(name) { const found = findChild(page,name); verify(found !== null,name); return found }
@@ -33,10 +34,36 @@ Item {
             verify(!item("settings-open-prompts").enabled)
         }
         function test_preserveAppearanceSettings() {
-            compare(findChild(page,"settings-dark"),null)
+            verify(item("settings-dark").selected)
+            verify(!item("settings-light").selected)
             compare(findChild(page,"settings-follow-system"),null)
             mouseClick(item("settings-reduced-transparency")); compare(fakeBackend.writes["next/appearance/reducedTransparency"],true)
             compare(Object.keys(fakeBackend.writes).length,1)
+        }
+        function test_globalAppearanceSelectionAndKeyboard() {
+            mouseClick(item("settings-light")); verify(testTheme.lightMode)
+            verify(item("settings-light").selected); verify(!item("settings-dark").selected)
+            compare(fakeBackend.writes["next/appearance/colorMode"],"light")
+            item("settings-dark").forceActiveFocus(); keyClick(Qt.Key_Space)
+            verify(!testTheme.lightMode); verify(item("settings-dark").selected)
+            compare(fakeBackend.writes["next/appearance/colorMode"],"dark")
+            page.destroy(); page = createTemporaryObject(settingsComponent,scene,{width:1144,height:752}); wait(20)
+            verify(item("settings-dark").selected)
+        }
+        function test_failedAppearanceSaveKeepsThemeAndSelection() {
+            fakeBackend.failSave = true
+            mouseClick(item("settings-light"))
+            verify(!testTheme.lightMode); verify(item("settings-dark").selected)
+            verify(item("settings-appearance-error").visible)
+            compare(Object.keys(fakeBackend.writes).length,0)
+            fakeBackend.failSave = false; mouseClick(item("settings-light"))
+            verify(testTheme.lightMode); compare(page.appearanceError,"")
+        }
+        function test_accessibleAppearanceActions() {
+            item("settings-light").Accessible.pressAction()
+            verify(testTheme.lightMode); compare(fakeBackend.writes["next/appearance/colorMode"],"light")
+            item("settings-dark").Accessible.toggleAction()
+            verify(!testTheme.lightMode); compare(fakeBackend.writes["next/appearance/colorMode"],"dark")
         }
         function test_appearanceRowsKeepSwitchesClearOfLabels() {
             for (const width of [1144, 850]) {

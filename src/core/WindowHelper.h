@@ -19,6 +19,8 @@ class WindowHelper : public QObject {
 public:
   explicit WindowHelper(QObject *parent = nullptr);
 
+  Q_INVOKABLE void setApplicationLightMode(bool light);
+
   /**
    * @brief 设置窗口标题栏颜色
    * @param window 目标窗口

@@ -40,9 +40,19 @@ int main(int argc, char **argv) {
   theme->setProperty("reducedTransparency", true);
   check(effect.hidden && !theme->property("nativeGlass").toBool(), "reduce transparency disables material");
   check(theme->metaObject()->indexOfProperty("isDark") == -1 && theme->metaObject()->indexOfProperty("followSystem") == -1,
-        "new workspace has no theme switching state");
-  check([effect.appearance.name isEqualToString:NSAppearanceNameDarkAqua], "material stays dark");
+        "obsolete appearance flags remain unsupported");
+  check([effect.appearance.name isEqualToString:NSAppearanceNameDarkAqua], "default material stays dark");
+  theme->setProperty("lightMode", true);
+  check([effect.appearance.name isEqualToString:NSAppearanceNameAqua] &&
+        [qtView.window.appearance.name isEqualToString:NSAppearanceNameAqua] &&
+        [NSApp.appearance.name isEqualToString:NSAppearanceNameAqua], "light appearance reaches material, window and app");
+  check(effect.hidden && !theme->property("nativeGlass").toBool(), "light appearance preserves reduced transparency");
   theme->setProperty("reducedTransparency", false);
+  check(effect.material == NSVisualEffectMaterialSidebar && effect.state == NSVisualEffectStateActive &&
+        effect.blendingMode == NSVisualEffectBlendingModeBehindWindow, "light keeps the existing native glass mechanism");
+  theme->setProperty("lightMode", false);
+  check([effect.appearance.name isEqualToString:NSAppearanceNameDarkAqua] &&
+        [qtView.window.appearance.name isEqualToString:NSAppearanceNameDarkAqua], "switching back restores the original dark material");
   check(effect.hidden == NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceTransparency,
         "system accessibility preference respected");
   window.resize(850, 600);

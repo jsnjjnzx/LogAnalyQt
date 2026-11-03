@@ -30,6 +30,7 @@ MacWindowBackdrop::MacWindowBackdrop(QQuickWindow *window, QObject *theme)
   m_effect = effect;
   theme->setProperty("nativeBackdropAvailable", true);
   connect(theme, SIGNAL(reducedTransparencyChanged()), this, SLOT(refresh()));
+  connect(theme, SIGNAL(lightModeChanged()), this, SLOT(refresh()));
   connect(window, &QWindow::widthChanged, this, &MacWindowBackdrop::refresh);
   connect(window, &QWindow::heightChanged, this, &MacWindowBackdrop::refresh);
   connect(window, &QWindow::visibilityChanged, this, &MacWindowBackdrop::refresh);
@@ -60,7 +61,11 @@ void MacWindowBackdrop::refresh() {
   const bool systemReduced = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceTransparency;
   m_theme->setProperty("systemReducedTransparency", systemReduced);
   effect.hidden = systemReduced || m_theme->property("reducedTransparency").toBool();
-  effect.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+  NSAppearance *appearance = [NSAppearance appearanceNamed:m_theme->property("lightMode").toBool()
+      ? NSAppearanceNameAqua : NSAppearanceNameDarkAqua];
+  effect.appearance = appearance;
+  NSApp.appearance = appearance;
+  effect.window.appearance = appearance;
   const auto visibility = m_window->visibility();
   if (!m_window->flags().testFlag(Qt::FramelessWindowHint) ||
       visibility == QWindow::Maximized || visibility == QWindow::FullScreen) {

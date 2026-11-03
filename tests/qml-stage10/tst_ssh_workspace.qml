@@ -155,7 +155,7 @@ Item {
             connected(a); connected(b); connected(c)
             for (const session of [a,b,c]) session.connectionConfigExpanded = false
             a.terminal.appendTestLines(["A"], 20); b.terminal.appendTestLines(["B"], 20)
-            a.autoScroll = false; a.terminal.receptionPaused = true
+            a.autoFollowEnabled = false; a.terminal.receptionPaused = true
             a.selectLogFile("file:///tmp/group-move.log")
             const terminal = a.terminal, disconnects = terminal.disconnectCalls
             const first = a.group, container = first.container
@@ -165,7 +165,7 @@ Item {
             verify(a.group !== b.group && a.terminal === terminal)
             verify(page.moveSession(a, b.group)); wait(30)
             verify(a.visible && c.visible); verify(!b.visible)
-            compare(a.terminal.lineAt(0), "A"); verify(a.terminal.logging && a.terminal.receptionPaused && !a.autoScroll)
+            compare(a.terminal.lineAt(0), "A"); verify(a.terminal.logging && a.terminal.receptionPaused && !a.autoScroll && !a.autoFollowEnabled)
             compare(a.terminal.disconnectCalls, disconnects)
             verify(page.detachSession(a)); wait(30)
             const window = a.monitorWindow
@@ -428,6 +428,88 @@ Item {
             a.pendingSshAction=null; a.passwordOperationId="test-pending"; verify(!a.connectIfIdle())
             compare(a.terminal.connectCalls,0); compare(a.terminal.disconnectCalls,0)
         }
+        function test_manualReviewPausesAgainAfterReturn_data() {
+            return [{tag:"wheel-disabled", scrollbar:false, enabled:false},
+                {tag:"scrollbar-disabled", scrollbar:true, enabled:false},
+                {tag:"wheel-enabled", scrollbar:false, enabled:true},
+                {tag:"scrollbar-enabled", scrollbar:true, enabled:true}]
+        }
+        function test_manualReviewPausesAgainAfterReturn(data) {
+            make()
+            const a = page.activeSession, b = page.addSession()
+            page.activateSession(a); connected(a); a.connectionConfigExpanded = false
+            const view = item(a, "ssh-log-list")
+            const lines = []; for (let i = 0; i < 160; ++i) lines.push("history " + i)
+            a.terminal.appendTestLines(lines, 1000)
+            tryCompare(view, "atYEnd", true)
+            toggleSessionOption(a, "ssh-pause")
+            verify(!a.autoFollowEnabled && !a.autoScroll)
+            const stoppedY = view.contentY
+            a.terminal.appendTestLines(["new with follow switch off"], 1000); wait(40)
+            verify(Math.abs(view.contentY - stoppedY) < 1); verify(!view.atYEnd)
+            a.focusTerminal(); keyClick(Qt.Key_Return)
+            tryCompare(a, "autoScroll", true); tryCompare(view, "atYEnd", true)
+            compare(a.terminal.rawInput.join(""), "\r")
+            openSessionMenu(a)
+            verify(!item(a, "ssh-pause").checked); verify(!a.autoFollowEnabled)
+            a.group.menu.close()
+            if (data.enabled) toggleSessionOption(a, "ssh-pause")
+            if (data.scrollbar) {
+                const bar = item(a, "ssh-log-vertical-scroll")
+                mousePress(bar, bar.width / 2, bar.height * (bar.position + bar.size / 2))
+                mouseMove(bar, bar.width / 2, bar.height / 3, 50, Qt.LeftButton)
+                mouseRelease(bar, bar.width / 2, bar.height / 3)
+            } else mouseWheel(view, 40, 100, 0, 240)
+            tryCompare(a, "autoScroll", data.enabled); tryCompare(view, "moving", false)
+            compare(a.autoFollowEnabled, data.enabled)
+            verify(!view.atYEnd); verify(b.autoScroll); verify(!a.terminal.receptionPaused)
+            const y = view.contentY, count = a.terminal.currentLineCount
+            a.terminal.appendTestLines(["new while reviewing"], 1000); wait(40)
+            compare(a.terminal.currentLineCount, count + 1)
+            if (data.enabled) tryCompare(view, "atYEnd", true)
+            else { verify(Math.abs(view.contentY - y) < 1); verify(!view.atYEnd) }
+            a.focusTerminal(); keyClick(Qt.Key_Return)
+            tryCompare(a, "autoScroll", true); tryCompare(view, "atYEnd", true)
+            compare(a.autoFollowEnabled, data.enabled)
+            a.terminal.appendTestLines(["new while following"], 1000)
+            tryCompare(view, "atYEnd", true)
+        }
+        function test_pausedViewportDoesNotJumpWithinIncomingBatches_data() {
+            return [{tag:"append", limit:400, wrap:false}, {tag:"prune", limit:160, wrap:false},
+                {tag:"wrapped-append", limit:400, wrap:true}, {tag:"wrapped-prune", limit:160, wrap:true}]
+        }
+        function test_pausedViewportDoesNotJumpWithinIncomingBatches(data) {
+            make()
+            const a = page.activeSession
+            a.connectionConfigExpanded = false; a.wrapLogLines = data.wrap
+            const lines = []; for (let i = 0; i < 160; ++i) lines.push("history " + i + " " + "x".repeat(i % 5 * 50))
+            a.terminal.appendTestLines(lines, data.limit); wait(40)
+            a.autoFollowEnabled = false
+            const view = item(a, "ssh-log-list")
+            view.positionViewAtIndex(80, ListView.Beginning); view.contentY += 7; wait(40)
+            const anchor = a.terminal.lineIdAt(view.indexAt(1, view.contentY + 1))
+            const row = view.itemAtIndex(a.terminal.indexForLineId(anchor))
+            const offset = row.y - view.contentY
+            const offsets = []
+            const track = function() { offsets.push(row.y - view.contentY) }
+            view.contentYChanged.connect(track)
+            try {
+                for (let batch = 0; batch < 8; ++batch) {
+                    a.terminal.appendTestLines(["incoming " + batch, "another " + batch], data.limit)
+                    wait(30)
+                    compare(a.terminal.lineIdAt(view.indexAt(1, view.contentY + 1)), anchor)
+                    verify(Math.abs(row.y - view.contentY - offset) < 1)
+                }
+                verify(offsets.every(value => Math.abs(value - offset) < 1),
+                    "paused viewport moved during restoration: " + JSON.stringify(offsets))
+                verify(!a.autoFollowEnabled && !a.autoScroll && !a.terminal.receptionPaused)
+            } finally { view.contentYChanged.disconnect(track) }
+            const overflow = []; for (let i = 0; i < data.limit + 10; ++i) overflow.push("overflow " + i)
+            a.terminal.appendTestLines(overflow, data.limit)
+            tryCompare(view, "atYBeginning", true)
+            compare(a.terminal.lineIdAt(view.indexAt(1, view.contentY + 1)), a.terminal.firstLineId)
+            verify(item(a, "ssh-footer-hint").text.indexOf("超出缓存范围") >= 0)
+        }
         function test_primaryMenuOptionsAndSharedFlatTerminalFrame() {
             make()
             const a=page.activeSession
@@ -617,6 +699,9 @@ Item {
             a.sendTerminalText("x"); verify(!a.autoScroll)
             verify(page.detachSession(a)); wait(30)
             compare(a.monitorHit.lineId, id); verify(!a.autoScroll)
+            verify(a.autoFollowEnabled && item(a, "ssh-pause").checked)
+            mouseClick(item(a, "ssh-pause")); wait(20)
+            verify(!a.autoFollowEnabled && !a.autoScroll && a.monitorHit !== null)
             mouseClick(item(a, "ssh-pause")); wait(20)
             verify(a.autoScroll && a.monitorHit === null && a.terminal.monitorArmed)
             a.terminal.appendTestLines(["normal after resume"], 100); wait(20); verify(a.autoScroll)
@@ -737,6 +822,129 @@ Item {
             a.terminal.appendTestLines(["设备 12 超时"], 100); wait(20)
             verify(a.monitorHit === null)
         }
+        function test_addSelectedOutputToRuleLibrary_data() {
+            return [
+                {tag:"literal", rows:["ERROR [42].* (x)+? ^$ {a}|\\ 中文😀"], live:"",
+                    text:"ERROR [42].* (x)+? ^$ {a}|\\ 中文😀", pattern:"ERROR \\[42\\]\\.\\* \\(x\\)\\+\\? \\^\\$ \\{a\\}\\|\\\\ 中文😀", detached:false},
+                {tag:"hex", rows:["RX AA BB CC DD"], live:"",
+                    text:"AA BB CC DD", pattern:"AA BB CC DD", detached:false},
+                {tag:"multiline-live", rows:["[A].", "", "中文(超时)"], live:"prompt$ ",
+                    text:"[A].\n\n中文(超时)\nprompt$ ", pattern:"\\[A\\]\\.|中文\\(超时\\)|prompt\\$ ", detached:false},
+                {tag:"detached", rows:["device timeout"], live:"",
+                    text:"device timeout", pattern:"device timeout", detached:true}
+            ]
+        }
+        function test_addSelectedOutputToRuleLibrary(data) {
+            make()
+            const a = page.activeSession, b = page.addSession()
+            page.activateSession(a)
+            a.connectionConfigExpanded = false
+            a.terminal.appendTestLines(data.rows, 100); a.terminal.liveLine = data.live
+            a.autoFollowEnabled = false
+            if (data.detached) { verify(page.detachSession(a)); wait(40) }
+            const start = data.tag === "hex" ? 3 : 0
+            const lastId = data.live ? a.liveSelectionId : data.rows.length - 1
+            const lastOffset = data.live ? data.live.length : data.rows[data.rows.length - 1].length
+            a.textSelectionAnchor = {id:0,position:start}; a.textSelectionFocus = {id:lastId,position:lastOffset}
+            clipboard("unchanged"); wait(30)
+            const area = item(a, "ssh-text-selection-area")
+            mouseClick(area, 40, 30, Qt.RightButton); wait(20)
+            const action = item(a, "ssh-selection-add-rule")
+            compare(action.text, "添加到规则库"); verify(action.enabled)
+            mouseClick(action); wait(30)
+            const editor = item(page, "ssh-rule-window")
+            verify(editor.visible && editor.dirty); compare(editor.selectedRuleId, -1)
+            compare(editor.transientParent, a.Window.window)
+            compare(item(editor, "ssh-rule-pattern").text, data.pattern)
+            compare(item(editor, "ssh-rule-sample").text, data.text)
+            compare(page.monitorRules.length, 0); compare(clipboard(), "unchanged")
+            compare(a.terminal.rawInput.length, 0); verify(!a.autoFollowEnabled && !a.autoScroll)
+            verify(!a.monitorEnabled && a.monitorRuleIds.length === 0)
+            const check = testBackend.testMonitorExpression(data.pattern, false, data.text)
+            verify(check.valid); verify(check.matches.length > 0)
+            if (data.tag === "literal") compare(testBackend.testMonitorExpression(data.pattern, false, "ERROR 42xxx x").matches.length, 0)
+            item(editor, "ssh-rule-name").text = "选区规则"
+            mouseClick(visualItem(editor.contentItem, "ssh-rule-color-80b9ff"))
+            const pauses = data.tag === "literal"
+            if (!pauses) mouseClick(item(editor, "ssh-rule-pause-on-match"))
+            mouseClick(item(editor, "ssh-rule-highlight-scope"))
+            tryCompare(item(editor, "ssh-rule-save"), "enabled", true)
+            mouseClick(item(editor, "ssh-rule-save")); wait(30)
+            compare(page.monitorRules.length, 1); verify(!editor.dirty)
+            compare(page.monitorRules[0].pattern, data.pattern)
+            compare(page.monitorRules[0].color, "#80b9ff")
+            compare(page.monitorRules[0].pauseOnMatch, pauses); verify(!page.monitorRules[0].highlightWholeLine)
+            verify(a.monitorEnabled && a.monitorRuleIds[0] === page.monitorRules[0].id && !a.autoFollowEnabled && !a.autoScroll)
+            verify(!b.monitorEnabled && b.monitorRuleIds.length === 0)
+            const count = a.terminal.currentLineCount, matching = data.text.split("\n")[0]
+            a.terminal.appendTestLines([matching, "ordinary", matching], 100); wait(30)
+            compare(a.terminal.lineModel.get(count).monitorColor, "#80b9ff")
+            compare(a.terminal.lineModel.get(count + 2).monitorColor, "#80b9ff")
+            verify(!a.autoScroll && a.monitorHit === null)
+            a.resumeFollowing()
+            a.terminal.appendTestLines([matching], 100); wait(30)
+            compare(a.autoScroll, !pauses)
+            compare(a.monitorHit !== null, pauses)
+            const sourceId = a.sessionId
+            verify(page.saveWorkspace())
+            page.destroy(); page = null; wait(40); make()
+            compare(page.monitorRules.length, 1); compare(page.monitorRules[0].pattern, data.pattern)
+            compare(page.monitorRules[0].color, "#80b9ff"); compare(page.monitorRules[0].pauseOnMatch, pauses)
+            const restored = page.sessions.find(function(session) { return session.sessionId === sourceId; })
+            verify(restored.monitorEnabled); compare(restored.monitorRuleIds[0], page.monitorRules[0].id)
+        }
+        function test_ruleSelectionPreservesDraftAndRollsBackFailedSave() {
+            make()
+            const a = page.activeSession
+            const id = page.saveMonitorRule(-1, "原规则", "original", false, "#e8b76a")
+            page.openMonitorRules(page.ownerWindow); wait(30)
+            const editor = item(page, "ssh-rule-window")
+            editor.loadRule(id); item(editor, "ssh-rule-name").text = "未保存修改"
+            page.addMonitorRuleFromText("selected[1]", page.ownerWindow, a.sessionId); wait(30)
+            verify(item(editor, "ssh-rule-discard-dialog").visible)
+            compare(item(editor, "ssh-rule-name").text, "未保存修改")
+            mouseClick(item(editor, "ssh-rule-keep-editing")); wait(20)
+            compare(editor.selectedRuleId, id); compare(page.monitorRules.length, 1)
+            page.addMonitorRuleFromText("selected[2]", page.ownerWindow, a.sessionId); wait(30)
+            mouseClick(item(editor, "ssh-rule-discard")); wait(20)
+            compare(editor.selectedRuleId, -1)
+            compare(item(editor, "ssh-rule-pattern").text, "selected\\[2\\]")
+            tryCompare(item(editor, "ssh-rule-save"), "enabled", true)
+            testBackend.failSave = true
+            mouseClick(item(editor, "ssh-rule-save")); wait(20)
+            compare(page.monitorRules.length, 1); compare(page.monitorRules[0].pattern, "original")
+            verify(editor.dirty && page.monitorRuleError !== "")
+            verify(!a.monitorEnabled && a.monitorRuleIds.length === 0)
+            compare(item(editor, "ssh-rule-pattern").text, "selected\\[2\\]")
+            testBackend.failSave = false
+            mouseClick(item(editor, "ssh-rule-save")); wait(20)
+            compare(page.monitorRules.length, 2); verify(!editor.dirty)
+            verify(a.monitorEnabled); compare(a.monitorRuleIds[0], page.monitorRules[1].id)
+        }
+        function test_ruleSelectionCannotActivateAClosedSourceSession() {
+            make()
+            const a = page.activeSession
+            page.addMonitorRuleFromText("selected", page.ownerWindow, a.sessionId); wait(200)
+            const editor = item(page, "ssh-rule-window"), b = page.addSession()
+            verify(page.removeSession(a)); wait(30)
+            mouseClick(item(editor, "ssh-rule-save")); wait(20)
+            compare(page.monitorRules.length, 0); verify(editor.dirty)
+            verify(page.monitorRuleError.indexOf("来源连接已关闭") >= 0)
+            verify(!b.monitorEnabled && b.monitorRuleIds.length === 0)
+        }
+        function test_ruleSelectionRejectsBlankAndKeepsOversizedTextForEditing() {
+            make()
+            const a = page.activeSession, editor = item(page, "ssh-rule-window")
+            verify(!item(a, "ssh-selection-add-rule").enabled)
+            page.addMonitorRuleFromText(" \r\n\t", page.ownerWindow)
+            verify(!editor.visible); compare(page.monitorRules.length, 0)
+            const text = "x".repeat(5000)
+            page.addMonitorRuleFromText(text, page.ownerWindow); wait(200)
+            compare(item(editor, "ssh-rule-pattern").text, text)
+            compare(item(editor, "ssh-rule-sample").text, text)
+            verify(editor.dirty && !editor.validation.valid)
+            verify(!item(editor, "ssh-rule-save").enabled); compare(page.monitorRules.length, 0)
+        }
         function test_connectionEncodingAlignsAndReconnectComesLast() {
             make()
             const a = page.activeSession
@@ -805,6 +1013,10 @@ Item {
             verify(!a.autoScroll); compare(a.monitorHit.ruleName, "暂停"); compare(a.monitorHitColor.toString(), "#f79a93")
             compare(a.terminal.lineModel.get(0).monitorColor, "#7ed6a0")
             compare(a.terminal.lineModel.get(2).monitorColor, "#f79a93")
+            a.terminal.appendTestLines(["ERROR while paused", "ERROR repeated"], 100); wait(20)
+            compare(a.terminal.lineModel.get(3).monitorColor, "#f79a93")
+            compare(a.terminal.lineModel.get(4).monitorColor, "#f79a93")
+            verify(!a.autoScroll); compare(a.monitorHit.ruleName, "暂停")
         }
         function test_hexDetection_data() {
             return [
@@ -1025,7 +1237,7 @@ Item {
         function test_detachAndNativeCloseKeepTheSameSessionAndViewport() {
             make()
             const a = page.activeSession; connected(a)
-            a.connectionConfigExpanded = false; a.autoScroll = false; a.terminalFontSize = 18
+            a.connectionConfigExpanded = false; a.autoFollowEnabled = false; a.terminalFontSize = 18
             a.terminal.liveLine = "device-a$ "
             const rows = []
             for (let i = 0; i < 200; ++i) rows.push("Row " + i + " RX 68 04 07 00 00 00")
@@ -1038,7 +1250,7 @@ Item {
             const disconnects = terminal.disconnectCalls; const connects = terminal.connectCalls
             verify(page.detachSession(a)); wait(50)
             const window = a.monitorWindow
-            verify(a.detached && window.visible && a.visible)
+            verify(a.detached && window.visible && a.visible && !a.autoFollowEnabled)
             compare(a.ownerWindow, window); verify(window.transientParent === null)
             compare(window.modality, Qt.NonModal); verify((window.flags & Qt.Window) !== 0)
             compare(a.terminal, terminal); compare(a.terminal.lineModel, model)
@@ -1053,7 +1265,7 @@ Item {
             window.width = 1400; window.height = 850; wait(30)
             verify(view.width > 1200)
             window.close(); wait(50)
-            verify(!a.detached && !window.visible && a.visible)
+            verify(!a.detached && !window.visible && a.visible && !a.autoFollowEnabled)
             compare(page.activeSession, a); compare(a.terminal, terminal)
             compare(terminal.disconnectCalls, disconnects); compare(terminal.connectCalls, connects)
             compare(a.selectedHexText, selected); compare(a.terminalFontSize, 18)
@@ -1663,6 +1875,218 @@ Item {
             compare(a.customCommands.length, 0)
             verify(item(b, "ssh-command-error").visible)
             compare(item(b, "ssh-command-name").text, "新名称")
+        }
+        function test_quickCommandFoldersCreateExpandEditAndPersist() {
+            make()
+            const a = page.activeSession
+            a.addCustomCommand("查看日志", "tail -f app.log")
+            a.beginCreateCommandFolder()
+            item(a, "ssh-folder-name").text = "运维"
+            mouseClick(item(a, "ssh-folder-save")); wait(30)
+            compare(a.commandFolders.length, 1)
+            compare(a.commandFolders[0].name, "运维")
+            compare(a.rootCommands.length, 1)
+            verify(a.moveCustomCommandToFolder("查看日志", "运维"))
+            compare(a.rootCommands.length, 0)
+
+            const folder = visualItem(a, "ssh-command-folder-0")
+            verify(folder !== null && waitForRendering(folder))
+            mouseClick(folder); wait(30)
+            const popup = a.folderPopup
+            verify(popup.visible)
+            compare(a.openFolderCommands.length, 1)
+            mouseClick(visualItem(popup.contentItem, "ssh-folder-close-current")); wait(100)
+            verify(!popup.visible)
+
+            a.beginAddCustomCommand("运维")
+            item(a, "ssh-command-name").text = "磁盘占用"
+            item(a, "ssh-command-content").text = "df -h"
+            mouseClick(item(a, "ssh-command-add")); wait(30)
+            compare(a.openFolderCommands.length, 0)
+            compare(a.customCommands.filter(entry => entry.folder === "运维").length, 2)
+
+            mouseClick(folder); wait(30)
+            let run = null, edit = null, remove = null
+            tryVerify(() => {
+                run = visualItem(popup.contentItem, "ssh-folder-command-run-0")
+                edit = visualItem(popup.contentItem, "ssh-folder-command-edit-0")
+                remove = visualItem(popup.contentItem, "ssh-folder-command-delete-0")
+                return run !== null && edit !== null && remove !== null
+            })
+            compare(run.height, edit.height)
+            compare(edit.width, edit.height)
+            compare(remove.width, remove.height)
+            compare(run.height, remove.height)
+            mouseClick(edit); wait(30)
+            compare(a.customCmdFolder, "运维")
+            verify(a.commandManagementExpanded)
+            compare(item(a, "ssh-command-folder").currentIndex, 1)
+            item(a, "ssh-command-content").text = "tail -n 100 app.log"
+            mouseClick(item(a, "ssh-command-add")); wait(30)
+            compare(a.customCommands.find(entry => entry.name === "查看日志").command, "tail -n 100 app.log")
+
+            const b = page.addSession(); wait(20)
+            compare(b.commandFolders.length, 1)
+            compare(b.customCommands.filter(entry => entry.folder === "运维").length, 2)
+            const saved = JSON.parse(testBackend.settings["liveLog/customCommands"])
+            compare(saved.filter(entry => entry.type === "folder").length, 1)
+            compare(saved.filter(entry => entry.folder === "运维").length, 2)
+            verify(page.saveWorkspace())
+            page.destroy(); page = null; wait(40); make()
+            compare(page.activeSession.commandFolders.length, 1)
+            compare(page.activeSession.customCommands.filter(entry => entry.folder === "运维").length, 2)
+        }
+        function test_quickCommandFolderRenameDeleteAndSaveFailureRollback() {
+            make()
+            const a = page.activeSession
+            a.addCustomCommand("查看日志", "tail -f app.log")
+            a.beginCreateCommandFolder()
+            item(a, "ssh-folder-name").text = "运维"
+            mouseClick(item(a, "ssh-folder-save")); wait(30)
+            verify(a.moveCustomCommandToFolder("查看日志", "运维"))
+
+            a.editCommandFolder("运维")
+            item(a, "ssh-folder-name").text = "日常运维"
+            mouseClick(item(a, "ssh-folder-save")); wait(30)
+            compare(a.commandFolders[0].name, "日常运维")
+            compare(a.customCommands.find(entry => entry.name === "查看日志").folder, "日常运维")
+
+            testBackend.failSave = true
+            verify(!a.moveCustomCommandToFolder("查看日志", ""))
+            compare(a.customCommands.find(entry => entry.name === "查看日志").folder, "日常运维")
+            verify(item(a, "ssh-command-error").visible)
+            testBackend.failSave = false
+
+            a.removeCommandFolderByName("日常运维")
+            compare(a.commandFolders.length, 0)
+            compare(a.rootCommands.length, 1)
+            compare(a.rootCommands[0].command, "tail -f app.log")
+        }
+        function test_quickCommandFolderScrollsManyCommands() {
+            make()
+            const a = page.activeSession
+            a.beginCreateCommandFolder()
+            item(a, "ssh-folder-name").text = "批量"
+            mouseClick(item(a, "ssh-folder-save")); wait(30)
+            for (let i = 0; i < 10; ++i)
+                verify(a.addCustomCommand("命令" + i, "echo " + i, undefined, "批量"))
+            mouseClick(visualItem(a, "ssh-command-folder-0")); wait(100)
+            let list = null
+            tryVerify(() => {
+                list = visualItem(a.folderPopup.contentItem, "ssh-folder-command-list")
+                return list !== null && list.contentHeight > list.height
+            })
+            list.contentY = list.contentHeight - list.height; wait(30)
+            verify(list.contentY > 0)
+            compare(a.openFolderCommands.length, 10)
+        }
+        function test_quickCommandFolderDropTargetMovesCommand() {
+            make()
+            const a = page.activeSession
+            a.addCustomCommand("拖拽命令", "pwd")
+            a.addCustomCommand("独立命令", "ls")
+            a.beginCreateCommandFolder()
+            item(a, "ssh-folder-name").text = "网络"
+            mouseClick(item(a, "ssh-folder-save")); wait(100)
+            connected(a)
+            const run = visualItem(a, "ssh-command-run-0")
+            const folder = visualItem(a, "ssh-command-folder-0")
+            const other = visualItem(a, "ssh-command-run-1")
+            verify(run !== null)
+            verify(folder !== null)
+            verify(other !== null)
+            verify(run.visible && run.width > 0)
+            verify(folder.visible && folder.width > 0)
+            const runX = run.x, otherX = other.x
+            compare(Object.keys(a.commandFolderTargets).length, 1)
+            verify(folder.mapToItem(a, 0, 0).x < run.mapToItem(a, 0, 0).x)
+            const target = folder.mapToItem(run, folder.width / 2, folder.height / 2)
+            mousePress(run, run.width / 2, run.height / 2)
+            mouseMove(run, run.width / 2 + 30, run.height / 2, 60)
+            tryVerify(() => a.draggedCommandName === "拖拽命令")
+            compare(run.x, runX)
+            compare(other.x, otherX)
+            mouseMove(run, target.x, target.y, 80)
+            tryVerify(() => a.commandDropFolder === "网络")
+            mouseRelease(run, target.x, target.y); wait(50)
+            const command = a.customCommands.find(entry => entry.name === "拖拽命令")
+            compare(command.folder, "网络")
+            compare(a.rootCommands.length, 1)
+            compare(a.rootCommands[0].name, "独立命令")
+            verify(folder.mapToItem(a, 0, 0).x < visualItem(a, "ssh-command-run-0").mapToItem(a, 0, 0).x)
+            compare(a.terminal.sentCommands.length, 0)
+        }
+        function test_folderChipAndCommandHaveClearGap() {
+            make()
+            const a = page.activeSession
+            a.beginCreateCommandFolder()
+            item(a, "ssh-folder-name").text = "444"
+            mouseClick(item(a, "ssh-folder-save")); wait(30)
+            a.addCustomCommand("333", "echo 333"); wait(50)
+            const folder = visualItem(a, "ssh-command-folder-0")
+            const command = visualItem(a, "ssh-command-run-0")
+            const folderRight = folder.mapToItem(a, 0, 0).x + folder.width
+            const commandLeft = command.mapToItem(a, 0, 0).x
+            verify(commandLeft - folderRight >= 6)
+        }
+        function test_quickCommandReorderRootCommandsByPointerDrag() {
+            make()
+            const a = page.activeSession
+            a.addCustomCommand("一", "echo 1")
+            a.addCustomCommand("二", "echo 2")
+            a.addCustomCommand("三", "echo 3")
+            connected(a)
+            wait(50)
+            const first = visualItem(a, "ssh-command-run-0")
+            const third = visualItem(a, "ssh-command-run-2")
+            verify(first !== null && third !== null)
+            const firstX = first.x
+            const target = third.mapToItem(first, third.width * 0.8, third.height / 2)
+            mousePress(first, first.width / 2, first.height / 2)
+            mouseMove(first, first.width / 2 + 30, first.height / 2, 60)
+            tryVerify(() => a.draggedCommandName === "一")
+            compare(first.x, firstX)
+            mouseMove(first, target.x, target.y, 80)
+            tryVerify(() => a.commandReorderTarget === "三" && a.commandReorderAfter)
+            verify(visualItem(a, "ssh-command-reorder-indicator").visible)
+            mouseRelease(first, target.x, target.y); wait(50)
+            compare(a.rootCommands.length, 3)
+            compare(a.rootCommands[0].name, "二")
+            compare(a.rootCommands[1].name, "三")
+            compare(a.rootCommands[2].name, "一")
+            compare(a.terminal.sentCommands.length, 0)
+            const saved = JSON.parse(testBackend.settings["liveLog/customCommands"])
+            compare(saved.map(entry => entry.name).join(","), "二,三,一")
+        }
+        function test_quickCommandReorderFoldersByPointerDrag() {
+            make()
+            const a = page.activeSession
+            for (const name of ["甲", "乙", "丙"]) {
+                a.beginCreateCommandFolder()
+                item(a, "ssh-folder-name").text = name
+                mouseClick(item(a, "ssh-folder-save")); wait(20)
+            }
+            a.addCustomCommand("独立命令", "pwd")
+            wait(50)
+            const first = visualItem(a, "ssh-command-folder-0")
+            const last = visualItem(a, "ssh-command-folder-2")
+            verify(first !== null && last !== null)
+            const firstX = first.x
+            const target = last.mapToItem(first, last.width * 0.8, last.height / 2)
+            mousePress(first, first.width / 2, first.height / 2)
+            mouseMove(first, first.width / 2 + 30, first.height / 2, 60)
+            tryVerify(() => a.draggedFolderName === "甲")
+            compare(first.x, firstX)
+            verify(!a.folderPopup.visible)
+            mouseMove(first, target.x, target.y, 80)
+            tryVerify(() => a.commandReorderTarget === "丙" && a.commandReorderAfter)
+            verify(visualItem(a, "ssh-command-reorder-indicator").visible)
+            mouseRelease(first, target.x, target.y); wait(50)
+            compare(a.commandFolders.map(entry => entry.name).join(","), "乙,丙,甲")
+            compare(a.rootCommands.length, 1)
+            compare(a.terminal.sentCommands.length, 0)
+            const saved = JSON.parse(testBackend.settings["liveLog/customCommands"])
+            compare(saved.filter(entry => entry.type === "folder").map(entry => entry.name).join(","), "乙,丙,甲")
         }
         function test_switchingKeepsConnectionsLogsDraftsAndCommandsIndependent() {
             make()

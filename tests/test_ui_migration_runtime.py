@@ -49,6 +49,8 @@ def main():
                                and line.endswith("This plugin does not support raise()"))]
             if "--mqtt-checks" in arguments and "MQTT_UI_CHECK_PASSED" not in log:
                 errors.append("Packaged executable did not complete MQTT UI/backend checks")
+            if "--expect-color-mode" in arguments and "APPEARANCE_STARTUP_PASSED" not in log:
+                errors.append("Packaged executable did not complete appearance startup checks")
             if result.returncode or errors:
                 diagnostics = errors + [line for line in log.splitlines() if "UI_CHECK_" in line]
                 print(arguments, result.stdout, result.stderr, "\n".join(dict.fromkeys(diagnostics)), sep="\n")
@@ -75,6 +77,7 @@ def main():
         run("--migration-action", "cancel")
         assert (data_root / "LogAnalyQt.ini").read_bytes() == original and not (data_root / "settings.json").exists(), "cancel must not write or delete configuration"
         run("--migration-action", "confirm", "--ui-checks")
+        assert json.loads((data_root / "settings.json").read_text())["ui"]["next"]["appearance"]["colorMode"] == "dark", "real appearance card selection was not saved"
         assert not (data_root / "LogAnalyQt.ini").exists() and (data_root / "settings.json").exists(), "only confirmed, verified migration deletes old INI"
         def monitor_preferences():
             saved = json.loads((data_root / "settings.json").read_text())
@@ -105,6 +108,17 @@ def main():
         for phase in ["write", "read", "empty", "write-failure"]:
             run("--workspace-phase", phase)
         assert prompt_path.read_text(encoding="utf-8") == "User edited prompt survives app restart.\n", "restart overwrote the user's prompt"
+        appearance_settings = data_root / "settings.json"
+        for stored, expected in [("light", "light"), ("dark", "dark"), ("invalid", "dark")]:
+            saved = json.loads(appearance_settings.read_text())
+            saved.setdefault("ui", {}).setdefault("next", {}).setdefault("appearance", {})["colorMode"] = stored
+            appearance_settings.write_text(json.dumps(saved), encoding="utf-8")
+            run("--expect-color-mode", expected, "--page", "9")
+            assert json.loads(appearance_settings.read_text())["ui"]["next"]["appearance"]["colorMode"] == stored, "startup changed stored appearance preference"
+        saved["ui"]["next"]["appearance"].pop("colorMode")
+        appearance_settings.write_text(json.dumps(saved), encoding="utf-8")
+        run("--expect-color-mode", "dark")
+        print("PASS: saved light/dark appearance restores on startup; missing/invalid preference defaults to dark")
         if sys.platform == "darwin":
             assert not any((runtime / name).exists() for name in ("settings.json", "device-state.ini", "mqtt", "LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log")), "Mac app generated data beside its bundle"
         print("PASS: platform data directories, prompt extraction and restart preservation")

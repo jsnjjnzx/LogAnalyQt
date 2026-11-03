@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>通联工坊 · 晶透白设计稿</title>
+<style>
+@font-face{font-family:MDI;src:url('../icons.ttf')}
+:root{color-scheme:light;--bg:#edf1f5;--sidebar:#e8edf3;--surface:#f8fafc;--input:#fff;--text:#202b3a;--secondary:#596779;--border:#d5dde7;--accent:#086acb;--selected:#e1efff;--success:#217345;--alt:#f6f8fb;--button:#f7f9fc;--shadow:0 8px 26px #31476a08}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif}button,input,select{font:inherit;color:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button{border:1px solid var(--border);border-radius:8px;background:linear-gradient(var(--input),var(--button));height:36px;padding:0 13px;white-space:nowrap;box-shadow:0 1px 2px #243e6010}button:hover{border-color:#99b4d3}button.primary{background:#087af5;border-color:#087af5;color:white}button.flat{border:0;box-shadow:none;background:transparent}.icon{font-family:MDI;font-size:20px;line-height:1;font-weight:normal}.sub{color:var(--secondary)}.mono{font-family:Menlo,Consolas,monospace}h1,h2,p{margin:0}h2{font-size:22px;letter-spacing:.3px}input,select{height:36px;background:var(--input);border:1px solid var(--border);border-radius:8px;padding:0 11px;min-width:0}input::placeholder{color:#6d7c8e}
+.preview-bar{height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:var(--input);border-bottom:1px solid var(--border);font-size:12px;color:var(--secondary)}.preview-bar strong{color:var(--text);font-weight:600}.preview-bar .pill{background:var(--selected);color:var(--accent);padding:4px 9px;border-radius:5px;margin-left:10px}.preview-bar button{height:27px;font-size:12px;padding:0 11px;box-shadow:none}.preview-bar .views{display:flex;gap:6px;align-items:center}.preview-bar .views button.active{border-color:var(--accent);color:var(--accent);background:var(--selected)}
+.app{height:calc(100vh - 42px);min-height:760px;min-width:1100px;display:flex;background:radial-gradient(ellipse at 18% 0%,#f5f9ff 0%,transparent 62%),var(--bg)}.sidebar{width:226px;flex-shrink:0;background:linear-gradient(150deg,#eef3f9e8,#e6ecf3ee);border-right:1px solid var(--border);display:flex;flex-direction:column;position:relative}.traffic{display:flex;gap:8px;height:45px;align-items:center;padding-left:21px}.traffic i{width:12px;height:12px;border-radius:50%;background:#ff6058;border:1px solid #e54f48}.traffic i:nth-child(2){background:#ffbd2e;border-color:#dfaa25}.traffic i:nth-child(3){background:#28c840;border-color:#20ad33}.nav{padding:0 14px;flex:1}.group{font-size:11px;font-weight:600;color:#69778a;padding:18px 8px 8px;letter-spacing:.7px}.group.first{padding-top:3px}.nav button,.footer button{display:flex;align-items:center;gap:15px;width:100%;padding:0 12px;height:38px;margin:3px 0;border:0;background:transparent;box-shadow:none;text-align:left}.nav button .icon,.footer button .icon{color:#69788c;font-size:20px}.nav button.active,.footer button.active{background:#dceafd;color:#075cae}.nav button.active .icon,.footer button.active .icon{color:#086acb}.nav button:hover,.footer button:hover{background:#dfe7f1}.footer{padding:9px 18px 16px}.footer hr{height:1px;border:0;background:var(--border);margin:0 0 9px}.brand{border-top:1px solid var(--border);margin-top:9px;padding-top:14px;display:flex;align-items:baseline;justify-content:space-between;font-size:13px;font-weight:600}.brand small{font-size:10px;color:var(--secondary);font-weight:400}.collapse{position:absolute;right:-12px;top:47%;z-index:3;width:24px;height:42px;border-radius:12px;padding:0;background:var(--sidebar);font-size:16px;color:var(--secondary)}
+.workspace{min-width:0;flex:1;padding:18px;display:flex;flex-direction:column;gap:9px}.toolbar{display:flex;gap:10px;align-items:center}.toolbar .file{flex:1;min-width:70px}.toolbar .search{flex:1;width:120px}.toolbar .filter{flex:1;width:120px}.toolbar select{padding-right:24px}.toolbar .encoding{width:85px}.toolbar .protocol{width:147px}.toolbar .primary .icon{font-size:18px;margin-right:6px}.split{flex:1;min-height:0;display:grid;grid-template-columns:1.07fr 1fr;gap:10px}.panel{border:1px solid var(--border);border-radius:14px;background:#f8fafce8;box-shadow:var(--shadow);display:flex;flex-direction:column;min-width:0;overflow:hidden}.panel-head{height:53px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 14px;flex-shrink:0}.panel-head h1{font-size:15px;font-weight:600}.panel-head .actions{display:flex;gap:6px}.panel-head button{height:30px;font-size:12px;padding:0 9px}.editor{flex:1;min-height:0;background:var(--input);border:1px solid var(--border);border-radius:8px;margin:0 10px 10px;overflow:hidden;position:relative}.editor .log{display:flex;font-size:11px;line-height:24px;white-space:nowrap}.editor .number{width:35px;flex-shrink:0;text-align:right;padding-right:8px;background:var(--alt);color:#8b96a5;border-right:1px solid #e9edf3;user-select:none}.editor .line{padding:0 9px;overflow:hidden;text-overflow:clip}.editor .log.current{background:var(--selected);color:#075ba9}.editor .log.current .number{background:#d9eafe;color:#3979bc}.editor .timestamp{color:#8190a3}.editor .tx{color:var(--accent)}.editor .rx{color:var(--success)}.editor .muted{color:#79879a}.editor .blank{position:absolute;bottom:14px;left:48px;color:#8c98a8;font-size:11px}.frame{padding:0 12px 13px}.frame .label{font-size:12px;color:var(--secondary);margin-bottom:8px}.hexbox{height:132px;background:var(--input);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;line-height:23px;color:var(--accent);word-spacing:2px;overflow:hidden}.hexbox mark{background:#cee4ff;color:#045fba;border-radius:3px;padding:2px 0}.result-table{margin:0 10px;background:var(--input);flex:1;min-height:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:12px}.tr{display:grid;grid-template-columns:36% 22% 42%;min-height:29px;align-items:center;border-bottom:1px solid #e8edf3}.tr>span{padding:6px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.tr:nth-child(2n+3){background:var(--alt)}.tr.th{min-height:34px;background:#eef3f8;color:#506177;font-size:11px;font-weight:600}.tr.selected{background:var(--selected);color:#165d9f}.tr .data{font-family:Menlo,Consolas,monospace;font-size:11px}.tr .detail{color:var(--secondary)}.table-footer{height:34px;padding:10px 13px;color:var(--secondary);font-size:11px}.status{height:20px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--secondary)}.status .ready{color:var(--success)}.status .dot{display:inline-block;width:5px;height:5px;background:var(--success);border-radius:50%;margin-right:6px}
+.settings{display:none;flex:1;min-width:0;padding:18px}.settings-shell{display:flex;width:100%;height:100%;border:1px solid var(--border);background:#f8fafcb3;border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}.settings-nav{width:178px;flex-shrink:0;padding:10px;border-right:1px solid var(--border);background:#f3f6fa80}.settings-nav button{height:42px;width:100%;background:transparent;border:0;box-shadow:none;text-align:left;margin-bottom:8px}.settings-nav button.active{background:#e0eaf7;color:#075cae;font-weight:600}.settings-content{padding:28px 30px;flex:1;min-width:0;overflow:auto}.settings-inner{max-width:840px}.settings-content .intro{margin-top:9px;color:var(--secondary);font-size:13px}.appearance{display:flex;gap:16px;margin:24px 0 22px}.theme-option{display:block;position:relative;width:220px;height:167px;padding:12px;border-radius:12px;background:var(--input);text-align:left;box-shadow:none;border:1px solid var(--border)}.theme-option.selected{border:2px solid var(--accent);padding:11px;background:#f5faff}.mini{display:flex;height:103px;border:1px solid #d5dde7;border-radius:6px;overflow:hidden;background:#edf1f5}.mini-side{width:42px;background:#e2e9f2;padding:9px 6px;border-right:1px solid #d2dce8}.mini-side i{display:block;height:5px;border-radius:2px;background:#bac9db;margin:7px 0}.mini-side i:first-child{background:#7fb6f3}.mini-body{flex:1;padding:10px 7px}.mini-toolbar{height:7px;background:#d8e5f3;width:60%;border-radius:2px;margin-bottom:9px}.mini-split{height:63px;display:flex;gap:6px}.mini-split i{display:block;width:50%;border:1px solid #dce3ec;background:white;border-radius:3px}.theme-option .caption{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:13px;font-weight:500}.check{border-radius:50%;height:18px;width:18px;display:flex;align-items:center;justify-content:center;color:white;background:var(--accent);font-size:11px}.theme-option:not(.selected) .check{background:transparent;border:1px solid #b6c2d0;color:transparent}.dark-mini{background:#20252e;border-color:#414853}.dark-mini .mini-side{background:#272e3a;border-color:#414853}.dark-mini .mini-side i{background:#566171}.dark-mini .mini-side i:first-child{background:#75a9e6}.dark-mini .mini-toolbar{background:#45566d}.dark-mini .mini-split i{background:#303845;border-color:#465160}.setting-card{border:1px solid var(--border);background:var(--input);border-radius:12px;overflow:hidden}.setting-row{height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 20px}.setting-row .helper{font-size:11px;color:var(--secondary);margin-top:5px}.switch{width:43px;height:25px;padding:2px;background:#c2ccd9;border:0;border-radius:20px;box-shadow:none}.switch i{display:block;width:21px;height:21px;border-radius:50%;background:white;box-shadow:0 1px 3px #0002}.switch[aria-checked=true]{background:#087af5}.switch[aria-checked=true] i{margin-left:18px}.shortcuts-title{font-size:18px;margin:28px 0 14px}.shortcut{height:51px;display:flex;align-items:center;justify-content:space-between;margin:0 20px;border-bottom:1px solid #e5ebf1;font-size:13px}.shortcut:last-child{border:0}.keys{background:var(--button);border:1px solid var(--border);border-radius:6px;min-width:95px;text-align:center;padding:5px 12px;font-size:12px;color:var(--secondary)}
+body[data-page=settings] .workspace{display:none}body[data-page=settings] .settings{display:flex}
+body[data-theme=dark]{color-scheme:dark;--bg:#1d2025;--sidebar:#202329;--surface:#282c33;--input:#21252c;--text:#eceef2;--secondary:#a7adb7;--border:#3c424b;--accent:#80b9ff;--selected:#254568;--success:#7ed6a0;--alt:#252a32;--button:#31363e}body[data-theme=dark] .app{background:#1d2025}body[data-theme=dark] .sidebar{background:#202329}body[data-theme=dark] .panel,body[data-theme=dark] .settings-shell{background:#282c33}body[data-theme=dark] .settings-nav{background:#202329}body[data-theme=dark] .theme-option.selected{background:#29394d}body[data-theme=dark] .tr.th{background:#2c333e}body[data-theme=dark] .nav button.active,body[data-theme=dark] .footer button.active,body[data-theme=dark] .settings-nav button.active{background:#343e4d;color:#80b9ff}body[data-theme=dark] .shortcut,body[data-theme=dark] .tr{border-color:#373e49}body[data-opaque=true] .panel,body[data-opaque=true] .settings-shell{background:var(--surface)}
+@media(min-width:1400px){.sidebar{width:244px}.nav button,.footer button{height:41px}.group{padding-top:20px}.editor .log{font-size:13px;line-height:26px}.tr{font-size:13px;min-height:30px}}
+
+body[data-theme=light]{--bg:#fbfcfc;--sidebar:#fafbf9;--surface:#ffffff;--input:#ffffff;--text:#252b31;--secondary:#626d75;--border:#e2e7eb;--accent:#245b8d;--selected:#edf5fc;--success:#287451;--alt:#fbfcfd;--button:#ffffff;--shadow:0 2px 16px #1a355308}
+body[data-theme=light] .preview-bar{height:44px;border-bottom:1px solid #e8ecef;padding:0 24px;background:#fff;color:#687680;font-size:11px}
+body[data-theme=light] .preview-bar .pill{background:#f0f5f8;color:#245b8d;border:1px solid #e1e9ef;font-size:10px;padding:3px 8px}
+body[data-theme=light] .preview-bar button{height:26px;border:1px solid transparent;background:transparent;color:#687680}
+body[data-theme=light] .preview-bar .views button.active{color:#245b8d;background:#f3f7fa;border-color:#e1e9ef}
+body[data-theme=light] .app{height:calc(100vh - 44px);min-height:740px;background:radial-gradient(ellipse at 0% 0%,#dcecef90,transparent 28%),radial-gradient(ellipse at 0% 62%,#f3e7d980,transparent 24%),radial-gradient(ellipse at 8% 100%,#e8f0ef80,transparent 22%),#fff}
+body[data-theme=light] .sidebar{width:218px;background:#ffffff6b;backdrop-filter:blur(32px) saturate(1.2);border-right:1px solid #dbe3e778}
+body[data-theme=light] .traffic{height:49px;padding-left:23px;gap:8px}
+body[data-theme=light] .traffic i{width:11px;height:11px}
+body[data-theme=light] .nav{padding:0 14px}
+body[data-theme=light] .group{font-size:10px;letter-spacing:1px;font-weight:500;color:#899399;padding:17px 12px 8px}
+body[data-theme=light] .group.first{padding-top:0}
+body[data-theme=light] .nav button,body[data-theme=light] .footer button{background:transparent;position:relative;border:1px solid transparent;height:38px;padding:0 12px;font-size:14px;font-weight:450;gap:13px;border-radius:8px;margin:3px 0;color:#424c54}
+body[data-theme=light] .nav button .icon,body[data-theme=light] .footer button .icon{font-size:18px;color:#697b86}
+body[data-theme=light] .nav button.active,body[data-theme=light] .footer button.active{background:#ffffffcf;border:1px solid #ffffff;box-shadow:0 2px 7px #1b38500a;color:#254f72;font-weight:600}
+body[data-theme=light] .nav button.active:before,body[data-theme=light] .footer button.active:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:2px;border-radius:2px;background:#2b6391}
+body[data-theme=light] .nav button.active .icon,body[data-theme=light] .footer button.active .icon{color:#2b6391}
+body[data-theme=light] .nav button:hover,body[data-theme=light] .footer button:hover{background:#ffffffb0}
+body[data-theme=light] .footer{padding:9px 20px 18px}
+body[data-theme=light] .footer hr,body[data-theme=light] .brand{border-color:#d6dfe666}
+body[data-theme=light] .footer hr{background:#d6dfe666}
+body[data-theme=light] .brand{padding-top:16px;font-size:12px;color:#354751;letter-spacing:.5px}
+body[data-theme=light] .brand small{font-size:10px;color:#89959e;letter-spacing:0}
+body[data-theme=light] .collapse{background:#ffffffc0;border:1px solid #e1e7ec90;color:#8b99a3;box-shadow:none;width:21px;height:35px;right:-10px}
+body[data-theme=light] .workspace{padding:22px 24px 12px;gap:12px;background:#ffffffef}
+body[data-theme=light] button{background:#fff;box-shadow:none;border-color:#dfe5e9;border-radius:7px}
+body[data-theme=light] button:hover{background:#fafcfe;border-color:#bdcedc}
+body[data-theme=light] button.primary{background:#286497;border-color:#286497;color:#fff;box-shadow:0 2px 4px #1e4b7318;font-weight:500}
+body[data-theme=light] .toolbar{gap:9px}
+body[data-theme=light] .toolbar button,body[data-theme=light] .toolbar input,body[data-theme=light] .toolbar select{height:34px;font-size:13px}
+body[data-theme=light] .toolbar input,body[data-theme=light] .toolbar select{background:#fff;border-color:#e0e6ea;border-radius:7px}
+body[data-theme=light] .toolbar input::placeholder{color:#8a969f}
+body[data-theme=light] .toolbar .file{color:#46535d;background:#fcfdfd}
+body[data-theme=light] .toolbar .primary .icon{font-size:17px}
+body[data-theme=light] .toolbar .encoding{width:82px}
+body[data-theme=light] .toolbar .protocol{width:145px}
+body[data-theme=light] .split{gap:14px;margin-top:3px;grid-template-columns:1.06fr 1fr}
+body[data-theme=light] .panel{background:#fff;border:1px solid #e0e6ea;border-radius:11px;box-shadow:0 2px 14px #253e5005}
+body[data-theme=light] .panel-head{height:52px;padding:0 16px;border-bottom:1px solid #eef1f3}
+body[data-theme=light] .panel-head h1{font-size:15px;font-weight:600;letter-spacing:.4px}
+body[data-theme=light] .panel-head .actions{gap:2px}
+body[data-theme=light] .panel-head button{background:transparent;border-color:transparent;color:#6c7b86;height:28px;font-size:11px;padding:0 7px}
+body[data-theme=light] .panel-head button:hover{background:#f4f8fa;color:#245b8d}
+body[data-theme=light] .editor{margin:0;border:0;border-radius:0;background:#fff;padding-top:11px}
+body[data-theme=light] .editor .log{font-size:13px;line-height:26px}
+body[data-theme=light] .editor .number{width:39px;background:#fff;border:0;color:#b0bac2;padding-right:10px}
+body[data-theme=light] .editor .line{padding-left:11px;color:#3b4750}
+body[data-theme=light] .editor .timestamp{color:#89949c;font-size:11px}
+body[data-theme=light] .editor .tx{color:#34698f}
+body[data-theme=light] .editor .rx{color:#468267}
+body[data-theme=light] .editor .log.current{background:#edf5fc}
+body[data-theme=light] .editor .log.current .line{color:#255d8b}
+body[data-theme=light] .editor .log.current .number{background:#edf5fc;color:#7597b1}
+body[data-theme=light] .editor .blank{left:50px;bottom:18px;color:#a0abb3;font-size:10px}
+body[data-theme=light] .frame{padding:14px 15px 16px}
+body[data-theme=light] .frame .label{font-size:11px;color:#687680;letter-spacing:.3px;margin-bottom:9px}
+body[data-theme=light] .hexbox{height:110px;border:1px solid #edf0f2;border-radius:7px;background:#fcfdfe;color:#3c698b;font-size:12px;line-height:25px;padding:12px 13px;word-spacing:2px}
+body[data-theme=light] .hexbox mark{background:#e5f0fb;color:#245b8d;padding:2px 1px}
+body[data-theme=light] .result-table{margin:0 0 0;border:0;border-top:1px solid #e9eef1;border-radius:0;background:#fff}
+body[data-theme=light] .tr{min-height:30px;font-size:13px;border-color:#f0f3f5;grid-template-columns:36% 22% 42%}
+body[data-theme=light] .tr>span{padding:7px 12px}
+body[data-theme=light] .tr.th{background:#fcfdfd;color:#64727d;font-size:11px;font-weight:500;min-height:33px;letter-spacing:.2px}
+body[data-theme=light] .tr:nth-child(2n+3){background:#fff}
+body[data-theme=light] .tr .data{font-size:12px;color:#465665}
+body[data-theme=light] .tr .detail{color:#687680}
+body[data-theme=light] .tr.selected{background:#edf5fc;color:#245b8d}
+body[data-theme=light] .table-footer{border-top:1px solid #eff2f4;color:#9aa5ac;font-size:10px;height:33px;padding:10px 14px}
+body[data-theme=light] .status{color:#9ba6ae;font-size:10px;height:20px;padding:0 2px}
+body[data-theme=light] .status .ready{color:#6f9182}
+body[data-theme=light] .status .dot{height:4px;width:4px;background:#6f9182}
+body[data-theme=light] .settings{padding:22px 24px;background:#ffffffef}
+body[data-theme=light] .settings-shell{border:1px solid #e3e8eb;background:#fff;border-radius:11px;box-shadow:none}
+body[data-theme=light] .settings-nav{background:#fff;border-color:#edf0f2;padding:12px;width:178px}
+body[data-theme=light] .settings-nav button{font-size:13px;color:#6b7781}
+body[data-theme=light] .settings-nav button.active{background:#f1f6fa;color:#245b8d;font-weight:600}
+body[data-theme=light] .settings-content{padding:30px 34px}
+body[data-theme=light] .settings-content h2{font-size:21px;font-weight:600;letter-spacing:.4px}
+body[data-theme=light] .settings-content .intro{color:#89939b;font-size:12px;margin-top:10px}
+body[data-theme=light] .appearance{margin:26px 0 24px;gap:18px}
+body[data-theme=light] .theme-option{background:#fff;border:1px solid #e1e7eb;border-radius:11px}
+body[data-theme=light] .theme-option.selected{border:1.5px solid #3e7198;background:#fff;box-shadow:0 2px 10px #32618c08}
+body[data-theme=light] .mini{background:#fff;border-color:#e5e9ec}
+body[data-theme=light] .mini-side{background:linear-gradient(145deg,#eef5f5,#faf4eb);border-color:#e7ecee}
+body[data-theme=light] .mini-side i{background:#c6d3d6}
+body[data-theme=light] .mini-side i:first-child{background:#81a6c4}
+body[data-theme=light] .mini-toolbar{background:#e5edf2}
+body[data-theme=light] .mini-split i{border-color:#e8edf0}
+body[data-theme=light] .dark-mini{background:#20252e;border-color:#414853}
+body[data-theme=light] .dark-mini .mini-side{background:#272e3a;border-color:#414853}
+body[data-theme=light] .dark-mini .mini-side i{background:#566171}
+body[data-theme=light] .dark-mini .mini-side i:first-child{background:#75a9e6}
+body[data-theme=light] .dark-mini .mini-toolbar{background:#45566d}
+body[data-theme=light] .dark-mini .mini-split i{background:#303845;border-color:#465160}
+body[data-theme=light] .setting-card{background:#fff;border-color:#e5eaed;border-radius:10px}
+body[data-theme=light] .setting-row{height:72px}
+body[data-theme=light] .setting-row .helper{color:#9aa3ab}
+body[data-theme=light] .shortcuts-title{font-size:17px!important;margin-top:32px}
+body[data-theme=light] .shortcut{border-color:#f0f3f5;height:52px}
+body[data-theme=light] .keys{background:#fafbfc;border:1px solid #edf0f2;color:#7d8b97;font-size:11px;padding:4px 10px}
+body[data-theme=light] .switch{background:#d4dce2;border:0}
+body[data-theme=light] .switch[aria-checked=true]{background:#2b679a}
+
+@media(max-height:850px){body[data-theme=light] .nav button,body[data-theme=light] .footer button{height:33px;margin:2px 0}body[data-theme=light] .group{padding-top:12px;padding-bottom:6px}body[data-theme=light] .traffic{height:42px}}
+</style>
+<body data-page="main" data-theme="light">
+<div class="preview-bar"><div><strong>通联工坊 · 浅色外观重设计</strong><span class="pill">晶透白</span><span style="margin-left:12px">视觉稿 · 玻璃效果为模拟</span></div><div class="views"><button data-view="main" class="active">① 主界面</button><button data-view="settings">② 设置页</button></div></div>
+<div class="app">
+<aside class="sidebar"><div class="traffic"><i></i><i></i><i></i></div><nav class="nav">
+<div class="group first">分析工作台</div>
+<button data-nav="main" class="active"><span class="icon">&#xF09EE;</span>日志解析</button>
+<button><span class="icon">&#xF0CB6;</span>手动解析</button><button><span class="icon">&#xF1492;</span>差异对比</button><button><span class="icon">&#xF0BCC;</span>多窗口解析</button><button><span class="icon">&#xF09FE;</span>智能组帧</button><button><span class="icon">&#xF167A;</span>AI 助手</button>
+<div class="group">日志工具</div><button><span class="icon">&#xF0430;</span>实时监控</button><button><span class="icon">&#xF0219;</span>日志合并</button>
+<div class="group">通信调试</div><button><span class="icon">&#xF0318;</span>MQTT 调试</button>
+<div class="group">资源管理</div><button><span class="icon">&#xF01BC;</span>预置报文</button><button><span class="icon">&#xF04E6;</span>协议同步</button>
+</nav><footer class="footer"><hr><button data-nav="settings"><span class="icon">&#xF08BB;</span>系统设置</button><button><span class="icon">&#xF0625;</span>帮助与更新</button><div class="brand">通联工坊<small>v5.3.0</small></div></footer><button class="collapse" aria-label="预览中的导航收起示意">‹</button></aside>
+<main class="workspace">
+<div class="toolbar"><button class="primary"><span class="icon">&#xF0770;</span>打开日志</button><button>文件夹</button><select class="file" aria-label="示例文件"><option>通信调试_示例.log</option></select><button>刷新</button><select class="encoding" aria-label="编码"><option>auto</option></select><select class="protocol" aria-label="规约"><option>DL/T 698</option></select><button>全局预览</button></div>
+<div class="toolbar"><input class="search" placeholder="搜索日志内容" aria-label="搜索日志内容"><button>上一处</button><button>下一处</button><input class="filter" placeholder="正则过滤" aria-label="正则过滤"><button>过滤</button></div>
+<div class="split">
+<section class="panel"><div class="panel-head"><h1>日志内容</h1><div class="actions"><button>清空并粘贴</button><button>复制全文</button></div></div><div class="editor mono">
+<div class="log"><span class="number">1</span><span class="line"><span class="timestamp">10:24:16.182</span>  [INFO]  已加载示例日志</span></div>
+<div class="log"><span class="number">2</span><span class="line"><span class="timestamp">10:24:16.204</span>  <span class="tx">[TX]</span>  发送读取请求</span></div>
+<div class="log current"><span class="number">3</span><span class="line">68 17 00 43 05 01 00 00 00 00 00 01</span></div>
+<div class="log current"><span class="number">4</span><span class="line">10 00 05 01 01 40 00 02 00 00 16</span></div>
+<div class="log"><span class="number">5</span><span class="line"><span class="timestamp">10:24:16.306</span>  <span class="rx">[RX]</span>  收到应答</span></div>
+<div class="log"><span class="number">6</span><span class="line">68 1B 00 C3 05 01 00 00 00 00 00 01</span></div>
+<div class="log"><span class="number">7</span><span class="line">10 00 85 01 01 40 00 02 00 01 00 16</span></div>
+<div class="log"><span class="number">8</span><span class="line"><span class="timestamp">10:24:17.002</span>  [INFO]  开始下一轮读取</span></div>
+<div class="log"><span class="number">9</span><span class="line"><span class="timestamp">10:24:17.020</span>  <span class="tx">[TX]</span>  发送读取请求</span></div>
+<div class="log"><span class="number">10</span><span class="line">68 17 00 43 05 01 00 00 00 00 00 01</span></div>
+<div class="log"><span class="number">11</span><span class="line">10 00 05 01 02 40 00 02 00 00 16</span></div>
+<div class="log"><span class="number">12</span><span class="line"><span class="timestamp">10:24:17.105</span>  <span class="rx">[RX]</span>  收到应答</span></div>
+<div class="log"><span class="number">13</span><span class="line">68 1B 00 C3 05 01 00 00 00 00 00 01</span></div>
+<div class="log"><span class="number">14</span><span class="line">10 00 85 01 02 40 00 02 00 01 00 16</span></div>
+<div class="log"><span class="number">15</span><span class="line"><span class="timestamp">10:24:18.001</span>  [INFO]  本轮读取结束</span></div>
+<div class="log"><span class="number">16</span><span class="line muted"> </span></div><div class="blank">双击报文查看解析结果</div>
+</div></section>
+<section class="panel"><div class="panel-head"><h1>解析结果</h1><span class="sub" style="font-size:11px">DL/T 698</span></div><div class="frame"><div class="label">当前选中报文</div><div class="hexbox mono">68 17 00 43 05 01 00 00 00 00 00 01<br>10 00 05 01 01 <mark>40 00 02 00</mark> 00 16</div></div>
+<div class="result-table"><div class="tr th"><span>字段 / 结构</span><span>数据</span><span>说明 / 解析结果</span></div>
+<div class="tr"><span>⌄ DL/T 698 帧</span><span class="data">68 … 16</span><span>读取请求 <span class="detail">· 示例</span></span></div>
+<div class="tr"><span>　├ 起始符</span><span class="data">68</span><span class="detail">帧起始标志</span></div>
+<div class="tr"><span>　├ 长度域</span><span class="data">17 00</span><span class="detail">长度字段</span></div>
+<div class="tr"><span>　├ 控制域</span><span class="data">43</span><span>主站发送</span></div>
+<div class="tr"><span>　⌄ 地址域</span><span class="data">05 01 …</span><span class="detail">通信地址</span></div>
+<div class="tr"><span>　　├ 服务器地址</span><span class="data">01 00 …</span><span>000000000001</span></div>
+<div class="tr"><span>　　└ 客户机地址</span><span class="data">10</span><span class="detail">客户端标识</span></div>
+<div class="tr"><span>　⌄ 应用数据</span><span class="data">05 01 …</span><span>GET 请求</span></div>
+<div class="tr"><span>　　├ 服务类型</span><span class="data">05 01</span><span>读取一个对象属性</span></div>
+<div class="tr"><span>　　├ PIID</span><span class="data">01</span><span class="detail">服务序号 1</span></div>
+<div class="tr selected"><span>　　├ OAD</span><span class="data">40 00 02 00</span><span>日期时间 <span class="detail">· 属性 2</span></span></div>
+<div class="tr"><span>　　└ 时间标签</span><span class="data">00</span><span class="detail">无时间标签</span></div>
+<div class="tr"><span>　└ 结束符</span><span class="data">16</span><span class="detail">帧结束标志</span></div></div><div class="table-footer">点击字段定位原始字节　·　右键复制</div></section>
+</div><div class="status"><span class="ready"><span class="dot"></span>就绪</span><span>UTF-8　 ·　 第 3 行　 ·　 示例内容</span></div>
+</main>
+<main class="settings"><div class="settings-shell"><nav class="settings-nav"><button class="active">外观与快捷键</button><button>大模型接入</button><button>个人配置</button></nav><div class="settings-content"><div class="settings-inner"><h2>界面外观</h2><p class="intro">选择适合当前环境的外观，即时应用于所有窗口。</p>
+<div class="appearance"><button class="theme-option selected" data-mode="light" aria-pressed="true"><div class="mini"><div class="mini-side"><i></i><i></i><i></i><i></i></div><div class="mini-body"><div class="mini-toolbar"></div><div class="mini-split"><i></i><i></i></div></div></div><span class="caption">浅色<span class="check">✓</span></span></button><button class="theme-option" data-mode="dark" aria-pressed="false"><div class="mini dark-mini"><div class="mini-side"><i></i><i></i><i></i><i></i></div><div class="mini-body"><div class="mini-toolbar"></div><div class="mini-split"><i></i><i></i></div></div></div><span class="caption">深色<span class="check">✓</span></span></button></div>
+<div class="setting-card"><div class="setting-row"><div>减少透明度<p class="helper">使用更实的界面背景，提高内容辨识度。</p></div><button class="switch" role="switch" aria-checked="false" aria-label="减少透明度"><i></i></button></div></div>
+<h2 class="shortcuts-title">快捷键</h2><div class="setting-card"><div class="shortcut"><span>打开日志</span><span class="keys">⌘ O</span></div><div class="shortcut"><span>搜索日志</span><span class="keys">⌘ F</span></div><div class="shortcut"><span>下一处 / 上一处</span><span class="keys">F3 / ⇧ F3</span></div><div class="shortcut"><span>智能组帧</span><span class="keys">⌃ ⇧ F</span></div><div class="shortcut"><span>协议同步</span><span class="keys">⌃ ⇧ S</span></div></div>
+</div></div></div></main>
+</div>
+<script>
+function showPage(page){
+  document.body.dataset.page=page;
+  document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===page));
+  document.querySelectorAll('[data-nav]').forEach(button=>button.classList.toggle('active',button.dataset.nav===page));
+}
+document.querySelectorAll('[data-view],[data-nav]').forEach(button=>button.addEventListener('click',()=>showPage(button.dataset.view||button.dataset.nav)));
+document.querySelectorAll('[data-mode]').forEach(button=>button.addEventListener('click',()=>{
+  document.body.dataset.theme=button.dataset.mode;
+  document.querySelector('.pill').textContent=button.dataset.mode==='light'?'晶透白':'深色对照';
+  document.querySelectorAll('[data-mode]').forEach(option=>{const selected=option===button;option.classList.toggle('selected',selected);option.setAttribute('aria-pressed',String(selected));});
+}));
+document.querySelector('.switch').addEventListener('click',function(){const next=this.getAttribute('aria-checked')!=='true';this.setAttribute('aria-checked',String(next));document.body.dataset.opaque=String(next);});
+showPage(location.hash==='#settings'?'settings':'main');
+console.assert(document.querySelectorAll('[data-mode]').length===2,'Exactly two appearance options');
+console.assert(document.querySelectorAll('.tr.th span').length===3,'Keep three parse columns');
+</script>
+</body>
+</html>

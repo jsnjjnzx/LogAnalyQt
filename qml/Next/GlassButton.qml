@@ -9,9 +9,10 @@ Basic.Button {
     hoverEnabled: true
     opacity: enabled ? 1 : 0.45
     background: ControlSurface {
+        flat: control.palette.window.hslLightness > 0.85
         implicitWidth: 80
         implicitHeight: 36
-        baseColor: control.highlighted || control.checked ? control.palette.highlight : control.down ? Qt.darker(control.palette.button, 1.15) : control.palette.button
+        baseColor: control.highlighted || control.checked ? control.palette.highlight : control.down ? Qt.darker(control.palette.button, flat ? 1.03 : 1.15) : control.palette.button
         edgeColor: control.highlighted || control.checked ? Qt.lighter(control.palette.highlight, 1.15) : control.palette.mid
         focusColor: control.palette.highlight
         focused: control.visualFocus

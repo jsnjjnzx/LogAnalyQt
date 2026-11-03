@@ -30,7 +30,7 @@ Pane {
     palette.brightText: "white"
     palette.highlightedText: "white"
     background: Rectangle {
-        radius: 14; color: page.color
+        radius: page.theme && page.theme.lightMode ? 11 : 14; color: page.color
         border.color: page.theme ? page.theme.groupBorder : "#3c424b"
         Rectangle { x: 14; y: 1; width: Math.max(0, parent.width - 28); height: 1; color: page.theme ? page.theme.highlightEdge : "#18ffffff" }
     }

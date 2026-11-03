@@ -60,11 +60,11 @@ Next.GlassMenu {
 
     SessionOption {
         objectName: "ssh-pause"; menu: root; text: "自动跟随"
-        checked: root.page.autoScroll
+        checked: root.page.autoFollowEnabled
         onToggled: root.page.toggleFollowing()
         onKeyboardToggleRequested: root.page.toggleFollowing()
         ToolTip.visible: hovered
-        ToolTip.text: "只控制自动滚动；取消后仍接收日志。重新勾选恢复跟随，并监测新的输出。"
+        ToolTip.text: "只控制自动滚动；取消后仍接收日志。回车临时回到最新输出，上翻暂停，不改变勾选状态。重新勾选恢复持续跟随。"
     }
     SessionOption {
         objectName: "ssh-stop-reception"; menu: root; text: "停止刷屏"

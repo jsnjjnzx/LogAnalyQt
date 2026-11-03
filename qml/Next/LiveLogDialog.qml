@@ -37,7 +37,11 @@ GlassPage {
     onMonitorConfigurationChanged: { monitorError = ""; configureMonitorRules(); }
     function configureMonitorRules() {
         if (!sshTerminal) return;
-        if (!sshTerminal.setMonitorRules(selectedMonitorRules, monitorEnabled && autoScroll && monitorError === "")) {
+        const rules = autoScroll ? selectedMonitorRules : selectedMonitorRules
+            .filter(function(rule) { return rule.pauseOnMatch !== false; })
+            .concat(selectedMonitorRules.filter(function(rule) { return rule.pauseOnMatch === false; }))
+            .map(function(rule) { return Object.assign({}, rule, {pauseOnMatch: false}); });
+        if (!sshTerminal.setMonitorRules(rules, monitorEnabled && monitorError === "")) {
             sshTerminal.setMonitorRules([], false);
             monitorError = "规则无效，请在规则库中检查表达式。";
         }
@@ -46,7 +50,7 @@ GlassPage {
         monitorRuleIds = checked ? monitorRuleIds.indexOf(id) >= 0 ? monitorRuleIds : monitorRuleIds.concat([id])
             : monitorRuleIds.filter(function(value) { return value !== id; });
     }
-    function toggleFollowing() { if (autoScroll) autoScroll = false; else resumeFollowing(); }
+    function toggleFollowing() { autoFollowEnabled = !autoFollowEnabled; }
     function clearTerminal() { monitorHit = null; monitorNotice = null; sshTerminal.clearBuffer(); }
     function showMatchDetails() { if (monitorEvent) matchDetails.open(); }
     function openRulePicker() {
@@ -214,6 +218,8 @@ GlassPage {
     }
 
 
+    property bool autoFollowEnabled: true
+    onAutoFollowEnabledChanged: { if (autoFollowEnabled) resumeFollowing(); else autoScroll = false; }
     property bool autoScroll: true
     property bool copyOnSelect: false
     property bool wrapLogLines: false
@@ -244,10 +250,35 @@ GlassPage {
     property int selectedLineIndex: -1
     property var localCustomCommands: []
     property var customCommands: sharedCommands ? sharedCommands.commands : localCustomCommands
+    readonly property var rootCommands: customCommands.filter(function(entry) {
+        return !!entry && entry.type !== "folder" && !entry.folder;
+    })
+    readonly property var commandFolders: customCommands.filter(function(entry) {
+        return !!entry && entry.type === "folder";
+    })
+    readonly property var openFolderCommands: customCommands.filter(function(entry) {
+        return !!entry && entry.type !== "folder" && entry.folder === openCommandFolder;
+    })
     property bool customCommandsLoaded: false
     property string customCmdPendingDeleteName: ""
+    property string customCmdPendingDeleteFolder: ""
     property string customCmdEditingName: ""
+    property string customCmdFolder: ""
+    property string openCommandFolder: ""
+    property var folderPopupAnchor: null
+    property var commandFolderTargets: ({})
+    property var commandOrderTargets: ({})
+    property string draggedCommandName: ""
+    property string draggedFolderName: ""
+    property string commandDropFolder: ""
+    property string commandReorderTarget: ""
+    property bool commandReorderAfter: false
+    property real commandReorderX: 0
+    property real commandReorderY: 0
+    property bool folderEditorOpen: false
+    property string folderEditingName: ""
     property string customCmdError: ""
+    readonly property alias folderPopup: commandFolderPopup
     property bool exportCurrentLog: false
     property url pendingLogFile: ""
     property int logFlushIntervalSeconds: 1
@@ -588,13 +619,17 @@ GlassPage {
             return;
         }
         if (viewAnchorId < 0) return;
+        logListView.forceLayout();
         const row = sshTerminal.indexForLineId(viewAnchorId);
         if (row < 0) {
             logListView.positionViewAtBeginning();
             statusHint.text = "回看的旧日志已超出缓存范围，已定位到最早保留内容";
         } else {
-            logListView.positionViewAtIndex(row, ListView.Beginning);
-            const item = logListView.itemAtIndex(row);
+            let item = logListView.itemAtIndex(row);
+            if (!item) {
+                logListView.positionViewAtIndex(row, ListView.Beginning);
+                item = logListView.itemAtIndex(row);
+            }
             if (item) logListView.contentY = item.y - viewAnchorOffset;
         }
     }
@@ -865,12 +900,15 @@ GlassPage {
 
     function editCustomCommand(name) {
         for (const entry of customCommands) {
-            if (entry.name !== name) continue;
+            if (entry.type === "folder" || entry.name !== name) continue;
             customCmdEditingName = name;
+            customCmdFolder = entry.folder || "";
             customCmdNameInput.text = entry.name;
             customCmdContentInput.text = entry.command;
             customCmdError = "";
+            folderEditorOpen = false;
             commandManagementExpanded = true;
+            commandFolderPopup.close();
             customCmdContentInput.forceActiveFocus();
             return;
         }
@@ -879,48 +917,73 @@ GlassPage {
     function cancelCustomCommandEdit() {
         commandManagementExpanded = false;
         customCmdEditingName = "";
+        customCmdFolder = "";
         customCmdNameInput.text = "";
         customCmdContentInput.text = "";
         customCmdError = "";
     }
 
+    function beginAddCustomCommand(folderName) {
+        cancelCustomCommandEdit();
+        folderEditorOpen = false;
+        customCmdFolder = folderName && folderExists(folderName) ? folderName : "";
+        commandManagementExpanded = true;
+        commandFolderPopup.close();
+        customCmdNameInput.forceActiveFocus();
+    }
+
     function submitCustomCommand() {
-        if (!addCustomCommand(customCmdNameInput.text, customCmdContentInput.text, customCmdEditingName))
+        if (!addCustomCommand(customCmdNameInput.text, customCmdContentInput.text, customCmdEditingName, customCmdFolder))
             return;
         cancelCustomCommandEdit();
         terminalCapture.forceActiveFocus();
     }
 
-    function addCustomCommand(name, command, originalName) {
+    function folderExists(name) {
+        return commandFolders.some(function(entry) { return entry.name === name; });
+    }
+
+    function commitCustomCommands(list) {
+        if (!saveCustomCommands(list)) return false;
+        if (sharedCommands) sharedCommands.commands = list;
+        else localCustomCommands = list;
+        return true;
+    }
+
+    function addCustomCommand(name, command, originalName, folderName) {
         var trimmedName = name ? name.trim() : "";
         var trimmedCommand = command ? command.trim() : "";
+        var targetFolder = folderName ? String(folderName).trim() : "";
         if (trimmedName === "" || trimmedCommand === "") {
             customCmdError = "请填写命令名称和内容。";
+            return false;
+        }
+        if (targetFolder !== "" && !folderExists(targetFolder)) {
+            customCmdError = "目标文件夹已不存在，请重新选择。";
             return false;
         }
 
         var list = customCommands.slice();
         var targetIndex = -1;
         for (var i = 0; i < list.length; i++) {
-            if (originalName && list[i].name === trimmedName && list[i].name !== originalName) {
+            if (list[i].name === trimmedName && list[i].name !== originalName) {
                 customCmdError = "该名称已存在，请使用其他名称。";
                 return false;
             }
-            if (list[i].name === (originalName || trimmedName)) targetIndex = i;
+            if (list[i].type !== "folder" && list[i].name === (originalName || trimmedName)) targetIndex = i;
         }
         if (originalName && targetIndex < 0) {
             customCmdError = "原命令已被删除或重命名，请重新选择要编辑的命令。";
             return false;
         }
         var entry = {"name": trimmedName, "command": trimmedCommand};
+        if (targetFolder !== "") entry.folder = targetFolder;
         if (targetIndex >= 0) list[targetIndex] = entry;
         else list.push(entry);
-        if (!saveCustomCommands(list)) {
+        if (!commitCustomCommands(list)) {
             customCmdError = "快捷命令保存失败，请重试。";
             return false;
         }
-        if (sharedCommands) sharedCommands.commands = list;
-        else localCustomCommands = list;
         customCmdError = "";
         return true;
     }
@@ -932,12 +995,304 @@ GlassPage {
 
         var list = [];
         for (var i = 0; i < customCommands.length; i++) {
-            if (customCommands[i].name !== targetName)
+            if (customCommands[i].type === "folder" || customCommands[i].name !== targetName)
                 list.push(customCommands[i]);
         }
-        if (sharedCommands) sharedCommands.commands = list;
-        else localCustomCommands = list;
-        saveCustomCommands();
+        if (!commitCustomCommands(list)) {
+            customCmdError = "快捷命令保存失败，请重试。";
+            commandManagementExpanded = true;
+        }
+    }
+
+    function moveCustomCommandToFolder(name, folderName) {
+        var targetFolder = folderName ? String(folderName).trim() : "";
+        if (targetFolder !== "" && !folderExists(targetFolder)) return false;
+        var list = customCommands.slice();
+        var targetIndex = -1;
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].type !== "folder" && list[i].name === name) { targetIndex = i; break; }
+        }
+        if (targetIndex < 0) return false;
+        if ((list[targetIndex].folder || "") === targetFolder) return true;
+        var entry = {"name": list[targetIndex].name, "command": list[targetIndex].command};
+        if (targetFolder !== "") entry.folder = targetFolder;
+        list[targetIndex] = entry;
+        if (!commitCustomCommands(list)) {
+            customCmdError = "快捷命令保存失败，请重试。";
+            return false;
+        }
+        customCmdError = "";
+        return true;
+    }
+
+    function registerCommandFolderTarget(name, item) {
+        var targets = Object.assign({}, commandFolderTargets);
+        targets[name] = item;
+        commandFolderTargets = targets;
+    }
+
+    function unregisterCommandFolderTarget(name) {
+        if (!commandFolderTargets[name]) return;
+        var targets = Object.assign({}, commandFolderTargets);
+        delete targets[name];
+        commandFolderTargets = targets;
+    }
+
+    function registerCommandOrderTarget(name, item) {
+        var targets = Object.assign({}, commandOrderTargets);
+        targets[name] = item;
+        commandOrderTargets = targets;
+    }
+
+    function unregisterCommandOrderTarget(name) {
+        if (!commandOrderTargets[name]) return;
+        var targets = Object.assign({}, commandOrderTargets);
+        delete targets[name];
+        commandOrderTargets = targets;
+    }
+
+    function beginCommandDrag(name, sceneX, sceneY) {
+        draggedCommandName = name;
+        commandDropFolder = "";
+        commandReorderTarget = "";
+        updateCommandDrag(sceneX, sceneY);
+    }
+
+    function updateCommandDrag(sceneX, sceneY) {
+        var foundFolder = "";
+        for (const name of Object.keys(commandFolderTargets)) {
+            const target = commandFolderTargets[name];
+            if (!target || !target.visible) continue;
+            const point = target.mapToItem(null, 0, 0);
+            if (sceneX >= point.x && sceneX <= point.x + target.width
+                    && sceneY >= point.y && sceneY <= point.y + target.height) {
+                foundFolder = name;
+                break;
+            }
+        }
+        commandDropFolder = foundFolder;
+        if (foundFolder !== "") {
+            commandReorderTarget = "";
+            return;
+        }
+
+        updateReorderHint(commandOrderTargets, draggedCommandName, sceneX, sceneY);
+    }
+
+    function updateReorderHint(targets, draggedName, sceneX, sceneY) {
+        var bestName = "", bestDistance = Number.MAX_VALUE, bestAfter = false, bestPoint = null, bestWidth = 0;
+        for (const name of Object.keys(targets)) {
+            if (name === draggedName) continue;
+            const target = targets[name];
+            if (!target || !target.visible) continue;
+            const point = target.mapToItem(null, 0, 0);
+            if (sceneY < point.y - 8 || sceneY > point.y + target.height + 8
+                    || sceneX < point.x - 8 || sceneX > point.x + target.width + 8) continue;
+            const distance = Math.abs(sceneX - (point.x + target.width / 2));
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestName = name;
+                bestAfter = sceneX > point.x + target.width / 2;
+                bestPoint = point;
+                bestWidth = target.width;
+            }
+        }
+        commandReorderTarget = bestName;
+        commandReorderAfter = bestAfter;
+        if (bestName !== "") {
+            const origin = liveLogDialog.mapToItem(null, 0, 0);
+            commandReorderX = (bestAfter ? bestPoint.x + bestWidth + 4 : bestPoint.x - 4) - origin.x;
+            commandReorderY = bestPoint.y - origin.y;
+        }
+    }
+
+    function finishCommandDrag() {
+        const name = draggedCommandName;
+        const folder = commandDropFolder;
+        const target = commandReorderTarget;
+        const after = commandReorderAfter;
+        draggedCommandName = "";
+        commandDropFolder = "";
+        commandReorderTarget = "";
+        if (name !== "") {
+            if (folder !== "") moveCustomCommandToFolder(name, folder);
+            else if (target !== "") reorderRootCommand(name, target, after);
+        }
+    }
+
+    function reorderRootCommand(name, targetName, after) {
+        if (name === targetName) return true;
+        var list = customCommands.slice();
+        var from = -1, targetIndex = -1;
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].type === "folder" || list[i].folder) continue;
+            if (list[i].name === name) from = i;
+            if (list[i].name === targetName) targetIndex = i;
+        }
+        if (from < 0 || targetIndex < 0) return false;
+        const entry = list.splice(from, 1)[0];
+        targetIndex = list.findIndex(function(item) {
+            return item.type !== "folder" && !item.folder && item.name === targetName;
+        });
+        if (targetIndex < 0) return false;
+        list.splice(targetIndex + (after ? 1 : 0), 0, entry);
+        if (!commitCustomCommands(list)) {
+            customCmdError = "快捷命令排序保存失败，请重试。";
+            return false;
+        }
+        customCmdError = "";
+        return true;
+    }
+
+    function beginFolderDrag(name, sceneX, sceneY) {
+        draggedFolderName = name;
+        commandDropFolder = "";
+        commandReorderTarget = "";
+        commandFolderPopup.close();
+        updateFolderDrag(sceneX, sceneY);
+    }
+
+    function updateFolderDrag(sceneX, sceneY) {
+        commandDropFolder = "";
+        updateReorderHint(commandFolderTargets, draggedFolderName, sceneX, sceneY);
+    }
+
+    function finishFolderDrag() {
+        const name = draggedFolderName;
+        const target = commandReorderTarget;
+        const after = commandReorderAfter;
+        draggedFolderName = "";
+        commandReorderTarget = "";
+        if (name !== "" && target !== "") reorderCommandFolder(name, target, after);
+    }
+
+    function reorderCommandFolder(name, targetName, after) {
+        if (name === targetName) return true;
+        var list = customCommands.slice();
+        var from = list.findIndex(function(entry) { return entry.type === "folder" && entry.name === name; });
+        if (from < 0) return false;
+        const marker = list.splice(from, 1)[0];
+        const targetIndex = list.findIndex(function(entry) {
+            return entry.type === "folder" && entry.name === targetName;
+        });
+        if (targetIndex < 0) return false;
+        list.splice(targetIndex + (after ? 1 : 0), 0, marker);
+        if (!commitCustomCommands(list)) {
+            customCmdError = "文件夹排序保存失败，请重试。";
+            return false;
+        }
+        customCmdError = "";
+        return true;
+    }
+
+    function beginCreateCommandFolder() {
+        cancelCustomCommandEdit();
+        folderEditorOpen = true;
+        folderEditingName = "";
+        folderNameInput.text = "";
+        customCmdError = "";
+        commandFolderPopup.close();
+        folderNameInput.forceActiveFocus();
+    }
+
+    function editCommandFolder(name) {
+        if (!folderExists(name)) return;
+        cancelCustomCommandEdit();
+        folderEditorOpen = true;
+        folderEditingName = name;
+        folderNameInput.text = name;
+        customCmdError = "";
+        commandFolderPopup.close();
+        folderNameInput.forceActiveFocus();
+    }
+
+    function cancelCommandFolderEdit() {
+        folderEditorOpen = false;
+        folderEditingName = "";
+        folderNameInput.text = "";
+        customCmdError = "";
+    }
+
+    function submitCommandFolder() {
+        var trimmedName = folderNameInput.text ? folderNameInput.text.trim() : "";
+        if (trimmedName === "") {
+            customCmdError = "请填写文件夹名称。";
+            return;
+        }
+        var list = customCommands.slice();
+        var targetIndex = -1;
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].name === trimmedName && list[i].name !== folderEditingName) {
+                customCmdError = "该名称已存在，请使用其他名称。";
+                return;
+            }
+            if (list[i].type === "folder" && list[i].name === folderEditingName) targetIndex = i;
+        }
+        if (folderEditingName !== "" && targetIndex < 0) {
+            customCmdError = "原文件夹已被删除，请重新操作。";
+            return;
+        }
+        if (targetIndex < 0) list.push({"type": "folder", "name": trimmedName});
+        else {
+            list[targetIndex] = {"type": "folder", "name": trimmedName};
+            if (trimmedName !== folderEditingName) {
+                list = list.map(function(entry) {
+                    if (entry.type === "folder" || entry.folder !== folderEditingName) return entry;
+                    var moved = {"name": entry.name, "command": entry.command, "folder": trimmedName};
+                    return moved;
+                });
+            }
+        }
+        if (!commitCustomCommands(list)) {
+            customCmdError = "文件夹保存失败，请重试。";
+            return;
+        }
+        folderEditorOpen = false;
+        folderEditingName = "";
+        customCmdFolder = "";
+        customCmdError = "";
+        terminalCapture.forceActiveFocus();
+    }
+
+    function removeCommandFolderByName(name) {
+        var list = [];
+        for (var i = 0; i < customCommands.length; i++) {
+            var entry = customCommands[i];
+            if (entry.type === "folder") {
+                if (entry.name !== name) list.push(entry);
+                continue;
+            }
+            if (entry.folder === name) {
+                list.push({"name": entry.name, "command": entry.command});
+            } else list.push(entry);
+        }
+        if (!commitCustomCommands(list)) {
+            customCmdError = "文件夹删除失败，请重试。";
+            commandManagementExpanded = true;
+            return false;
+        }
+        openCommandFolder = "";
+        customCmdError = "";
+        return true;
+    }
+
+    function toggleCommandFolder(name, anchor) {
+        if (!folderExists(name)) return;
+        if (commandFolderPopup.visible && openCommandFolder === name) {
+            commandFolderPopup.close();
+            return;
+        }
+        folderPopupAnchor = anchor;
+        openCommandFolder = name;
+        commandFolderPopup.open();
+    }
+
+    function requestRemoveCommandFolder(name) {
+        if (!folderExists(name)) return;
+        commandFolderPopup.close();
+        customCmdPendingDeleteFolder = name;
+        customCmdPendingDeleteName = "";
+        confirmDeleteCmdPopup.open();
     }
 
     function loadCustomCommands() {
@@ -952,20 +1307,33 @@ GlassPage {
             parsed = [];
         }
 
-        var normalized = [];
+        var prepared = [];
         if (parsed && parsed.length !== undefined) {
             for (var i = 0; i < parsed.length; i++) {
                 var item = parsed[i];
                 var itemName = item && item.name ? String(item.name).trim() : "";
-                var itemCommand = item && item.command ? String(item.command).trim() : "";
-                if (itemName !== "" && itemCommand !== "") {
-                    normalized.push({
-                        "name": itemName,
-                        "command": itemCommand
-                    });
+                if (itemName === "") continue;
+                if (item && item.type === "folder") {
+                    prepared.push({"type": "folder", "name": itemName});
+                    continue;
                 }
+                var itemCommand = item && item.command ? String(item.command).trim() : "";
+                if (itemCommand !== "") prepared.push({
+                    "name": itemName,
+                    "command": itemCommand,
+                    "folder": item.folder ? String(item.folder).trim() : ""
+                });
             }
         }
+        var folders = {};
+        for (var f = 0; f < prepared.length; f++)
+            if (prepared[f].type === "folder") folders[prepared[f].name] = true;
+        var normalized = prepared.map(function(entry) {
+            if (entry.type === "folder") return entry;
+            var command = {"name": entry.name, "command": entry.command};
+            if (entry.folder && folders[entry.folder]) command.folder = entry.folder;
+            return command;
+        });
         if (sharedCommands) sharedCommands.commands = normalized;
         else localCustomCommands = normalized;
     }
@@ -978,6 +1346,8 @@ GlassPage {
         var targetName = commandName ? String(commandName).trim() : "";
         if (targetName === "")
             return;
+        commandFolderPopup.close();
+        customCmdPendingDeleteFolder = "";
         customCmdPendingDeleteName = targetName;
         confirmDeleteCmdPopup.open();
     }
@@ -1063,12 +1433,13 @@ GlassPage {
         onLinesAboutToChange: liveLogDialog.captureLogViewport()
 
         onMonitorMatched: function(hit) {
-            if (!liveLogDialog.monitorEnabled || !liveLogDialog.autoScroll) return;
+            if (!liveLogDialog.monitorEnabled) return;
             if (hit.error) {
                 liveLogDialog.monitorError = hit.error;
                 liveLogDialog.configureMonitorRules();
                 return;
             }
+            if (!liveLogDialog.autoScroll) return;
             if (hit.pauseOnMatch === false) {
                 liveLogDialog.monitorNotice = hit;
                 statusHint.text = "命中「" + hit.ruleName + "」，已按规则颜色标记，继续跟随。";
@@ -1258,6 +1629,18 @@ GlassPage {
         }
         Next.GlassMenuSeparator {}
         Next.GlassMenuItem {
+            objectName: "ssh-selection-add-rule"
+            text: "添加到规则库"
+            enabled: liveLogDialog.hasTextSelection && !!liveLogDialog.monitorRuleLibrary
+            onTriggered: {
+                const range = liveLogDialog.textSelectionRange;
+                if (!range) return;
+                liveLogDialog.monitorRuleLibrary.addMonitorRuleFromText(
+                    sshTerminal.selectedText(range.firstId, range.firstOffset, range.lastId, range.lastOffset),
+                    liveLogDialog.Window.window, liveLogDialog.sessionId);
+            }
+        }
+        Next.GlassMenuItem {
             objectName: "ssh-copy-selection"
             text: "复制选中文字"
             enabled: liveLogDialog.hasTextSelection
@@ -1303,10 +1686,10 @@ GlassPage {
         sequence: "Ctrl+Shift+A"
         onActivated: sshTerminal.copyBufferToClipboard()
     }
-    readonly property color terminalBg: "#1a1d21"
-    readonly property color terminalText: "#f2f4f8"
-    readonly property color terminalMatchBg: "#5a4a00"
-    readonly property color terminalBorder: "#3c3f44"
+    readonly property color terminalBg: theme ? theme.terminalBackground : "#1a1d21"
+    readonly property color terminalText: theme ? theme.terminalText : "#f2f4f8"
+    readonly property color terminalMatchBg: theme ? theme.terminalMatch : "#5a4a00"
+    readonly property color terminalBorder: theme ? theme.terminalBorder : "#3c3f44"
     readonly property color cardBg: theme ? theme.surface : "#ffffff"
     readonly property color cardBorder: theme ? theme.controlBorder : "#d0d3d8"
     readonly property color labelColor: theme ? theme.subText : "#606060"
@@ -1375,6 +1758,8 @@ GlassPage {
         }
 
         indicator: Canvas {
+            property color iconColor: liveLogDialog.theme ? liveLogDialog.theme.text : "#333333"
+            onIconColorChanged: requestPaint()
             id: cbCanvas
             x: styledCbCtrl.width - width - styledCbCtrl.rightPadding
             y: styledCbCtrl.topPadding + (styledCbCtrl.availableHeight - height) / 2
@@ -1403,7 +1788,7 @@ GlassPage {
                 ctx.lineTo(width, 0);
                 ctx.lineTo(width / 2, height);
                 ctx.closePath();
-                ctx.fillStyle = liveLogDialog.theme ? liveLogDialog.theme.text : "#333333";
+                ctx.fillStyle = iconColor;
                 ctx.fill();
             }
         }
@@ -1447,10 +1832,43 @@ GlassPage {
             text: styledBtnCtrl.text
             font: styledBtnCtrl.font
 
-            color: liveLogDialog.theme ? liveLogDialog.theme.buttonText : "#ffffff"
+            color: liveLogDialog.theme && liveLogDialog.theme.lightMode && styledBtnCtrl.highlighted ? "white" : liveLogDialog.theme ? liveLogDialog.theme.buttonText : "#ffffff"
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
+        }
+    }
+
+    component DashedCreateButton: StyledButton {
+        id: dashedButton
+        property var dashPattern: [6, 3]
+        property string borderObjectName: ""
+        implicitHeight: 30
+        horizontalPadding: 10
+        font.pixelSize: 12
+        background: Rectangle {
+            radius: 6
+            color: dashedButton.hovered ? (liveLogDialog.theme ? liveLogDialog.theme.surfaceHover : "#393f49") : "transparent"
+            Canvas {
+                objectName: dashedButton.borderObjectName
+                property var dashPattern: dashedButton.dashPattern
+                anchors.fill: parent
+                property color strokeColor: dashedButton.hovered || dashedButton.visualFocus
+                    ? liveLogDialog.focusAccentColor : liveLogDialog.mutedColor
+                onStrokeColorChanged: requestPaint()
+                onDashPatternChanged: requestPaint()
+                onWidthChanged: requestPaint()
+                onHeightChanged: requestPaint()
+                onPaint: {
+                    const context = getContext("2d");
+                    context.reset();
+                    context.strokeStyle = strokeColor;
+                    context.lineWidth = 1;
+                    context.setLineDash(dashPattern);
+                    context.roundedRect(0.5, 0.5, width - 1, height - 1, 6, 6);
+                    context.stroke();
+                }
+            }
         }
     }
 
@@ -1469,6 +1887,20 @@ GlassPage {
         parsedHex: liveLogDialog.parsedHex
         sessionName: liveLogDialog.sessionName
         transientParent: liveLogDialog.ownerWindow && liveLogDialog.ownerWindow.visible ? liveLogDialog.ownerWindow : liveLogDialog.Window.window
+    }
+
+    Rectangle {
+        objectName: "ssh-command-reorder-indicator"
+        visible: (liveLogDialog.draggedCommandName !== "" || liveLogDialog.draggedFolderName !== "")
+            && liveLogDialog.commandReorderTarget !== ""
+            && liveLogDialog.commandDropFolder === ""
+        z: 1002
+        x: liveLogDialog.commandReorderX
+        y: liveLogDialog.commandReorderY
+        width: 2
+        height: 24
+        radius: 1
+        color: liveLogDialog.focusAccentColor
     }
 
     ColumnLayout {
@@ -1553,11 +1985,11 @@ GlassPage {
                         horizontalPadding: 14
                         padding: 8
                         font.pixelSize: 13
-                        text: autoScroll ? "暂停跟随" : "继续跟随"
+                        text: autoFollowEnabled ? "暂停跟随" : "继续跟随"
                         implicitWidth: 96
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
-                        ToolTip.text: autoScroll ? "只停止自动滚动到底部，后台仍持续接收和更新日志。\n如需停止后台接收，请点击“停止刷屏”。"
+                        ToolTip.text: autoFollowEnabled ? "只停止自动滚动到底部，后台仍持续接收和更新日志。\n如需停止后台接收，请点击“停止刷屏”。"
                             : "回到最新日志，恢复自动跟随和新日志规则监测。\n如已停止刷屏，需点击“恢复接收”才能收到新日志。"
                         Accessible.description: ToolTip.text
                         onClicked: {
@@ -1888,9 +2320,9 @@ GlassPage {
                         : !selectedMonitorRules.length ? "请选择规则"
                         : monitorHit ? "已命中：" + monitorHit.ruleName + " · " + monitorHit.time
                         : sshTerminal.receptionPaused ? "接收已停止，恢复接收后继续监测"
-                        : !autoScroll ? "已暂停跟随，点击继续后监测新日志"
+                        : !autoScroll ? "已暂停跟随，继续标记新日志"
                         : monitorNotice ? "最近命中（仅标记）：" + monitorNotice.ruleName : "监测中 · " + selectedMonitorRules.length + " 条规则")
-                    color: monitorHit && monitorHitColor.hslLightness >= 0.45 ? monitorHitColor : monitorError ? "#e8b76a" : labelColor; font.pixelSize: 12
+                    color: theme && theme.lightMode ? (monitorHit ? theme.markerTextColor(monitorHitColor) : monitorError ? theme.warning : labelColor) : monitorHit && monitorHitColor.hslLightness >= 0.45 ? monitorHitColor : monitorError ? "#e8b76a" : labelColor; font.pixelSize: 12
                     ToolTip.visible: statusMouse.containsMouse
                     ToolTip.text: monitorEvent ? "点击查看命中原文；即使日志被缓存淘汰，仍保留本次快照。" : text
                     MouseArea { id: statusMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: monitorEvent ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: if (monitorEvent) matchDetails.open() }
@@ -2101,7 +2533,7 @@ GlassPage {
                                     verticalAlignment: Text.AlignVCenter
                                     wrapMode: liveLogDialog.wrapLogLines ? TextEdit.WrapAnywhere : TextEdit.NoWrap
                                     font: charMeasurer.font
-                                    color: terminalText; selectedTextColor: terminalText; selectionColor: "#446688"
+                                    color: terminalText; selectedTextColor: terminalText; selectionColor: theme ? theme.terminalSelection : "#446688"
                                 }
                             }
 
@@ -2200,7 +2632,7 @@ GlassPage {
                                     text: sshTerminal.liveLine; textFormat: TextEdit.PlainText
                                     readOnly: true; selectByMouse: false; persistentSelection: true
                                     font: charMeasurer.font; color: terminalText
-                                    selectedTextColor: terminalText; selectionColor: "#446688"
+                                    selectedTextColor: terminalText; selectionColor: theme ? theme.terminalSelection : "#446688"
                                     wrapMode: liveLogDialog.wrapLogLines ? TextEdit.WrapAnywhere : TextEdit.NoWrap
                                 }
                             }
@@ -2233,7 +2665,9 @@ GlassPage {
 
                         ScrollBar.vertical: ScrollBar {
                             id: logVerticalBar
+                            objectName: "ssh-log-vertical-scroll"
                             policy: ScrollBar.AsNeeded
+                            onPressedChanged: if (pressed && !liveLogDialog.autoFollowEnabled) liveLogDialog.autoScroll = false
                         }
                         ScrollBar.horizontal: ScrollBar {
                             id: logHorizontalBar
@@ -2242,7 +2676,7 @@ GlassPage {
                             anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
                             visible: !liveLogDialog.wrapLogLines && logListView.contentWidth > logListView.width
                             policy: visible ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                            onPressedChanged: if (pressed) liveLogDialog.autoScroll = false
+                            onPressedChanged: if (pressed && !liveLogDialog.autoFollowEnabled) liveLogDialog.autoScroll = false
                         }
                     }
 
@@ -2253,7 +2687,12 @@ GlassPage {
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         preventStealing: true
                         property bool hexDoubleClick: false
-                        onWheel: function(wheel) { wheel.accepted = false; }
+                        onWheel: function(wheel) {
+                            if (!liveLogDialog.autoFollowEnabled && wheel.modifiers === Qt.NoModifier
+                                    && (wheel.pixelDelta.y || wheel.angleDelta.y) > 0)
+                                liveLogDialog.autoScroll = false;
+                            wheel.accepted = false;
+                        }
                         onPressed: function(mouse) {
                             if (logVerticalBar.visible && mouse.x >= width - logVerticalBar.width
                                     || logHorizontalBar.visible && mouse.y >= height - logHorizontalBar.height) {
@@ -2348,7 +2787,7 @@ GlassPage {
         Popup {
             id: confirmDeleteCmdPopup
             width: 280
-            height: 132
+            height: liveLogDialog.customCmdPendingDeleteFolder === "" ? 132 : 148
             modal: true
             focus: true
             x: (liveLogDialog.width - width) / 2
@@ -2361,7 +2800,6 @@ GlassPage {
                 border.color: cardBorder
                 border.width: 1
             }
-
             contentItem: ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 12
@@ -2369,7 +2807,9 @@ GlassPage {
 
                 Text {
                     Layout.fillWidth: true
-                    text: liveLogDialog.customCmdPendingDeleteName === "" ? "确认删除该快捷命令？" : ("确认删除快捷命令「" + liveLogDialog.customCmdPendingDeleteName + "」？")
+                    text: liveLogDialog.customCmdPendingDeleteFolder !== ""
+                        ? "删除文件夹「" + liveLogDialog.customCmdPendingDeleteFolder + "」？里面的命令会保留在快捷命令栏。"
+                        : liveLogDialog.customCmdPendingDeleteName === "" ? "确认删除该快捷命令？" : ("确认删除快捷命令「" + liveLogDialog.customCmdPendingDeleteName + "」？")
                     color: theme ? theme.text : "#333333"
                     wrapMode: Text.WordWrap
                     font.pixelSize: 13
@@ -2384,16 +2824,20 @@ GlassPage {
                     spacing: 8
 
                     StyledButton {
+                        objectName: "ssh-command-delete-cancel"
                         text: "取消"
                         implicitWidth: 64
                         onClicked: confirmDeleteCmdPopup.close()
                     }
 
                     StyledButton {
+                        objectName: "ssh-command-delete-confirm"
                         text: "删除"
                         implicitWidth: 64
                         onClicked: {
-                            if (liveLogDialog.customCmdPendingDeleteName !== "")
+                            if (liveLogDialog.customCmdPendingDeleteFolder !== "")
+                                liveLogDialog.removeCommandFolderByName(liveLogDialog.customCmdPendingDeleteFolder);
+                            else if (liveLogDialog.customCmdPendingDeleteName !== "")
                                 liveLogDialog.removeCustomCommandByName(liveLogDialog.customCmdPendingDeleteName);
                             confirmDeleteCmdPopup.close();
                         }
@@ -2401,7 +2845,41 @@ GlassPage {
                 }
             }
 
-            onClosed: liveLogDialog.customCmdPendingDeleteName = ""
+            onClosed: {
+                liveLogDialog.customCmdPendingDeleteName = "";
+                liveLogDialog.customCmdPendingDeleteFolder = "";
+            }
+        }
+
+        RowLayout {
+            objectName: "ssh-folder-editor"
+            visible: liveLogDialog.folderEditorOpen
+            Layout.fillWidth: true
+            spacing: 4
+
+            StyledTextField {
+                id: folderNameInput
+                objectName: "ssh-folder-name"
+                Layout.preferredWidth: 180
+                placeholderText: "文件夹名称"
+                onAccepted: liveLogDialog.submitCommandFolder()
+            }
+
+            StyledButton {
+                objectName: "ssh-folder-save"
+                text: liveLogDialog.folderEditingName === "" ? "创建" : "保存名称"
+                implicitWidth: liveLogDialog.folderEditingName === "" ? 64 : 88
+                onClicked: liveLogDialog.submitCommandFolder()
+            }
+
+            StyledButton {
+                objectName: "ssh-folder-cancel"
+                text: "取消"
+                implicitWidth: 64
+                onClicked: liveLogDialog.cancelCommandFolderEdit()
+            }
+
+            Item { Layout.fillWidth: true }
         }
 
         RowLayout {
@@ -2426,6 +2904,18 @@ GlassPage {
                 onAccepted: liveLogDialog.submitCustomCommand()
             }
 
+            StyledComboBox {
+                id: customCmdFolderCombo
+                objectName: "ssh-command-folder"
+                Layout.preferredWidth: 116
+                implicitHeight: 36
+                font.pixelSize: 12
+                Accessible.name: "命令所在文件夹"
+                model: ["快捷命令栏"].concat(liveLogDialog.commandFolders.map(function(folder) { return folder.name; }))
+                currentIndex: liveLogDialog.customCmdFolder === "" ? 0 : Math.max(0, model.indexOf(liveLogDialog.customCmdFolder))
+                onActivated: liveLogDialog.customCmdFolder = currentIndex === 0 ? "" : model[currentIndex]
+            }
+
             StyledButton {
                 objectName: "ssh-command-add"
                 text: liveLogDialog.customCmdEditingName === "" ? "添加" : "保存修改"
@@ -2446,7 +2936,7 @@ GlassPage {
         Text {
             objectName: "ssh-command-error"
             Layout.fillWidth: true
-            visible: liveLogDialog.commandManagementExpanded && text !== ""
+            visible: text !== ""
             text: liveLogDialog.customCmdError
             color: errorColor
             font.pixelSize: 12
@@ -2485,13 +2975,106 @@ GlassPage {
 
                     Row {
                         id: customCmdRow
-                        spacing: 4
+                        spacing: 8
 
                         Repeater {
-                            model: liveLogDialog.customCommands
+                            model: liveLogDialog.commandFolders
                             delegate: Item {
+                                id: folderChipItem
+                                width: folderChipBtn.width
+                                height: 30
+
+                                StyledButton {
+                                    id: folderChipBtn
+                                    objectName: "ssh-command-folder-" + index
+                                    width: implicitWidth
+                                    height: parent.height
+                                    text: (liveLogDialog.openCommandFolder === modelData.name && commandFolderPopup.visible ? "▾ " : "▸ ")
+                                        + modelData.name + " · " + liveLogDialog.customCommands.filter(function(entry) {
+                                            return entry.type !== "folder" && entry.folder === modelData.name;
+                                        }).length
+                                    implicitWidth: Math.max(92, Math.min(190, implicitContentWidth + leftPadding + rightPadding + 4))
+                                    leftPadding: 10
+                                    rightPadding: 12
+                                    opacity: liveLogDialog.draggedFolderName === modelData.name ? 0.55 : 1
+                                    Accessible.name: "快捷命令文件夹：" + modelData.name
+                                    Accessible.description: "展开或收起文件夹；拖动可排序，也可以把快捷命令拖到这里"
+                                    ToolTip.visible: hovered && liveLogDialog.draggedCommandName === ""
+                                        && liveLogDialog.draggedFolderName === ""
+                                    ToolTip.text: "展开/收起；拖动可排序；把命令拖到这里可归入文件夹"
+                                    onClicked: liveLogDialog.toggleCommandFolder(modelData.name, folderChipBtn)
+                                }
+
+                                DragHandler {
+                                    id: folderDragHandler
+                                    target: null
+                                    onActiveChanged: {
+                                        if (active) {
+                                            liveLogDialog.beginFolderDrag(modelData.name,
+                                                centroid.scenePosition.x, centroid.scenePosition.y);
+                                        } else {
+                                            liveLogDialog.updateFolderDrag(centroid.scenePosition.x, centroid.scenePosition.y);
+                                            liveLogDialog.finishFolderDrag();
+                                        }
+                                    }
+                                }
+
+                                Timer {
+                                    interval: 16
+                                    repeat: true
+                                    running: folderDragHandler.active
+                                    onTriggered: liveLogDialog.updateFolderDrag(
+                                        folderDragHandler.centroid.scenePosition.x,
+                                        folderDragHandler.centroid.scenePosition.y)
+                                }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    visible: liveLogDialog.commandDropFolder === modelData.name
+                                    radius: 6
+                                    color: Qt.rgba(liveLogDialog.focusAccentColor.r, liveLogDialog.focusAccentColor.g,
+                                        liveLogDialog.focusAccentColor.b, 0.18)
+                                    border.color: liveLogDialog.focusAccentColor
+                                    border.width: 1
+                                }
+
+                                Component.onCompleted: liveLogDialog.registerCommandFolderTarget(modelData.name, folderChipBtn)
+                                Component.onDestruction: liveLogDialog.unregisterCommandFolderTarget(modelData.name)
+                            }
+                        }
+
+                        Repeater {
+                            model: liveLogDialog.rootCommands
+                            delegate: Item {
+                                id: commandItem
                                 width: customCmdBtn.width
                                 height: 30
+                                opacity: liveLogDialog.draggedCommandName === modelData.name ? 0.55 : 1
+
+                                DragHandler {
+                                    id: commandDragHandler
+                                    target: null
+                                    onActiveChanged: {
+                                        if (active) {
+                                            liveLogDialog.beginCommandDrag(modelData.name,
+                                                centroid.scenePosition.x, centroid.scenePosition.y);
+                                        } else {
+                                            liveLogDialog.updateCommandDrag(centroid.scenePosition.x, centroid.scenePosition.y);
+                                            liveLogDialog.finishCommandDrag();
+                                        }
+                                    }
+                                }
+
+                                Timer {
+                                    interval: 16
+                                    repeat: true
+                                    running: commandDragHandler.active
+                                    onTriggered: {
+                                        liveLogDialog.updateCommandDrag(
+                                            commandDragHandler.centroid.scenePosition.x,
+                                            commandDragHandler.centroid.scenePosition.y);
+                                    }
+                                }
 
                                 StyledButton {
                                     id: customCmdBtn
@@ -2506,6 +3089,9 @@ GlassPage {
                                     onClicked: liveLogDialog.sendQuickCommand(modelData.command)
                                 }
 
+                                Component.onCompleted: liveLogDialog.registerCommandOrderTarget(modelData.name, customCmdBtn)
+                                Component.onDestruction: liveLogDialog.unregisterCommandOrderTarget(modelData.name)
+
                                 StyledButton {
                                     id: editCmdBtn
                                     objectName: "ssh-command-edit-" + index
@@ -2517,7 +3103,7 @@ GlassPage {
                                     font.pixelSize: 14
                                     z: 2
                                     Accessible.name: "编辑快捷命令：" + modelData.name
-                                    ToolTip.visible: hovered
+                                    ToolTip.visible: hovered && liveLogDialog.draggedCommandName === ""
                                     ToolTip.text: "编辑命令"
                                     onClicked: liveLogDialog.editCustomCommand(modelData.name)
                                 }
@@ -2558,47 +3144,219 @@ GlassPage {
                             }
                         }
 
-                        StyledButton {
+                        DashedCreateButton {
+                            objectName: "ssh-folder-create"
+                            text: "＋ 文件夹"
+                            implicitWidth: 76
+                            dashPattern: [2, 2]
+                            borderObjectName: "ssh-folder-create-border"
+                            enabled: !liveLogDialog.commandManagementExpanded && !liveLogDialog.folderEditorOpen
+                            Accessible.name: "新建快捷命令文件夹"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "新建文件夹，把同类快捷命令放在一起"
+                            onClicked: liveLogDialog.beginCreateCommandFolder()
+                        }
+
+                        DashedCreateButton {
                             id: createCommandButton
                             objectName: "ssh-command-create"
                             text: "＋ 添加命令"
-                            implicitWidth: 96; height: 30
-                            horizontalPadding: 10
-                            font.pixelSize: 12
-                            enabled: !liveLogDialog.commandManagementExpanded
+                            implicitWidth: 96
+                            dashPattern: [7, 4]
+                            borderObjectName: "ssh-command-create-border"
+                            enabled: !liveLogDialog.commandManagementExpanded && !liveLogDialog.folderEditorOpen
                             Accessible.name: "添加快捷命令"
                             ToolTip.visible: hovered
                             ToolTip.text: "添加一个可重复使用的快捷命令"
-                            onClicked: {
-                                liveLogDialog.cancelCustomCommandEdit();
-                                liveLogDialog.commandManagementExpanded = true;
-                                customCmdNameInput.forceActiveFocus();
-                            }
-                            background: Rectangle {
-                                radius: 6
-                                color: createCommandButton.hovered ? (liveLogDialog.theme ? liveLogDialog.theme.surfaceHover : "#393f49") : "transparent"
-                                Canvas {
-                                    objectName: "ssh-command-create-border"
-                                    anchors.fill: parent
-                                    property color strokeColor: createCommandButton.hovered || createCommandButton.visualFocus
-                                        ? liveLogDialog.focusAccentColor : liveLogDialog.mutedColor
-                                    onStrokeColorChanged: requestPaint()
-                                    onWidthChanged: requestPaint()
-                                    onHeightChanged: requestPaint()
-                                    onPaint: {
-                                        const context = getContext("2d");
-                                        context.reset();
-                                        context.strokeStyle = strokeColor;
-                                        context.lineWidth = 1;
-                                        context.setLineDash([4, 3]);
-                                        context.roundedRect(0.5, 0.5, width - 1, height - 1, 6, 6);
-                                        context.stroke();
+                            onClicked: liveLogDialog.beginAddCustomCommand("")
+                        }
+                    }
+                }
+            }
+        }
+
+        Popup {
+            id: commandFolderPopup
+            objectName: "ssh-command-folder-popup"
+            parent: liveLogDialog
+            palette: liveLogDialog.palette
+            font: liveLogDialog.font
+            width: Math.min(390, liveLogDialog.width - 24)
+            height: Math.min(380, folderPopupColumn.implicitHeight + 20)
+            x: folderPopupAnchor && parent ? Math.max(8, Math.min(folderPopupAnchor.mapToItem(parent, 0, 0).x,
+                parent.width - width - 8)) : 8
+            y: folderPopupAnchor && parent ? Math.max(8, folderPopupAnchor.mapToItem(parent, 0, 0).y - height - 6) : 8
+            padding: 0
+            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+            background: Rectangle {
+                radius: 10
+                color: theme ? theme.popupBackground : "#292d35"
+                border.color: cardBorder
+                border.width: 1
+            }
+
+            contentItem: ColumnLayout {
+                id: folderPopupColumn
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 6
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: liveLogDialog.openCommandFolder + " · " + liveLogDialog.openFolderCommands.length + " 条"
+                        color: theme ? theme.text : "#333333"
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+
+                    StyledButton {
+                        objectName: "ssh-folder-close-current"
+                        text: "收起"
+                        implicitWidth: 46; implicitHeight: 30
+                        padding: 0; horizontalPadding: 6
+                        font.pixelSize: 11
+                        Accessible.name: "收起文件夹：" + liveLogDialog.openCommandFolder
+                        onClicked: commandFolderPopup.close()
+                    }
+
+                    StyledButton {
+                        objectName: "ssh-folder-edit-current"
+                        text: "✎"
+                        implicitWidth: 30; implicitHeight: 30
+                        padding: 0; horizontalPadding: 0
+                        font.pixelSize: 14
+                        Accessible.name: "重命名文件夹：" + liveLogDialog.openCommandFolder
+                        ToolTip.visible: hovered
+                        ToolTip.text: "重命名文件夹"
+                        onClicked: liveLogDialog.editCommandFolder(liveLogDialog.openCommandFolder)
+                    }
+
+                    StyledButton {
+                        objectName: "ssh-folder-delete-current"
+                        text: "×"
+                        implicitWidth: 30; implicitHeight: 30
+                        padding: 0; horizontalPadding: 0
+                        font.pixelSize: 14
+                        Accessible.name: "删除文件夹：" + liveLogDialog.openCommandFolder
+                        ToolTip.visible: hovered
+                        ToolTip.text: "删除文件夹，命令保留"
+                        onClicked: liveLogDialog.requestRemoveCommandFolder(liveLogDialog.openCommandFolder)
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    visible: liveLogDialog.openFolderCommands.length === 0
+                    text: "文件夹为空。可以添加命令，或把外面的命令拖到此文件夹按钮上。"
+                    color: mutedColor
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 12
+                }
+
+                Flickable {
+                    id: folderCommandList
+                    objectName: "ssh-folder-command-list"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(folderCommandColumn.implicitHeight, 240)
+                    visible: liveLogDialog.openFolderCommands.length > 0
+                    contentWidth: width - 8
+                    contentHeight: folderCommandColumn.implicitHeight
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    interactive: contentHeight > height
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                    ColumnLayout {
+                        id: folderCommandColumn
+                        width: folderCommandList.width - 8
+                        spacing: 4
+
+                        Repeater {
+                            model: liveLogDialog.openFolderCommands
+                            delegate: RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
+
+                                StyledButton {
+                                    objectName: "ssh-folder-command-run-" + index
+                                    Layout.fillWidth: true
+                                    implicitHeight: 38
+                                    leftPadding: 9
+                                    rightPadding: 9
+                                    Accessible.name: "发送快捷命令：" + modelData.name
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: modelData.command
+                                    enabled: sshTerminal.connected && !sshTerminal.receptionPaused
+                                    onClicked: {
+                                        liveLogDialog.sendQuickCommand(modelData.command);
+                                        commandFolderPopup.close();
                                     }
+                                    contentItem: ColumnLayout {
+                                        spacing: 0
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.name
+                                            color: liveLogDialog.theme ? liveLogDialog.theme.buttonText : "#ffffff"
+                                            font.pixelSize: 12
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.command
+                                            color: liveLogDialog.mutedColor
+                                            font.family: liveLogDialog.font.family
+                                            font.pixelSize: 10
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+
+                                StyledButton {
+                                    objectName: "ssh-folder-command-edit-" + index
+                                    text: "✎"
+                                    implicitWidth: 38; implicitHeight: 38
+                                    padding: 0; horizontalPadding: 0
+                                    font.pixelSize: 14
+                                    Accessible.name: "编辑快捷命令：" + modelData.name
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "编辑命令"
+                                    onClicked: liveLogDialog.editCustomCommand(modelData.name)
+                                }
+
+                                StyledButton {
+                                    objectName: "ssh-folder-command-delete-" + index
+                                    text: "×"
+                                    implicitWidth: 38; implicitHeight: 38
+                                    padding: 0; horizontalPadding: 0
+                                    font.pixelSize: 14
+                                    Accessible.name: "删除快捷命令：" + modelData.name
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "删除命令"
+                                    onClicked: liveLogDialog.requestRemoveCustomCommand(modelData.name)
                                 }
                             }
                         }
                     }
                 }
+
+                StyledButton {
+                    objectName: "ssh-folder-add-command"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    text: "＋ 添加到此文件夹"
+                    font.pixelSize: 12
+                    onClicked: liveLogDialog.beginAddCustomCommand(liveLogDialog.openCommandFolder)
+                }
+            }
+
+            onClosed: {
+                liveLogDialog.openCommandFolder = "";
+                liveLogDialog.folderPopupAnchor = null;
             }
         }
 

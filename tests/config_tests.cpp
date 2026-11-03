@@ -153,6 +153,23 @@ void mqttAndPresets() {
   check(folderImport.stageLegacy({}).value("ok").toBool() && folderImport.applyPending(&error), "confirmed subset folder import applies on restart");
   check(QFile::exists(oldFolder.filePath("mqtt/common-subscriptions.json")), "manual folder original remains untouched");
 }
+void commandFolders() {
+  QString error;
+  const QJsonObject valid{{"schemaVersion", 1}, {"ssh", QJsonObject{{"customCommands", QJsonArray{
+    QJsonObject{{"name", "原命令"}, {"command", "pwd"}},
+    QJsonObject{{"type", "folder"}, {"name", "运维"}},
+    QJsonObject{{"name", "查看日志"}, {"command", "tail -f app.log"}, {"folder", "运维"}}
+  }}}}};
+  check(ConfigMigration::validate(valid, &error), "command folders and legacy commands validate");
+  auto invalid = valid;
+  auto ssh = invalid.value("ssh").toObject();
+  ssh.insert("customCommands", QJsonArray{QJsonObject{{"type", "folder"}, {"name", " "}}});
+  invalid.insert("ssh", ssh);
+  check(!ConfigMigration::validate(invalid, &error), "empty command folder name is refused");
+  ssh.insert("customCommands", QJsonArray{QJsonObject{{"name", "命令"}, {"command", "pwd"}, {"folder", " "}}});
+  invalid.insert("ssh", ssh);
+  check(!ConfigMigration::validate(invalid, &error), "empty command folder reference is refused");
+}
 void backups() {
   QTemporaryDir dir; QString error;
   ConfigJson::write(dir.filePath("settings.json"), {{"schemaVersion", 1}, {"parser", QJsonObject{{"protocolType", 2}}}}, &error);
@@ -204,7 +221,7 @@ void interruptedRestore() {
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    storesAndMissing(); credentialGates(); protectionAndConflicts(); mqttAndPresets(); backups(); interruptedRestore();
+    storesAndMissing(); credentialGates(); protectionAndConflicts(); mqttAndPresets(); commandFolders(); backups(); interruptedRestore();
     QTextStream(stdout) << "PASS: " << assertions << " configuration assertions\n"; return 0;
   } catch (const std::exception &e) { QTextStream(stderr) << "FAIL: " << e.what() << '\n'; return 1; }
 }

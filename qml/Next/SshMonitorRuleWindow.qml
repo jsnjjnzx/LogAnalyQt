@@ -13,6 +13,7 @@ ApplicationWindow {
     property var library
     property var theme
     property int selectedRuleId: -1
+    property int sourceSessionId: -1
     property string savedDraft: '["","",false,"#e8b76a",true,false]'
     readonly property bool dirty: JSON.stringify([nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked, highlightScope.checked]) !== savedDraft
     property var validation: ({valid: false, error: "请输入正则表达式", matches: []})
@@ -26,6 +27,7 @@ ApplicationWindow {
     function loadRule(id) {
         const rule = library ? library.monitorRules.find(function(value) { return value.id === id; }) : null;
         selectedRuleId = rule ? rule.id : -1;
+        sourceSessionId = -1;
         nameInput.text = rule ? rule.name : "";
         patternInput.text = rule ? rule.pattern : "";
         ignoreCase.checked = rule ? rule.ignoreCase : false;
@@ -36,13 +38,23 @@ ApplicationWindow {
         if (library) library.monitorRuleError = "";
         testResult = null;
     }
+    function loadText(text, sessionId) {
+        const lines = text.split(/\r\n|\r|\n/).filter(function(line) { return line.trim().length > 0; });
+        if (!lines.length) return;
+        loadRule(-1);
+        sourceSessionId = sessionId > 0 ? sessionId : -1;
+        nameInput.text = lines[0].trim().slice(0, 100);
+        patternInput.text = lines.map(function(line) { return line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }).join("|");
+        sampleInput.text = text;
+        nameInput.forceActiveFocus(); nameInput.selectAll();
+    }
     function requestAction(action) {
         if (!dirty) { action(); return; }
         pendingAction = action; discardDialog.open();
     }
     function saveRule() {
         if (!library || !validation.valid) return;
-        const id = library.saveMonitorRule(selectedRuleId, nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked, !highlightScope.checked);
+        const id = library.saveMonitorRule(selectedRuleId, nameInput.text, patternInput.text, ignoreCase.checked, colorInput.text, pauseOnMatch.checked, !highlightScope.checked, sourceSessionId);
         if (id > 0) loadRule(id);
     }
     function runTest() {
@@ -137,8 +149,8 @@ ApplicationWindow {
                             text: "仅正则匹配部分着色"
                         }
                     }
-                    Label { text: validation.valid ? "✓ 表达式有效" : "表达式无效"; color: validation.valid ? "#7ed6a0" : "#f79a93"; font.pixelSize: 11 }
-                    Label { textFormat: Text.PlainText; Layout.fillWidth: true; visible: !validation.valid; text: validation.error || ""; color: "#f79a93"; wrapMode: Text.Wrap; font.pixelSize: 11 }
+                    Label { text: validation.valid ? "✓ 表达式有效" : "表达式无效"; color: validation.valid ? (theme ? theme.success : "#7ed6a0") : (theme ? theme.error : "#f79a93"); font.pixelSize: 11 }
+                    Label { textFormat: Text.PlainText; Layout.fillWidth: true; visible: !validation.valid; text: validation.error || ""; color: theme ? theme.error : "#f79a93"; wrapMode: Text.Wrap; font.pixelSize: 11 }
                     Label { text: "规则颜色"; color: textColor; Layout.topMargin: 5 }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 8
@@ -178,13 +190,15 @@ ApplicationWindow {
                         text: !testResult ? "测试只验证表达式，不会触发监控暂停。" : testResult.error ? testResult.error
                             : "命中 " + testResult.matches.length + " 处" + (testResult.matches.length ? "，首处已高亮" : "")
                                 + (testResult.truncated ? "（已达到测试文本或匹配数量上限）" : "")
-                        color: testResult && testResult.error ? "#f79a93" : testResult && testResult.matches.length ? "#7ed6a0" : secondaryColor
+                        color: testResult && testResult.error ? (theme ? theme.error : "#f79a93") : testResult && testResult.matches.length ? (theme ? theme.success : "#7ed6a0") : secondaryColor
                         font.pixelSize: 11
                     }
                     Label {
                         Layout.fillWidth: true; Layout.topMargin: 10; wrapMode: Text.Wrap
                         text: {
-                            if (!library || selectedRuleId < 1) return "新规则保存后，可在各监控窗口勾选使用。";
+                            if (!library || selectedRuleId < 1) return sourceSessionId > 0
+                                ? "保存后将自动选中并启用来源连接的规则监测。"
+                                : "新规则保存后，可在各监控窗口勾选使用。";
                             const names = library.sessions.filter(function(page) { return page.monitorRuleIds.indexOf(selectedRuleId) >= 0; }).map(function(page) { return page.sessionName; });
                             return names.length ? "当前被这些会话选择：" + names.join("、") : "尚未被监控会话选择。";
                         }
@@ -193,25 +207,25 @@ ApplicationWindow {
                 }
             }
         }
-        Label { Layout.fillWidth: true; visible: library && library.monitorRuleError !== ""; text: library ? library.monitorRuleError : ""; color: "#f79a93"; wrapMode: Text.Wrap }
+        Label { Layout.fillWidth: true; visible: library && library.monitorRuleError !== ""; text: library ? library.monitorRuleError : ""; color: theme ? theme.error : "#f79a93"; wrapMode: Text.Wrap }
         RowLayout {
             Layout.fillWidth: true
             Next.GlassButton { objectName: "ssh-rule-delete"; text: "删除规则…"; enabled: selectedRuleId > 0; onClicked: deleteDialog.open() }
-            Label { text: dirty ? "有未保存修改" : ""; color: "#e8b76a"; font.pixelSize: 11 }
+            Label { text: dirty ? "有未保存修改" : ""; color: theme ? theme.warning : "#e8b76a"; font.pixelSize: 11 }
             Item { Layout.fillWidth: true }
             Next.GlassButton { text: "关闭"; onClicked: editor.close() }
             Next.GlassButton { objectName: "ssh-rule-save"; text: "保存修改"; highlighted: true; enabled: nameInput.text.trim().length > 0 && validation.valid && colorInput.acceptableInput; onClicked: editor.saveRule() }
         }
     }
     Next.GlassDialog {
-        id: discardDialog; parent: Overlay.overlay; anchors.centerIn: parent
+        id: discardDialog; objectName: "ssh-rule-discard-dialog"; parent: Overlay.overlay; anchors.centerIn: parent
         title: "放弃未保存的修改？"; modal: true
         standardButtons: Dialog.NoButton
         ColumnLayout {
             Label { text: "当前规则的修改尚未保存。"; color: textColor }
             RowLayout {
-                Next.GlassButton { text: "继续编辑"; onClicked: { editor.pendingAction = null; discardDialog.close(); } }
-                Next.GlassButton { text: "放弃修改"; onClicked: { const action = editor.pendingAction; editor.pendingAction = null; discardDialog.close(); if (action) action(); } }
+                Next.GlassButton { objectName: "ssh-rule-keep-editing"; text: "继续编辑"; onClicked: { editor.pendingAction = null; discardDialog.close(); } }
+                Next.GlassButton { objectName: "ssh-rule-discard"; text: "放弃修改"; onClicked: { const action = editor.pendingAction; editor.pendingAction = null; discardDialog.close(); if (action) action(); } }
             }
         }
     }

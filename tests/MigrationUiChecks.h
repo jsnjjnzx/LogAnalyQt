@@ -316,12 +316,41 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(theme, "window theme missing");
     require(theme->metaObject()->indexOfProperty("isDark") == -1 &&
             theme->metaObject()->indexOfProperty("followSystem") == -1,
-            "new workspace must not expose theme switching state");
+            "obsolete appearance preferences must remain unsupported");
     require(theme->property("background").value<QColor>().lightnessF() < 0.2 &&
             theme->property("text").value<QColor>().lightnessF() > 0.8,
-            "old light-mode settings must not change the fixed dark palette");
-    require(!uiItem("settings-dark") && !uiItem("settings-follow-system"),
-            "removed theme switches are still present");
+            "old appearance flags must retain the default dark palette");
+    require(uiItem("settings-dark") && uiItem("settings-light") && !uiItem("settings-follow-system"),
+            "appearance must offer exactly light and dark modes");
+    const bool nativeGlassBefore = theme->property("nativeGlass").toBool();
+    navigate(9);
+    click(uiItem("settings-light"));
+    require(theme->property("lightMode").toBool() &&
+                backend->getUiSetting("next/appearance/colorMode").toString() == "light",
+            "light appearance selection was not applied and saved");
+    auto *appearanceApduWindow = window->findChild<QQuickWindow *>("apduInspection");
+    QQmlExpression paletteText(qmlContext(window), window, "palette.windowText");
+    auto *protocolIndicator = uiItem("protocolCombo")->property("indicator").value<QObject *>();
+    require(protocolIndicator && protocolIndicator->property("iconColor").value<QColor>() == QColor("#252b31"),
+            "protocol dropdown indicator did not update its light color");
+    require(paletteText.evaluate().value<QColor>() == QColor("#252b31") &&
+                appearanceApduWindow && appearanceApduWindow->color() == QColor("#fbfcfc"),
+            "main and existing APDU windows did not share the light theme");
+    require(theme->property("nativeGlass").toBool() == nativeGlassBefore,
+            "light appearance disabled the existing glass mechanism");
+    const auto appearanceCapture = qEnvironmentVariable("LOGANALYQT_APPEARANCE_SCREENSHOT");
+    if (!appearanceCapture.isEmpty()) {
+      require(window->grabWindow().save(appearanceCapture + ".settings-light.png"), "light settings capture failed");
+      navigate(0);
+      require(window->grabWindow().save(appearanceCapture + ".main-light.png"), "light main capture failed");
+      navigate(9);
+    }
+    click(uiItem("settings-dark"));
+    require(!theme->property("lightMode").toBool() &&
+                backend->getUiSetting("next/appearance/colorMode").toString() == "dark" &&
+                paletteText.evaluate().value<QColor>() == QColor("#eceef2"),
+            "dark appearance was not restored and saved");
+    navigate(0);
     if (!theme->property("nativeGlass").toBool())
       require(windowImage.pixelColor(windowImage.width() / 2, 0).alpha() > 240,
               "fallback window edge must remain opaque between rounded corners");
@@ -574,6 +603,32 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(clipboard->text() == "RX", "native clipboard does not contain the dragged text");
       toggleCopy();
     }
+    trace("selected terminal text opens a literal rule draft without saving or enabling it");
+    {
+      const QString selected = QStringLiteral("error[42].");
+      ssh->lineModel()->appendLines({selected}); ssh->lineCountChanged(); settle();
+      const auto id = ssh->lineIdAt(ssh->currentLineCount() - 1);
+      livePage->setProperty("textSelectionAnchor", QVariantMap{{"id", id}, {"position", 0}});
+      livePage->setProperty("textSelectionFocus", QVariantMap{{"id", id}, {"position", selected.size()}});
+      auto *menu = livePage->findChild<QObject *>("ssh-terminal-parse-menu");
+      require(menu && QMetaObject::invokeMethod(menu, "popup"), "terminal selection menu did not open");
+      settle(); click(uiItem("ssh-selection-add-rule"));
+      auto *editor = liveWorkspace->findChild<QQuickWindow *>("ssh-rule-window");
+      auto *pattern = editor ? findItem(editor->contentItem(), "ssh-rule-pattern") : nullptr;
+      auto *sample = editor ? findItem(editor->contentItem(), "ssh-rule-sample") : nullptr;
+      require(editor && editor->isVisible() && editor->transientParent() == window && pattern && sample,
+              "selection did not open the shared rule editor on its source window");
+      require(pattern->property("text").toString() == QStringLiteral("error\\[42\\]\\.") &&
+                  sample->property("text").toString() == selected && editor->property("dirty").toBool() &&
+                  liveWorkspace->property("monitorRules").toList().isEmpty(),
+              "selected literal text was changed or saved without confirmation");
+      const auto expression = pattern->property("text").toString();
+      require(backend->testMonitorExpression(expression, false, selected).value("matches").toList().size() == 1 &&
+                  backend->testMonitorExpression(expression, false, "error42X").value("matches").toList().isEmpty(),
+              "selected regex punctuation was not matched literally by the native matcher");
+      require(QMetaObject::invokeMethod(editor, "loadRule", Q_ARG(QVariant, -1)), "cannot reset the synthetic rule draft");
+      editor->close(); settle();
+    }
     ssh->clearBuffer(); livePage->setProperty("parseWindowVisible", false);
     trace("live log paused viewport across coalesced batches");
     const int previousLimit = ssh->maxBufferLines();
@@ -799,7 +854,7 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       auto addRule = [&](const QString &name, const QString &pattern, const QString &color, bool pause = true, bool wholeLine = true) {
         QVariant id;
         require(QMetaObject::invokeMethod(liveWorkspace, "saveMonitorRule", Q_RETURN_ARG(QVariant, id),
-                    Q_ARG(QVariant, -1), Q_ARG(QVariant, name), Q_ARG(QVariant, pattern), Q_ARG(QVariant, false), Q_ARG(QVariant, color), Q_ARG(QVariant, pause), Q_ARG(QVariant, wholeLine))
+                    Q_ARG(QVariant, -1), Q_ARG(QVariant, name), Q_ARG(QVariant, pattern), Q_ARG(QVariant, false), Q_ARG(QVariant, color), Q_ARG(QVariant, pause), Q_ARG(QVariant, wholeLine), Q_ARG(QVariant, -1))
                     && id.toInt() > 0, "cannot save shared monitor rule");
         return id.toInt();
       };
@@ -825,9 +880,13 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(!livePage->property("autoScroll").toBool() && livePage->property("monitorHitColor").value<QColor>() == QColor("#f79a93")
                   && secondPage->property("autoScroll").toBool(), "a rule paused the wrong session or lost its configured color");
       const auto hitId = currentHit(livePage).value("lineId").toLongLong();
-      firstInput.feed(*ssh, "ERROR while paused\nreception continues\n"); settle();
+      const int pausedRow = ssh->currentLineCount();
+      firstInput.feed(*ssh, "ERROR while paused\nreception continues\nERROR repeated while paused\n"); settle();
       require(ssh->getBufferText().contains("reception continues") && currentHit(livePage).value("lineId").toLongLong() == hitId,
               "paused monitor stopped receiving or replaced its original match");
+      require(ssh->lineModel()->data(ssh->lineModel()->index(pausedRow), TerminalLineModel::MonitorColorRole).toString() == "#f79a93" &&
+                  ssh->lineModel()->data(ssh->lineModel()->index(pausedRow + 2), TerminalLineModel::MonitorColorRole).toString() == "#f79a93",
+              "paused history stopped highlighting subsequent matches");
       click(uiItem("ssh-monitor-rules"));
       auto *ruleEditor = liveWorkspace->findChild<QQuickWindow *>("ssh-rule-window");
       require(ruleEditor && ruleEditor->isVisible(), "shared rule editor did not open");
@@ -852,6 +911,10 @@ inline QString checkMigratedUi(QQuickWindow *window) {
                   && sharedTooltip->objectName() == "workshop-tooltip"
                   && sharedTooltip->property("appTheme").value<QObject *>() == window->property("uiTheme").value<QObject *>(),
               "packaged application did not load its global tooltip style and theme");
+      require(livePage->property("autoFollowEnabled").toBool(), "rule pause changed the configured follow switch");
+      click(followControl);
+      require(!livePage->property("autoFollowEnabled").toBool() && !livePage->property("autoScroll").toBool(),
+              "disabling the configured switch resumed a paused rule");
       click(followControl); closeMonitorMenu(livePage);
       firstInput.feed(*ssh, "normal after resume\n"); settle();
       require(livePage->property("autoScroll").toBool(), "resuming rematched historical output");
@@ -886,8 +949,21 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       clickMonitorControl(findItem(rules->property("contentItem").value<QQuickItem *>(), "ssh-menu-rule-manage"));
       require(ruleEditor->isVisible() && ruleEditor->transientParent() == firstMonitorWindow,
               "independent monitor cannot select rules or open the shared rule manager");
+      theme->setProperty("lightMode", true); settle(firstMonitorWindow); settle(ruleEditor);
+      require(firstMonitorWindow->color() == QColor("#fbfcfc") && ruleEditor->color() == QColor("#fbfcfc") &&
+                  livePage->property("terminalBg").value<QColor>() == QColor("#ffffff") &&
+                  livePage->property("terminalText").value<QColor>() == QColor("#252b31"),
+              "already-open monitor and rule windows did not update to light appearance");
+      if (!appearanceCapture.isEmpty())
+        require(firstMonitorWindow->grabWindow().save(appearanceCapture + ".monitor-light.png"), "light monitor capture failed");
+      theme->setProperty("lightMode", false); settle(firstMonitorWindow); settle(ruleEditor);
+      require(firstMonitorWindow->color() == QColor("#1d2025") &&
+                  livePage->property("terminalBg").value<QColor>() == QColor("#1a1d21") &&
+                  livePage->property("terminalText").value<QColor>() == QColor("#f2f4f8"),
+              "existing dark monitor appearance was not restored");
       settle(ruleEditor); ruleEditor->close(); settle(firstMonitorWindow);
       auto *resume = monitorAction(livePage, "ssh-pause");
+      clickMonitorControl(resume);
       clickMonitorControl(resume); closeMonitorMenu(livePage);
       firstInput.feed(*ssh, "normal detached output\n"); settle(firstMonitorWindow);
       require(livePage->property("autoScroll").toBool(), "detached continue-follow did not rearm new output monitoring");

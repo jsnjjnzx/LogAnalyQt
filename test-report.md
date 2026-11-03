@@ -1,5 +1,135 @@
 # 测试结果
 
+## 2026-11-03 v5.3.0 发布准备（T62 / RELEASE-18、19）
+
+- 版本与范围：CMake/README/CHANGELOG 统一为 5.3.0；提交范围包含 T55～T61 累计源码、正式测试、设计预览和流程记录，不包含个人配置、`build/`、`release_package/` 或生成证据。
+- 本地验证：完整监控 QML 157 passed / 0 failed；配置断言 133 passed；完整 macOS Debug 构建成功；`check_build.py` 确认版本 5.3.0；发布工具 38 passed / 0 failed（授权沙箱外执行回环端口测试）。
+- 远端发布待执行：main 同提交 Windows x64/macOS arm64 构建、来源/有效期门禁、v5.3.0 标签、7 附件、latest 与双平台公开更新演练。
+
+## 2026-11-03 快捷命令文件夹（T61 / CMD-06～12）
+
+- `python3 tests/stage10_qml_tests.py`：157 passed / 0 failed / 0 skipped。覆盖空文件夹创建、展开/收起、夹内新增/编辑、重命名后命令归属同步、删除文件夹保留命令并回到命令栏、位置下拉、共享会话、重启恢复、保存失败回滚及 10 条命令的滚动列表；添加入口回归检查文件夹按钮位于添加命令之前、两者均为可用虚框且分别使用短密/长疏虚线；已有文件夹后再添加散命令时，两者边界至少保留 6px。
+- 拖动重叠修复：复现为按住命令后拖动，`DragHandler.target` 直接平移可见按钮子项，而父项布局位置不变。改为 `target: null` 后，正式拖拽过程中命令和相邻命令的 x 坐标均保持不变，同时目标文件夹仍能高亮并在松开时完成归类、不误发终端命令。
+- 命令换序：真实指针序列将第一条命令拖到第三条右半边，插入线显示且没有浮动副本遮挡按钮，松手后顺序变为“二、三、一”并写入共享设置；拖动中所有按钮坐标不变，终端不误发。文件夹归类回归仍通过。
+- 文件夹换序：创建甲/乙/丙三个文件夹后，将“甲”拖到“丙”右半边，顺序变为“乙、丙、甲”并持久化；拖动中文件夹按钮坐标不变、不会误展开，独立命令仍位于文件夹组之后，终端不误发。
+- 崩溃修复：用户实际拖拽后系统崩溃报告 `~/Library/Logs/DiagnosticReports/appLogAnalyQt-2026-11-03-200508.ips` 显示 `QQuickDragAttachedPrivate::startDrag`→`QObject::deleteLater`，为 Qt 6.11 系统 QDrag 启动路径。移除 `Drag.Automatic`/`DropArea`，改为页面内 DragHandler 指针跟踪；正式用例真实执行按下→拖动→松开，命令归入文件夹、终端未误发命令，且文件夹按钮始终排在未分组命令前面。
+- `cmake --build --preset macos-debug --target config_tests` 及 `build/macos-debug/config_tests`：通过，`PASS: 133 configuration assertions`；新增文件夹标记、旧命令和非法空文件夹/空归属校验。
+- `cmake --build --preset macos-debug`：成功；仅既有 OpenSSL 重复链接提示。
+- 中间版本 `ctest --test-dir build/macos-debug --output-on-failure`：24/32 passed，8 failed。失败项为 `mqtt_tests`、`mqtt_broker_lifecycle_tests`、`ssh_security_tests`、`ssh_stream_tests` 无法在沙箱监听本机端口，`mac_backdrop_tests`/`ui_migration_runtime` 无窗口服务，`macos_window_activation`/`updater_replacement_tests` 应用包路径受限；本次改动的 `stage10_qml_tests` 与 `config_tests` 均通过。最终界面微调后再次运行完整监控QML及macOS构建并通过，未重复未改动的协议/网络测试。
+- 静态截图复核发现并修正：文件夹浮层未继承主题导致按钮白块；浮层高度变化后遮住命令栏。修正后弹层位于命令栏上方，列表、动作按钮和文件夹按钮显示正常。
+- 按钮尺寸修正：命令主按钮与编辑/删除统一为38px行高，编辑/删除为38×38方块；弹层标题“收起/编辑/删除”统一为30px高。QML断言检查三者高度及两个操作按钮宽高相等，最终截图复核通过。
+- 本地交付：复用T60成品依赖，`build/macos-debug/t61-package/通联工坊.app` 的126个Mach-O架构/包内依赖、deep strict签名通过；`release_package/通联工坊.app` 与之2048项文件/链接完全一致，版本5.2.0，证据见 `build/macos-debug/t61-delivery-verification.json`。
+
+未在最终成品Cocoa窗口中再次人工拖动复测，未验证真实SSH连接、Windows或独立人工全流程；上述限制不作为已通过验收。未提交或发布。
+
+## 2026-11-03 选区添加规则并应用来源连接（T60 / SSHRULE-01、02）
+
+- `python3 tests/stage10_qml_tests.py`：150 passed/0 failed（`/tmp/loganalyqt-t60-qml.log`）。覆盖真实右键菜单预填普通/HEX/Unicode正则符号、多行及未换行尾部、独立窗口归属；原文转义/样例保留、颜色/暂停/着色范围、显式保存及重启恢复；来源自动选中和启用、其他会话不变、暂停时连续命中仍着色且不移动/改变跟随配置，恢复后按规则暂停；同文本同时命中不同规则时保留原颜色优先级。
+- 草稿/失败范围：已有未保存规则可继续编辑或确认放弃；保存失败时库及来源选择/启用同时回滚且保留草稿；来源关闭不改其他连接；空白不创建，5000字符原文保留供编辑且沿用4096字符限制阻止保存；菜单动作不改剪贴板或发送终端内容。
+- `cmake --build --preset macos-debug` 成功（`/tmp/loganalyqt-t60-build.log`），保持5.2.0 arm64，仅既有OpenSSL重复链接提示。最终 `ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure`：2/2通过（`/tmp/loganalyqt-t60-native.log`），使用临时数据及隔离本机端口。
+- 原生集成新增实际SshTerminal选区→规则窗口草稿→原生PCRE原文匹配，确认不在打开草稿时提前保存；原生模型连续暂停命中仍按色标记，旧命中快照不变。初轮新增验收的菜单对象须用QObject查找，保存函数增加来源参数后原生元调用也须补齐参数，均已修正后完整通过，没有移除功能断言。
+- 成品 `build/macos-debug/t60-package/通联工坊.app` 复用前次包的既有Qt依赖并更新全部构建应用、重新部署/签名；126个Mach-O的架构/包内依赖及deep strict签名通过（`/tmp/loganalyqt-t60-package.log`）。最终清除开发变量的独立成品Cocoa完整回归通过（`/tmp/loganalyqt-t60-cocoa-package.log`），含选区草稿/PCRE、暂停连续着色/快照保护及已有监控/配置/外观/本机MQTT。
+- 交付前精确检查固定应用当时未运行、无便携个人数据且仍与T59接受包一致，再更新 `release_package/通联工坊.app`；版本5.2.0，签名及2048项文件/符号链接与最终接受包完全一致，证据 `build/macos-debug/t60-delivery-verification.json`（含本次源文件指纹）。已重新打开固定应用，不修改实际用户规则/设置、真实日志或安装版，不生成压缩包。
+
+未连接真实SSH设备，未验证Windows或独立人工全流程GUI验收；未重复全套协议CTest。原有库普通“新建”仍按原流程选择会话，只有从输出选区创建的规则保存后自动应用来源；历史缓冲不重新扫描，沿用新输出匹配。未提交或发布。
+
+## 2026-11-03 暂停跟随视口闪动（T59 / SSHFOLLOW-03）
+
+- 修复前四组专项全部失败（`/tmp/loganalyqt-t59-before.log`）：暂停在行内7px处，每次新批次的实际contentYChanged显示行内偏移0→-7，最终坐标虽恢复，中途每批都发生跳动；覆盖追加/缓存头淘汰×不换行/换行。
+- 首轮仅避免已创建行的重复定位，追加通过，但缓存头淘汰仍失败；原因是布局前itemAtIndex暂时不可用。先应用待处理布局再查询可见锚点后，四组专项全部通过（`/tmp/loganalyqt-t59-after.log`，6 passed含生命周期）。正式用例还覆盖锚点真正淘汰后定位最早保留内容及原提示。
+- 最终 `python3 tests/stage10_qml_tests.py`：143 passed/0 failed（`/tmp/loganalyqt-t59-qml.log`），检查连续八批期间所有contentY通知，无瞬时位置跳变；包含原开关/回车、缩放/换行、选区、规则、分组及独立窗口行为。
+- `cmake --build --preset macos-debug`：成功，5.2.0 arm64（`/tmp/loganalyqt-t59-build.log`），仅既有OpenSSL重复链接提示。`ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure`：2/2通过（`/tmp/loganalyqt-t59-native.log`），使用隔离本机端口；真实后端合并批次/缓存淘汰视口、配置重启、监控规则与已有业务集成通过。
+- 成品复用已接受T58包中的Qt依赖，覆盖本次完整构建应用并重新部署可执行依赖，无新增导入/依赖；`build/macos-debug/t59-package/通联工坊.app` 的126个Mach-O架构/依赖及deep strict签名通过（`/tmp/loganalyqt-t59-package.log`）。清除开发变量的独立成品Cocoa完整回归通过（`/tmp/loganalyqt-t59-cocoa-package.log`）。
+- 通过NSRunningApplication精确匹配固定应用可执行路径并请求正常退出，让现有保存/日志收尾逻辑执行；确认进程已结束、无便携个人数据且目标仍是T58已接受版本后，同步至 `release_package/通联工坊.app`。5.2.0签名及2048项文件/符号链接与接受包一致，证据 `build/macos-debug/t59-delivery-verification.json`；已重新打开固定应用，未更改用户设置或真实日志，未创建压缩包或退出其他同名应用。
+
+未连接真实SSH设备，未验证Windows、物理显示器/触控板和人工连续录像；测试证明所复现的批次恢复跳动已消除，不宣称覆盖其他显示驱动或材质原因的所有闪烁。保留T55～T58，未提交发布。
+
+## 2026-11-03 增强浅色毛玻璃（T58 / APPEARANCE-05）
+
+- 范围：最终仅GlassSurface浅色白色罩层75%→约65%，GlassTheme原生浅色侧栏白色罩层45%→约35%；白色阅读面/输入底色、文字、控件及深色分支不变。对T57交付指纹反向还原两处色值后逐项核对一致，MacWindowBackdrop也与原实现字节指纹一致。
+- `python3 tests/prot698_qml_tests.py`：最终105 passed/0 failed（`/tmp/loganalyqt-t58-accepted-qml.log`），包含原深色四状态29颜色快照、阅读区纯白/对比度、减少透明度回退、主题切换和辅助功能动作。
+- 最终完整macOS构建成功（`/tmp/loganalyqt-t58-accepted-build.log`），仅既有OpenSSL重复链接提示。真实Cocoa `mac_backdrop_tests` 1/1通过（`/tmp/loganalyqt-t58-accepted-native.log`），原生材质及原深色/窗口/辅助功能回退保持。
+- 对比图记录：`build/macos-debug/t58-before.jpg` 为T57；较激进透光和Popover材质实机偏灰，未作为最终接受版本，记录为t58-transparent-sidebar-intermediate.jpg/t58-bright-glass.jpg。最终采用适度alpha调整并保留原原生材质，避免凭枚举名称推断材质一定更白。
+- t58-accepted-package的126个Mach-O/架构/包内依赖与deep strict签名通过（`/tmp/loganalyqt-t58-accepted-package.log`）。清除开发依赖环境后的独立成品Cocoa完整回归通过（`/tmp/loganalyqt-t58-accepted-runtime.log`），包含主题保存恢复、独立窗口、现有监控/解析/配置/本机MQTT等隔离检查。
+- 固定`release_package/通联工坊.app`已更新，与最终接受包2048项文件/链接一致，交付后签名通过，证据`build/macos-debug/t58-delivery-verification.json`、`/tmp/loganalyqt-t58-accepted-delivery-sign.log`。实际重新打开固定应用，对照`t58-before.jpg`与最终`t58-after.jpg`，保留白色阅读区，侧栏/工具区透光增强；当前桌面目视通过，保持浅色主界面打开，未编辑用户日志或改其他设置。版本仍5.2.0，无压缩包、提交或发布。
+- 未增加配置、依赖或新模式，未重复执行未改动的协议/SSH业务全套测试；未验证Windows、多显示器/多壁纸组合、真实设备或Apple公证。
+
+
+## 2026-11-03 晶透白产品落地（T57 / APPEARANCE-04、LOCAL-05）
+
+用户确认视觉稿后实施，本节为产品状态，下方视觉稿及T55/T56记录保留历史含义。
+
+| 范围 | 实际执行与证据 | 结果 |
+|---|---|---|
+| macOS完整构建 | `cmake --build --preset macos-debug`；`/tmp/loganalyqt-t57-build-final.log` | 5.2.0 arm64成功；仅既有OpenSSL重复链接提示 |
+| 共用主题/控件/设置 | `python3 tests/prot698_qml_tests.py`；`/tmp/loganalyqt-t57-qml-final.log` | 105 passed/0 failed；原深色四状态29颜色快照、浅色正文/语义色对比度、白色阅读面及玻璃透明度回退、浅色控件无渐变/键盘焦点与切回深色渐变、外观保存失败及辅助功能press/toggle动作通过 |
+| SSH界面 | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-t57-ssh-qml.log` | 139 passed/0 failed；保留T56跟随、会话/窗口/规则/解析等现有覆盖 |
+| 真实AppKit | Cocoa `ctest -R '^mac_backdrop_tests$'`；`/tmp/loganalyqt-t57-native-glass.log` | 1/1通过；原生材质、深浅外观、减少透明度及原生标题栏/窗口/全屏检查通过 |
+| 真实应用集成 | Cocoa `tests/test_ui_migration_runtime.py`；`/tmp/loganalyqt-t57-runtime.log` | 完整通过；设置卡片实际点击、主窗及APDU/SSH/规则窗口同步、重启恢复和既有工作区/迁移/MQTT等隔离回归；增加协议下拉箭头跟随主题重绘检查 |
+| 首轮独立成品 | 清除DYLD/Qt/QML开发变量后对t57-package执行完整Cocoa脚本；`/tmp/loganalyqt-t57-packaged-runtime.log` | 完整通过；随后追加两个辅助功能回调，新增动作测试已通过，最终包另行复核 |
+| 包检查 | `build/macos-debug/t57-final-package/通联工坊.app`；`/tmp/loganalyqt-t57-package-final.log` | 126个Mach-O的arm64/包内依赖与deep strict签名通过，无新依赖或压缩包 |
+
+首轮新增焦点测试使用程序焦点而要求键盘焦点环，失败后改为实际TabFocusReason，保留焦点环断言；通过电脑操作工具打开固定应用，目视主界面与设置页，确认白色阅读区、平整按钮、导航细标记已呈现，截图 `build/macos-debug/t57-native-main.jpg`、`t57-native-settings.jpg`。首次辅助功能卡片激活未切换，补齐Accessible press/toggle回调后，新增QML动作检查通过；最终固定应用实际激活深色时勾号移至深色，再激活浅色时勾号移回浅色，均即时切换，保存 `t57-native-dark.jpg`。已恢复浅色主界面并保留应用打开；未向用户日志编辑区写入样例或改动减少透明度设置。
+
+最终接受包 `build/macos-debug/t57-final-package/通联工坊.app` 清除开发变量后的完整Cocoa回归通过（`/tmp/loganalyqt-t57-final-runtime.log`）；126个Mach-O/架构及包内依赖、deep strict签名通过（`/tmp/loganalyqt-t57-package-final.log`）。固定 `release_package/通联工坊.app` 与最终接受包2048项文件/链接一致，交付后签名通过，证据 `build/macos-debug/t57-delivery-verification.json`、`/tmp/loganalyqt-t57-delivery-final-sign.log`。版本仍5.2.0，无压缩包、提交或发布。六份流程文件及交付源码指纹已复核。
+
+未验证Windows编译/实机、真实设备、跨显示器/多壁纸/全套辅助功能组合或Apple公证；没有重复执行与此次样式无关的全套协议CTest。
+
+
+## 2026-11-03 晶透白重新设计（T57 / APPEARANCE-04）
+
+- 范围仅 `design/appearance-preview/crystal-white/` 本地HTML/CSS稿及JPEG；未修改产品源码/固定应用，未编译或运行产品回归。
+- 已直接查看原浅色参考，检查当前GlassTheme/GlassSurface和AppKit材质，按用户反馈重做去灰方案。内置ImageGen返回HTTP429且无图片，最终采用本地作者稿，不把服务调用当作成功。
+- 浏览器实际渲染主界面和设置页并目视检查，保存完整页面JPEG；实际点击两页切换正常，浅色卡片选中状态正确，error/warn日志为空。DOM读取编辑区背景为`rgb(255,255,255)`、未选导航行背景为透明，保留三列表格及现有导航。
+- 宽视口及窄聊天预览已查看；窄于1100px时保持桌面稿最小内容宽度并横向滚动，使用fullPage导出完整界面，不将侧栏截屏当作完整稿。临时视口覆盖已清除。
+- 未验证正式Qt/AppKit材质、真实桌面壁纸透出效果、Windows；当前图内玻璃为CSS模拟，产品实施和验收待视觉方案确定。六份流程文件保持本轮设计阶段边界。
+
+
+## 2026-11-03 全局深浅色实施与固定应用交付（T55）
+
+本节覆盖APPEARANCE-01～03/LOCAL-05，替代设计阶段“尚未实施”的当前状态；下方预览记录保留当时边界。T56并行回看修复不纳入本节外观快照的完成声明。
+
+| 范围 | 执行方式与证据 | 实际结果 |
+|---|---|---|
+| 完整macOS构建 | `cmake --build --preset macos-debug`；`/tmp/loganalyqt-t55-build.log` | 5.2.0 arm64成功；仅既有OpenSSL重复库链接提示 |
+| 公共主题/控件/设置QML | `python3 tests/prot698_qml_tests.py`；`/tmp/loganalyqt-t55-qml.log` | 103 passed/0 failed；包含四种材质状态的原深色29属性快照、往返切换、浅色正文/语义/标记文字对比度、透明度两种回退、鼠标/键盘选择及保存失败保留 |
+| SSH/提示QML | `python3 tests/stage10_qml_tests.py`；`/tmp/loganalyqt-t55-ssh-qml.log` | T55冻结快照135 passed/0 failed；不把后来T56新增测试计入此结果 |
+| 协议/通信/配置及解析 | 离屏CTest排除已单独执行的完整UI/QML/原生材质/启动激活；`/tmp/loganalyqt-t55-ctest.log` | 27/27通过，包含SSH/MQTT/AI/配置/更新替换及共用解析窗口 |
+| 真实AppKit毛玻璃 | Cocoa `ctest -R '^mac_backdrop_tests$'`；`/tmp/loganalyqt-t55-native-glass.log` | 1/1通过；浅色Aqua同时作用于材质/窗口/应用，Sidebar/BehindWindow/Active保持，减少透明度仍生效，切回DarkAqua；窗口尺寸/原生标题栏/最小化和两次全屏往返通过 |
+| 真实应用与重启 | Cocoa `tests/test_ui_migration_runtime.py`；`/tmp/loganalyqt-t55-runtime.log` | 完整回归通过；实际点击两张外观卡片并核对保存，已打开APDU/SSH独立窗口/规则窗口同步，浅色与深色/缺失/非法设置冷启动恢复正确 |
+| 独立成品 | 清除DYLD/Qt/QML开发环境变量后对t55-package执行同一完整Cocoa脚本；`/tmp/loganalyqt-t55-packaged-runtime.log` | 完整回归通过，含真实本机MQTT、现有监控/解析/迁移/工作区及配置保留；隔离配置/合成数据，无真实设备 |
+| 包完整性与固定交付 | 既有check_macos_bundle、deep strict codesign及完整文件/符号链接清单；`build/macos-debug/t55-delivery-verification.json`、`/tmp/loganalyqt-t55-delivery-sign.log` | 126个Mach-O架构/依赖通过，签名有效；固定`release_package/通联工坊.app`与接受包2048项一致；无压缩包或版本变更 |
+
+首次设置QML仍要求旧入口不存在，按新需求更新断言；首次编译补齐测试所需类型读取方式；首次真实UI发现WindowHelper未注册，修正后重编译并完成上述最终回归。失败轮次未计为通过。
+
+未进行：Windows编译/实机、真实SSH设备网络、Apple公证、独立审查、额外手工桌面视觉验收。电脑操作工具未获准访问隔离验收应用，未绕过该限制；真实材质验证依据AppKit自动断言，QQuickWindow导出仅含Qt层，不能当作包含系统毛玻璃的完整屏幕截图。
+
+### T55 最终合并包与离屏平台检查修正
+
+T56已完成独立修复和交付，当前最终包从保留两项工作的源码重建；不再把初轮T55快照称为固定应用的当前完整内容。T56记录中的offscreen失败已处理：仅offscreen/minimal平台记录`APPEARANCE_NATIVE_SCHEME_UNAVAILABLE`，仍检查主题模式、保存恢复及启动成功标记；Cocoa/Windows等原生平台继续断言系统色系。完整离屏回归最终通过（`/tmp/loganalyqt-t55-offscreen-final.log`），合并后SSH QML139 passed/0 failed（`/tmp/loganalyqt-t55-combined-ssh-qml.log`）；最终构建成功（`/tmp/loganalyqt-t55-final-build.log`）。
+
+最终包 `build/macos-debug/t55-final-package/通联工坊.app` 复用相同Qt依赖，重部署新可执行文件并重签名，126个Mach-O/包内依赖和deep strict签名通过（`/tmp/loganalyqt-t55-final-bundle.log`）。清除开发依赖环境后，独立Cocoa完整回归通过（`/tmp/loganalyqt-t55-combined-packaged-runtime.log`），保留真实系统色系断言及外观恢复检查。最终固定应用已更新为该合并包，2048项文件/符号链接一致，deep strict签名通过；证据 `build/macos-debug/t55-final-delivery-verification.json`、`/tmp/loganalyqt-t55-final-delivery-sign.log`。替换前检查固定应用未运行、摘要仍为已知T56接受包，未覆盖未知并行交付；目录只有应用，无压缩包。
+
+
+## 2026-11-03 自动跟随配置与临时跟随（T56 / SSHFOLLOW-01、02）
+
+- 修改前专项复现：回车后向上滚轮，autoScroll 仍为 true，断言失败；竖向滚动条原无测试定位名，补充 objectName 后覆盖实际按压/拖动。
+- 最终 `python3 tests/stage10_qml_tests.py`：139 passed、0 failed（`/tmp/loganalyqt-t56-qml.log`）。新增四组真实 QML 鼠标/按键用例覆盖开关关闭停止自动滚动、回车临时恢复且菜单仍未勾选、普通上滚/竖向滚动条暂停临时跟随、新数据保持视口、再次回车恢复；开关开启时相同手势不暂停新数据跟随。另验证多会话隔离、分组/分离窗口移动后保留配置、规则暂停不改开关，缩放及原选区/复制回归保持。
+- 最新专项 6 passed、0 failed（含 init/cleanup，`/tmp/loganalyqt-t56-focused.log`）。`cmake --build --preset macos-debug` 成功（`/tmp/loganalyqt-t56-build.log`），版本 5.2.0。
+- `ssh_stream_tests` 通过；本机端口测试首次被沙箱限制，允许隔离回环端口后执行。`ui_migration_runtime` 在 offscreen 平台走过监控检查后，于当前 T55 外观启动 colorScheme 检查失败（`/tmp/loganalyqt-t56-native.log`），不写作整体通过。同一构建清除开发变量、使用 `QT_QPA_PLATFORM=cocoa` 的完整隔离应用回归通过（`/tmp/loganalyqt-t56-cocoa-build.log`），包含规则、独立窗口、接收、MQTT 本机通信、配置迁移与重启恢复；无需修改外观实现或跳过断言。
+- 本地成品 `build/macos-debug/t56-local-package/通联工坊.app` 已部署依赖，126 个 Mach-O 的 arm64/系统及包内依赖检查、deep strict ad-hoc 签名通过；清除开发变量的独立成品 Cocoa 完整回归通过（`/tmp/loganalyqt-t56-cocoa-package.log`）。确认固定自测应用未运行且无便携个人数据后，同步至 `release_package/通联工坊.app`，版本 5.2.0，签名通过、2048 项文件/符号链接与验收包完全一致；目录仅保留应用，未触碰 `/Applications` 安装版。证据 `build/macos-debug/t56-local-verification.json`。
+
+未验证真实 SSH 设备、Windows、物理触控板手势全组合；未执行全部 CTest 或独立人工 GUI 验收。保留 T55 外观工作，不据此宣告其完成；未提交、推送或发布。
+
+## 2026-11-03 浅色模式设计预览（T55 / APPEARANCE-01～03）
+
+- 范围仅 `design/appearance-preview/` 独立设计稿；未修改产品源码或固定应用，未编译。
+- 实际使用本机回环 HTTP 服务及浏览器渲染：目视检查主界面和设置页，保存 `light-main.jpg`、`light-settings.jpg`。图标复用既有 MDI 字体，未使用外部字体/CDN。
+- 实际点击设置页、深色、浅色、减少透明度：DOM/可访问性状态显示深色 `aria-pressed=true`、浅色 `false`，恢复浅色后开关 `aria-checked=true` 且 `data-opaque=true`；当前浏览器视口没有横向溢出；浏览器 error/warn 日志为空。
+- 稿内两个 console.assert 核对两种外观选项和三列表头，浏览器未报断言错误；HTML 仅作视觉交互，不保存主题、不读写个人数据、不执行协议解析。无需运行与本次设计无关的产品回归。
+- 未验证：正式 Qt/QML 主题实现、持久化、独立窗口/菜单、原生玻璃及标题栏、Windows、真实设备；等待用户确认设计。
+
+
 ## 2026-10-28 AI 默认提示词维护（T41 / PROMPT-01、02）
 
 | 范围 | 执行方式 | 实际结果 |

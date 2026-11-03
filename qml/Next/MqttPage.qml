@@ -375,7 +375,7 @@ Item {
                                         }
                                         ColumnLayout {
                                             Layout.fillWidth: true; spacing: 4
-                                            Label { textFormat: Text.PlainText; text: subscriptionRow.modelData.topic; color: subscriptionRow.modelData.color; Layout.fillWidth: true; font.pixelSize: 11; font.family: Next.PlatformFonts.monospaceFamily; wrapMode: Text.WrapAnywhere; maximumLineCount: 2; elide: Text.ElideRight }
+                                            Label { textFormat: Text.PlainText; text: subscriptionRow.modelData.topic; color: root.theme.markerTextColor(subscriptionRow.modelData.color); Layout.fillWidth: true; font.pixelSize: 11; font.family: Next.PlatformFonts.monospaceFamily; wrapMode: Text.WrapAnywhere; maximumLineCount: 2; elide: Text.ElideRight }
                                             Label { textFormat: Text.PlainText; text: subscriptionRow.modelData.state.startsWith("已订阅") ? subscriptionRow.modelData.state : "QoS " + subscriptionRow.modelData.qos + " · " + subscriptionRow.modelData.state; Layout.fillWidth: true; elide: Text.ElideRight; color: root.theme.subText; font.pixelSize: 9 }
                                         }
                                         Next.GlassButton {
@@ -442,7 +442,7 @@ Item {
                                             Item { Layout.fillWidth: true }
                                             Label { textFormat: Text.PlainText; text: row.messageTime; color: root.theme.subText; font.pixelSize: 10; font.family: Next.PlatformFonts.monospaceFamily }
                                         }
-                                        Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: row.topic; elide: Text.ElideMiddle; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 12; color: row.topicColor || root.theme.text }
+                                        Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: row.topic; elide: Text.ElideMiddle; font.family: Next.PlatformFonts.monospaceFamily; font.pixelSize: 12; color: row.topicColor ? root.theme.markerTextColor(row.topicColor) : root.theme.text }
                                         Label { textFormat: Text.PlainText; Layout.fillWidth: true; text: row.received ? row.preview : row.delivery; elide: Text.ElideRight; color: root.theme.subText; font.pixelSize: 11 }
                                     }
                                 }

@@ -1,4 +1,6 @@
 #include "WindowHelper.h"
+#include <QGuiApplication>
+#include <QStyleHints>
 
 #ifdef Q_OS_WIN
 #include <dwmapi.h>
@@ -25,6 +27,11 @@
 #endif
 
 WindowHelper::WindowHelper(QObject *parent) : QObject(parent) {}
+
+void WindowHelper::setApplicationLightMode(bool light) {
+  QGuiApplication::styleHints()->setColorScheme(light ? Qt::ColorScheme::Light
+                                                     : Qt::ColorScheme::Dark);
+}
 
 bool WindowHelper::setTitleBarColor(QQuickWindow *window, const QColor &color) {
 #ifdef Q_OS_WIN

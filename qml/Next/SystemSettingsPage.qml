@@ -12,6 +12,7 @@ Item {
     property int section: 0
     property string notice: ""
     property bool noticeError: false
+    property string appearanceError: ""
     property string ownedConnectionId: ""
     property string ownedSettingsOperationId: ""
     property string settingsOperationKind: ""
@@ -67,6 +68,16 @@ Item {
     function persistAppearance(key, value) {
         if (backend && typeof backend.setUiSetting === "function") backend.setUiSetting(key, value)
     }
+    function selectAppearance(light) {
+        if (root.theme.lightMode === light) return
+        if (backend && typeof backend.setUiSetting === "function"
+                && !backend.setUiSetting("next/appearance/colorMode", light ? "light" : "dark")) {
+            appearanceError = "外观设置保存失败，已保留原外观。请检查配置目录是否可写。"
+            return
+        }
+        appearanceError = ""
+        root.theme.lightMode = light
+    }
     Component.onCompleted: loadConfiguration()
     onControllerChanged: {
         ownedSettingsOperationId = ""; settingsOperationKind = ""
@@ -104,6 +115,69 @@ Item {
             text: setting.text; color: root.theme.text; font.pixelSize: 16
             verticalAlignment: Text.AlignVCenter
             rightPadding: setting.indicator.width + setting.spacing
+        }
+    }
+    component AppearanceOption: Next.GlassButton {
+        id: option
+        required property bool lightPreview
+        readonly property bool selected: root.theme.lightMode === lightPreview
+        Layout.fillWidth: true
+        Layout.preferredHeight: 166
+        padding: 12
+        Accessible.name: lightPreview ? "浅色" : "深色"
+        Accessible.role: Accessible.RadioButton
+        Accessible.checkable: true
+        Accessible.checked: selected
+        Accessible.onPressAction: root.selectAppearance(lightPreview)
+        Accessible.onToggleAction: root.selectAppearance(lightPreview)
+        onClicked: root.selectAppearance(lightPreview)
+        background: Rectangle {
+            radius: root.theme.lightMode ? 11 : 12
+            color: root.theme.lightMode ? "#ffffff" : option.selected ? root.theme.navigationSelected : root.theme.surface
+            border.width: option.visualFocus || (option.selected && !root.theme.lightMode) ? 2 : 1
+            border.color: option.selected || option.visualFocus ? root.theme.accent : root.theme.groupBorder
+        }
+        contentItem: ColumnLayout {
+            spacing: 12
+            Rectangle {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                radius: 6; clip: true
+                color: option.lightPreview ? "#ffffff" : "#1d2025"
+                border.color: option.lightPreview ? "#e5e9ec" : "#3c424b"
+                Rectangle {
+                    width: parent.width * 0.23; height: parent.height; radius: 5
+                    color: option.lightPreview ? "#f5f8f6" : "#202329"
+                    Column {
+                        anchors.fill: parent; anchors.margins: 9; spacing: 8
+                        Repeater {
+                            model: 4
+                            Rectangle { required property int index; width: parent.width; height: 5; radius: 2; color: index === 0 ? (option.lightPreview ? "#81a6c4" : "#75a9e6") : option.lightPreview ? "#c6d3d6" : "#566171" }
+                        }
+                    }
+                }
+                ColumnLayout {
+                    x: parent.width * 0.23 + 8; y: 10
+                    width: parent.width * 0.77 - 16; height: parent.height - 20; spacing: 8
+                    Rectangle { Layout.preferredWidth: parent.width * 0.6; height: 6; radius: 2; color: option.lightPreview ? "#e5edf2" : "#45566d" }
+                    RowLayout {
+                        Layout.fillWidth: true; Layout.fillHeight: true; spacing: 6
+                        Repeater {
+                            model: 2
+                            Rectangle { Layout.fillWidth: true; Layout.fillHeight: true; radius: 3; color: option.lightPreview ? "#ffffff" : "#282c33"; border.color: option.lightPreview ? "#e8edf0" : "#3c424b" }
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: option.lightPreview ? "浅色" : "深色"; font.pixelSize: 14; color: root.theme.text; Layout.fillWidth: true }
+                Rectangle {
+                    width: 18; height: 18; radius: 9
+                    color: option.selected ? root.theme.accentMuted : "transparent"
+                    border.color: option.selected ? root.theme.accentMuted : root.theme.controlBorder
+                    Label { anchors.centerIn: parent; text: option.selected ? "✓" : ""; color: "white"; font.pixelSize: 12 }
+                }
+            }
         }
     }
     component ShortcutRow: Item {
@@ -152,7 +226,13 @@ Item {
                         visible: root.section === 0
                         Layout.fillWidth: true; spacing: 20
                         Label { text: "界面外观"; color: root.theme.text; font.pixelSize: 23; font.bold: true }
-                        Label { text: "固定使用深色毛玻璃，必要时可减少透明度。"; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                        Label { text: "选择适合当前环境的外观，即时应用于所有窗口。"; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                        RowLayout {
+                            Layout.fillWidth: true; Layout.maximumWidth: 480; spacing: 16
+                            AppearanceOption { objectName: "settings-light"; lightPreview: true }
+                            AppearanceOption { objectName: "settings-dark"; lightPreview: false }
+                        }
+                        Label { objectName: "settings-appearance-error"; visible: root.appearanceError.length > 0; text: root.appearanceError; color: root.theme.error; Layout.fillWidth: true; wrapMode: Text.Wrap }
                         Rectangle {
                             Layout.fillWidth: true; implicitHeight: appearanceRows.implicitHeight
                             radius: 14; color: root.theme.surface; border.color: root.theme.groupBorder

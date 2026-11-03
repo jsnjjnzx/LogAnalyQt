@@ -190,6 +190,8 @@ ApplicationWindow {
         loadMainUiSettings();
         restoreParseWorkspace();
         theme.reducedTransparency = Boolean(backend.getUiSetting("next/appearance/reducedTransparency", false));
+        theme.lightMode = backend.getUiSetting("next/appearance/colorMode", "dark") === "light";
+        WindowHelper.setApplicationLightMode(theme.lightMode);
         Qt.callLater(ensureMinimumWindowWidth);
         // 延迟调用确保窗口完全创建
 
@@ -479,7 +481,10 @@ ApplicationWindow {
         }
     }
 
-    GlassTheme { id: theme }
+    GlassTheme {
+        id: theme
+        onLightModeChanged: WindowHelper.setApplicationLightMode(lightMode)
+    }
 
     // 定义统一的颜色过渡动画
 
@@ -503,7 +508,7 @@ ApplicationWindow {
         id: control
         padding: 0
         topPadding: 0
-        background: Rectangle { color: theme.surface; radius: 14; border.color: theme.groupBorder
+        background: Rectangle { color: theme.surface; radius: theme.lightMode ? 11 : 14; border.color: theme.groupBorder
             Rectangle { x: 14; y: 1; width: Math.max(0, parent.width - 28); height: 1; color: theme.highlightEdge }
         }
         label: Label { x: 14; y: 5; text: control.title; font.pixelSize: 15; font.bold: true; color: theme.text; padding: 3 }
@@ -529,6 +534,8 @@ ApplicationWindow {
 
         indicator: Canvas {
             id: canvas
+            property color iconColor: theme.text
+            onIconColorChanged: requestPaint()
             x: control.width - width - control.rightPadding
             y: control.topPadding + (control.availableHeight - height) / 2
             width: 12
@@ -548,7 +555,7 @@ ApplicationWindow {
                 context.lineTo(width, 0);
                 context.lineTo(width / 2, height);
                 context.closePath();
-                context.fillStyle = theme.text;
+                context.fillStyle = iconColor;
                 context.fill();
             }
         }
@@ -1112,7 +1119,7 @@ ApplicationWindow {
         id: navigation
         objectName: "main-navigation"
         targetWindow: mainWindow
-        width: collapsed ? 88 : mainWindow.currentPage === 15 ? 190 : mainWindow.width < 1340 ? 226 : 244
+        width: collapsed ? 88 : mainWindow.currentPage === 15 ? 190 : theme.lightMode ? 218 : mainWindow.width < 1340 ? 226 : 244
         anchors.top: customTitleBar.bottom; anchors.bottom: parent.bottom
         theme: mainWindow.uiTheme; currentPage: mainWindow.currentPage; version: mainWindow.appVersion
         onNavigate: page => mainWindow.navigate(page)
@@ -1134,7 +1141,7 @@ ApplicationWindow {
         objectName: "page-deck"
         anchors.top: customTitleBar.bottom; anchors.left: navigation.right
         anchors.right: parent.right; anchors.bottom: parent.bottom
-        anchors.margins: mainWindow.currentPage === 15 ? 12 : 18
+        anchors.margins: mainWindow.currentPage === 15 ? 12 : theme.lightMode ? 24 : 18
     }
     MouseArea {
         objectName: "mac-titlebar-drag"
@@ -1181,7 +1188,7 @@ ApplicationWindow {
         anchors.fill: pageDeck
         visible: mainWindow.currentPage < 3
         anchors.margins: 0
-        spacing: 8
+        spacing: theme.lightMode ? 12 : 8
 
         // --- Top Section: Folder Selection ---
 
@@ -1367,14 +1374,14 @@ ApplicationWindow {
                                         text: mdi.scriptText
                                         font.family: mdiFont.name
                                         font.pixelSize: 52
-                                        color: "#cccccc"
+                                        color: theme.lightMode ? theme.subText : "#cccccc"
                                         anchors.horizontalCenter: parent.horizontalCenter
                                     }
 
                                     Text {
                                         text: "可以拖入文件直接解析"
                                         font.pixelSize: 24
-                                        color: "#cccccc"
+                                        color: theme.lightMode ? theme.text : "#cccccc"
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         font.bold: true
                                     }
@@ -1382,7 +1389,7 @@ ApplicationWindow {
                                     Text {
                                         text: "也可粘贴日志文本，双击报文即可解析"
                                         font.pixelSize: 14
-                                        color: "#aaaaaa"
+                                        color: theme.lightMode ? theme.subText : "#aaaaaa"
                                         anchors.horizontalCenter: parent.horizontalCenter
                                     }
                                 }
@@ -2723,7 +2730,7 @@ ApplicationWindow {
             Rectangle {
                 Layout.fillWidth: true
                 radius: 6
-                color: "#2b1d12"
+                color: theme.lightMode ? "#fff3df" : "#2b1d12"
                 border.color: theme.warning
                 border.width: 1
 

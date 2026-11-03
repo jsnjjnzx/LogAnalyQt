@@ -2,6 +2,7 @@
 #include "LogMerger.h"
 #include "SshTerminal.h"
 #include "UpdateChecker.h"
+#include "WindowHelper.h"
 #include "mqtt/MqttController.h"
 #include "config/ConfigManager.h"
 #include <QEventLoop>
@@ -21,6 +22,7 @@
 #include <QTimer>
 #include <QTextStream>
 #include <QSaveFile>
+#include <QStyleHints>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <memory>
@@ -212,6 +214,8 @@ Button { text: "关闭"; onClicked: Qt.quit() }
       "AiFramingController", QStringLiteral("由 LogBackend 提供"));
   qmlRegisterType<LogMerger>("LogAnalyQt", 1, 2, "LogMerger");
   qmlRegisterType<UpdateChecker>("LogAnalyQt", 1, 2, "UpdateChecker");
+  qmlRegisterSingletonType<WindowHelper>("LogAnalyQt", 1, 2, "WindowHelper",
+      [](QQmlEngine *, QJSEngine *) -> QObject * { return new WindowHelper; });
 #ifdef LOGANALYQT_UI_TESTING
   const int sshBenchmarkIndex = app.arguments().indexOf(QStringLiteral("--ssh-performance"));
   const bool sshBenchmark = uiSmokeMode && sshBenchmarkIndex >= 0;
@@ -382,6 +386,22 @@ Button { text: "关闭"; onClicked: Qt.quit() }
         }
         if (pageArg >= 0 && pageArg + 1 < args.size())
           QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, args[pageArg + 1].toInt()));
+      }
+      const int appearanceArg = args.indexOf(QStringLiteral("--expect-color-mode"));
+      if (window && appearanceArg >= 0) {
+        auto *theme = window->property("uiTheme").value<QObject *>();
+        const QString expected = args.value(appearanceArg + 1);
+        const bool light = expected == QStringLiteral("light");
+        const bool nativeScheme = app.platformName() != "offscreen" && app.platformName() != "minimal";
+        if ((expected != "light" && expected != "dark") || !theme ||
+            theme->property("lightMode").toBool() != light ||
+            (nativeScheme && QGuiApplication::styleHints()->colorScheme() != (light ? Qt::ColorScheme::Light : Qt::ColorScheme::Dark))) {
+          fprintf(stderr, "APPEARANCE STARTUP CHECK FAILED\n");
+          app.exit(4);
+          return;
+        }
+        if (!nativeScheme) qInfo() << "APPEARANCE_NATIVE_SCHEME_UNAVAILABLE" << app.platformName();
+        qInfo() << "APPEARANCE_STARTUP_PASSED" << expected;
       }
       if (window && screenshotArg >= 0 && screenshotArg + 1 < args.size()) {
         const QImage image = window->grabWindow();

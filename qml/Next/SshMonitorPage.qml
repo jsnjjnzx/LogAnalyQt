@@ -146,7 +146,7 @@ GlassPage {
             && (rule.highlightWholeLine === undefined || typeof rule.highlightWholeLine === "boolean")
             && typeof rule.ignoreCase === "boolean" && backend.testMonitorExpression(rule.pattern, rule.ignoreCase, "").valid;
     }
-    function saveMonitorRule(id, name, pattern, ignoreCase, color, pauseOnMatch, highlightWholeLine) {
+    function saveMonitorRule(id, name, pattern, ignoreCase, color, pauseOnMatch, highlightWholeLine, sourceSessionId) {
         const rule = {id: id > 0 ? id : nextMonitorRuleId, name: name.trim(), pattern: pattern, ignoreCase: ignoreCase,
             color: color || "#e8b76a", pauseOnMatch: pauseOnMatch !== false, highlightWholeLine: highlightWholeLine !== false};
         if (!validMonitorRule(rule)) { monitorRuleError = "请填写名称及有效的正则表达式（最多 4096 字符）。"; return 0; }
@@ -154,9 +154,17 @@ GlassPage {
         const before = monitorRules, next = nextMonitorRuleId;
         const found = monitorRules.some(function(value) { return value.id === id; });
         if (id > 0 && !found) { monitorRuleError = "该规则已被删除，请重新选择。"; return 0; }
+        const source = sourceSessionId > 0 ? sessions.find(function(page) { return page.sessionId === sourceSessionId; }) : null;
+        if (sourceSessionId > 0 && !source) { monitorRuleError = "来源连接已关闭，请从当前连接重新添加规则。"; return 0; }
+        const previousIds = source ? source.monitorRuleIds : null, previousEnabled = source ? source.monitorEnabled : false;
         monitorRules = found ? monitorRules.map(function(value) { return value.id === id ? rule : value; }) : monitorRules.concat([rule]);
         if (id < 1) nextMonitorRuleId++;
-        if (!saveWorkspace()) { monitorRules = before; nextMonitorRuleId = next; monitorRuleError = workspaceError; return 0; }
+        if (source) { source.toggleMonitorRule(rule.id, true); source.monitorEnabled = true; }
+        if (!saveWorkspace()) {
+            monitorRules = before; nextMonitorRuleId = next;
+            if (source) { source.monitorRuleIds = previousIds; source.monitorEnabled = previousEnabled; }
+            monitorRuleError = workspaceError; return 0;
+        }
         monitorRuleError = "";
         return rule.id;
     }
@@ -180,6 +188,11 @@ GlassPage {
     function openMonitorRules(window) {
         ruleWindow.transientParent = window || root.ownerWindow || null;
         ruleWindow.show(); ruleWindow.raise(); ruleWindow.requestActivate();
+    }
+    function addMonitorRuleFromText(text, window, sourceSessionId) {
+        if (!text.trim()) return;
+        openMonitorRules(window);
+        ruleWindow.requestAction(function() { ruleWindow.loadText(text, sourceSessionId); });
     }
     Next.SshMonitorRuleWindow { id: ruleWindow; theme: root.theme; library: root }
 
@@ -676,7 +689,7 @@ GlassPage {
                                 Label { text: savedRow.config.name; color: root.theme ? root.theme.text : "white"; width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText }
                                 Label { text: savedRow.config.host + ":" + savedRow.config.port; color: root.theme ? root.theme.subText : "#a7adb7"; font.pixelSize: 11; width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText }
                             }
-                            background: Rectangle { radius: 5; color: savedRow.down || savedRow.highlighted ? "#334b6b" : savedRow.hovered ? "#303742" : "transparent" }
+                            background: Rectangle { radius: 5; color: savedRow.down || savedRow.highlighted ? (root.theme && root.theme.lightMode ? root.theme.navigationSelected : "#334b6b") : savedRow.hovered ? (root.theme && root.theme.lightMode ? root.theme.surfaceHover : "#303742") : "transparent" }
                             TapHandler { acceptedButtons: Qt.RightButton; onTapped: savedMenu.popup() }
                             Next.GlassMenu {
                                 id: savedMenu

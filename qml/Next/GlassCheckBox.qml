@@ -7,6 +7,7 @@ Basic.CheckBox {
     hoverEnabled: true
     opacity: enabled ? 1 : 0.45
     indicator: ControlSurface {
+        flat: control.palette.window.hslLightness > 0.85
         implicitWidth: 19; implicitHeight: 19
         x: control.leftPadding
         y: control.topPadding + (control.availableHeight - height) / 2

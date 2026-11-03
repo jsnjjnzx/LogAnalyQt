@@ -31,6 +31,7 @@ SpinBox {
         onEditingFinished: control.value = control.valueFromText(text, control.locale)
     }
     up.indicator: ControlSurface {
+        flat: control.palette.window.hslLightness > 0.85
         x: control.width - width; width: 23; height: control.height; radius: 6
         opacity: control.wrap || (control.from <= control.to ? control.value < control.to : control.value > control.to) ? 1 : 0.35
         baseColor: control.up.pressed ? control.palette.highlight : control.palette.button
@@ -38,6 +39,7 @@ SpinBox {
         Text { anchors.centerIn: parent; text: "+"; color: control.palette.buttonText; font.pixelSize: 17 }
     }
     down.indicator: ControlSurface {
+        flat: control.palette.window.hslLightness > 0.85
         width: 23; height: control.height; radius: 6
         opacity: control.wrap || (control.from <= control.to ? control.value > control.from : control.value < control.from) ? 1 : 0.35
         baseColor: control.down.pressed ? control.palette.highlight : control.palette.button
