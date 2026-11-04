@@ -161,14 +161,35 @@ void commandFolders() {
     QJsonObject{{"name", "查看日志"}, {"command", "tail -f app.log"}, {"folder", "运维"}}
   }}}}};
   check(ConfigMigration::validate(valid, &error), "command folders and legacy commands validate");
+  auto tolerant = valid;
+  auto ssh = tolerant.value("ssh").toObject();
+  ssh.insert("customCommands", QJsonArray{
+    QJsonObject{{"type", "folder"}, {"name", " "}},
+    QJsonObject{{"name", "空命令"}, {"command", " "}},
+    QJsonObject{{"name", " "}, {"command", "pwd"}},
+    QJsonObject{{"type", "unknown"}, {"name", "旧类型"}, {"command", "pwd"}}
+  });
+  tolerant.insert("ssh", ssh);
+  check(ConfigMigration::validate(tolerant, &error), "unusable legacy commands do not block startup");
+  QTemporaryDir legacy;
+  QSettings ini(legacy.filePath("LogAnalyQt.ini"), QSettings::IniFormat);
+  ini.setValue("ui/liveLog/customCommands", QString::fromUtf8(QJsonDocument(QJsonArray{
+    QJsonObject{{"name", "保留命令"}, {"command", "pwd"}},
+    QJsonObject{{"name", "空命令"}, {"command", " "}}
+  }).toJson(QJsonDocument::Compact)));
+  ini.sync();
+  auto plan = ConfigMigration::inspect(legacy.path());
+  check(plan.error.isEmpty() && plan.pending(), "legacy blank command still migrates");
+  check(ConfigMigration::execute(plan, {}, &error), "blank legacy command migration completes");
+  QJsonObject migrated;
+  check(ConfigJson::read(legacy.filePath("settings.json"), &migrated) &&
+        migrated.value("ssh").toObject().value("customCommands").toArray().first().toObject().value("name") == "保留命令",
+        "valid legacy command survives migration");
   auto invalid = valid;
-  auto ssh = invalid.value("ssh").toObject();
-  ssh.insert("customCommands", QJsonArray{QJsonObject{{"type", "folder"}, {"name", " "}}});
+  ssh = invalid.value("ssh").toObject();
+  ssh.insert("customCommands", QJsonObject{});
   invalid.insert("ssh", ssh);
-  check(!ConfigMigration::validate(invalid, &error), "empty command folder name is refused");
-  ssh.insert("customCommands", QJsonArray{QJsonObject{{"name", "命令"}, {"command", "pwd"}, {"folder", " "}}});
-  invalid.insert("ssh", ssh);
-  check(!ConfigMigration::validate(invalid, &error), "empty command folder reference is refused");
+  check(!ConfigMigration::validate(invalid, &error), "non-array commands remain invalid");
 }
 void backups() {
   QTemporaryDir dir; QString error;

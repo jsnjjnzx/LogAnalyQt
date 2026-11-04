@@ -4,10 +4,36 @@
 #include <QString>
 #include <QStringDecoder>
 #include <QVariantList>
+#include <numeric>
+#include <utility>
 #include <vector>
 #ifndef Q_OS_WIN
 #include <iconv.h>
 #endif
+
+struct SshMonitorMark {
+  int ruleId = 0;
+  QString ruleName;
+  QString color;
+  bool wholeLine = true;
+  qsizetype offset = 0;
+  QList<QPair<int, int>> ranges;
+
+  qsizetype storageBytes() const {
+    return (ruleName.capacity() + color.capacity()) * qsizetype(sizeof(QChar))
+        + ranges.capacity() * qsizetype(sizeof(QPair<int, int>));
+  }
+
+  QVariantList visibleRanges(const QString &text) const {
+    QVariantList result;
+    for (const auto &range : ranges) {
+      const auto start = qMax(offset, qsizetype(range.first));
+      const auto end = qMin(offset + text.size(), qsizetype(range.first) + range.second);
+      if (end > start) result.append(QVariantMap{{"start", start - offset}, {"length", end - start}});
+    }
+    return result;
+  }
+};
 
 struct SshLogLine {
   QString text;
@@ -19,6 +45,7 @@ struct SshLogLine {
   bool monitorWholeLine = true;
   qsizetype monitorOffset = 0;
   QList<QPair<int, int>> monitorRanges;
+  QList<SshMonitorMark> monitorMarks;
 
   QVariantList matchRanges() const {
     QVariantList result;
@@ -29,8 +56,41 @@ struct SshLogLine {
     }
     return result;
   }
+
+  QVariantList monitorMarkList() const {
+    QVariantList result;
+    for (const auto &mark : monitorMarks) {
+      QVariantMap value{{"ruleId", mark.ruleId}, {"ruleName", mark.ruleName},
+                        {"color", mark.color}, {"wholeLine", mark.wholeLine}};
+      if (!mark.wholeLine) value["ranges"] = mark.visibleRanges(text);
+      result.append(value);
+    }
+    return result;
+  }
+
+  void setMonitorMarks(QList<SshMonitorMark> marks) {
+    monitorMarks = std::move(marks);
+    monitorColor.clear();
+    monitorRuleName.clear();
+    monitorWholeLine = true;
+    monitorOffset = 0;
+    monitorRanges.clear();
+    if (monitorMarks.isEmpty()) return;
+    const auto *summary = &monitorMarks.back();
+    for (const auto &mark : monitorMarks)
+      if (mark.wholeLine) summary = &mark;
+    monitorColor = summary->color;
+    monitorRuleName = summary->ruleName;
+    monitorWholeLine = summary->wholeLine;
+    monitorOffset = summary->offset;
+    monitorRanges = summary->ranges;
+  }
+
   qsizetype storageBytes() const { return sizeof(SshLogLine) + (text.capacity() + monitorColor.capacity() + monitorRuleName.capacity()) * qsizetype(sizeof(QChar))
-      + monitorRanges.capacity() * qsizetype(sizeof(QPair<int, int>)); }
+      + monitorRanges.capacity() * qsizetype(sizeof(QPair<int, int>))
+      + monitorMarks.capacity() * qsizetype(sizeof(SshMonitorMark))
+      + std::accumulate(monitorMarks.cbegin(), monitorMarks.cend(), qsizetype(0),
+          [](qsizetype total, const SshMonitorMark &mark) { return total + mark.storageBytes(); }); }
 };
 
 // Worker-owned stream state; a socket read is not a character, escape sequence or line boundary.

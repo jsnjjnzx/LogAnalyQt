@@ -24,7 +24,7 @@
 class TerminalLineModel : public QAbstractListModel {
   Q_OBJECT
 public:
-  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole, MonitorColorRole, MonitorRuleNameRole, MonitorWholeLineRole, MonitorRangesRole };
+  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole, MonitorColorRole, MonitorRuleNameRole, MonitorWholeLineRole, MonitorRangesRole, MonitorMarksRole };
 
   explicit TerminalLineModel(int maxLines, QObject *parent = nullptr);
 
@@ -127,6 +127,7 @@ class SshTerminal : public QObject {
   Q_PROPERTY(QString liveMonitorColor READ liveMonitorColor NOTIFY liveLineChanged)
   Q_PROPERTY(bool liveMonitorWholeLine READ liveMonitorWholeLine NOTIFY liveLineChanged)
   Q_PROPERTY(QVariantList liveMonitorRanges READ liveMonitorRanges NOTIFY liveLineChanged)
+  Q_PROPERTY(QVariantList liveMonitorMarks READ liveMonitorMarks NOTIFY liveLineChanged)
   Q_PROPERTY(int cursorColumn READ cursorColumn NOTIFY liveLineChanged)
   Q_PROPERTY(int cursorPosition READ cursorPosition NOTIFY liveLineChanged)
   Q_PROPERTY(int cursorPadding READ cursorPadding NOTIFY liveLineChanged)
@@ -210,6 +211,7 @@ public:
   QString liveMonitorColor() const { return m_committedMonitorColor; }
   bool liveMonitorWholeLine() const { return m_committedMonitorWholeLine; }
   QVariantList liveMonitorRanges() const { return m_committedMonitorRanges; }
+  QVariantList liveMonitorMarks() const { return m_committedMonitorMarks; }
   int cursorColumn() const { return m_cursorColumn; }
   int cursorPosition() const { return m_cursorPosition; }
   int cursorPadding() const { return m_cursorPadding; }
@@ -374,6 +376,7 @@ private:
   QString m_committedMonitorColor;
   bool m_committedMonitorWholeLine = true;
   QVariantList m_committedMonitorRanges;
+  QVariantList m_committedMonitorMarks;
   int m_cursorColumn = 0;
   int m_cursorPosition = 0, m_cursorPadding = 0;
   QElapsedTimer m_lastInput;

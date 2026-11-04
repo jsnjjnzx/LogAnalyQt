@@ -320,14 +320,93 @@ static void monitorChecks() {
   check(terminal.lineModel()->data(terminal.lineModel()->index(0), TerminalLineModel::MonitorRangesRole).toList()
             == QVariantList{QVariantMap{{"start", 8190}, {"length", 2}}} && terminal.liveMonitorRanges().size() == 1,
         "a live match updates an earlier segment delivered in a previous GUI batch");
+
+  const QVariantList multiPartialRules{
+      QVariantMap{{"id", 10}, {"name", "index"}, {"pattern", "index"}, {"ignoreCase", false},
+                  {"color", "#7ed6a0"}, {"pauseOnMatch", false}, {"highlightWholeLine", false}},
+      QVariantMap{{"id", 11}, {"name", "label"}, {"pattern", "label"}, {"ignoreCase", false},
+                  {"color", "#80b9ff"}, {"pauseOnMatch", false}, {"highlightWholeLine", false}}};
+  SshLogStream multiPartialStream;
+  SshMonitorMatcher multiPartial;
+  multiPartial.configure(multiPartialRules, 12, multiPartialStream.logicalId(), {}, 0);
+  auto multiPartialLines = multiPartialStream.feed("index[1] label[2]\n");
+  SshLogLine multiPartialTail{multiPartialStream.partialLine(), multiPartialStream.logicalId()};
+  multiPartial.feed(multiPartialLines, multiPartialTail);
+  check(multiPartialLines[0].monitorMarks.size() == 2
+            && multiPartialLines[0].monitorMarks[0].ranges == QList<QPair<int, int>>{{0, 5}}
+            && multiPartialLines[0].monitorMarks[1].ranges == QList<QPair<int, int>>{{9, 5}}
+            && multiPartialLines[0].monitorColor == "#80b9ff",
+        "multiple partial rules keep independent ranges and colors on one row");
+  const auto multiMarkList = multiPartialLines[0].monitorMarkList();
+  check(multiMarkList.size() == 2 && multiMarkList[0].toMap().value("color").toString() == "#7ed6a0"
+            && multiMarkList[1].toMap().value("color").toString() == "#80b9ff",
+        "the QML mark list exposes every matching rule");
+  SshLogStream liveMultiStream;
+  SshMonitorMatcher liveMulti;
+  liveMulti.configure(multiPartialRules, 12, liveMultiStream.logicalId(), {}, 0);
+  auto liveMultiLines = liveMultiStream.feed("index label");
+  SshLogLine liveMultiTail{liveMultiStream.partialLine(), liveMultiStream.logicalId(), liveMultiStream.continuation(),
+                           liveMultiStream.hasPendingInput()};
+  liveMulti.feed(liveMultiLines, liveMultiTail);
+  terminal.clearBuffer();
+  SshTerminalTestAccess::publish(terminal, {}, liveMultiTail);
+  const auto liveMarks = terminal.liveMonitorMarks();
+  check(liveMarks.size() == 2 && liveMarks[0].toMap().value("color").toString() == "#7ed6a0"
+            && liveMarks[1].toMap().value("color").toString() == "#80b9ff",
+        "unfinished output exposes every matching rule to QML");
+  terminal.clearBuffer();
+
+  const QVariantList wholeLineRules{
+      QVariantMap{{"id", 20}, {"name", "first"}, {"pattern", "index"}, {"ignoreCase", false},
+                  {"color", "#f79a93"}, {"pauseOnMatch", false}, {"highlightWholeLine", true}},
+      QVariantMap{{"id", 21}, {"name", "second"}, {"pattern", "label"}, {"ignoreCase", false},
+                  {"color", "#80b9ff"}, {"pauseOnMatch", false}, {"highlightWholeLine", true}}};
+  SshLogStream wholeLineStream;
+  SshMonitorMatcher wholeLine;
+  wholeLine.configure(wholeLineRules, 13, wholeLineStream.logicalId(), {}, 0);
+  auto wholeLineLines = wholeLineStream.feed("index label\n");
+  SshLogLine wholeLineTail{wholeLineStream.partialLine(), wholeLineStream.logicalId()};
+  wholeLine.feed(wholeLineLines, wholeLineTail);
+  check(wholeLineLines[0].monitorMarks.size() == 2 && wholeLineLines[0].monitorWholeLine
+            && wholeLineLines[0].monitorColor == "#80b9ff",
+        "the last matching whole-line rule owns the background color");
+
+  const QVariantList mixedScopeRules{
+      wholeLineRules[0],
+      multiPartialRules[1]};
+  SshLogStream mixedStream;
+  SshMonitorMatcher mixed;
+  mixed.configure(mixedScopeRules, 14, mixedStream.logicalId(), {}, 0);
+  auto mixedLines = mixedStream.feed("index label\n");
+  SshLogLine mixedTail{mixedStream.partialLine(), mixedStream.logicalId()};
+  mixed.feed(mixedLines, mixedTail);
+  check(mixedLines[0].monitorMarks.size() == 2 && mixedLines[0].monitorColor == "#f79a93"
+            && mixedLines[0].monitorMarks[1].ranges == QList<QPair<int, int>>{{6, 5}},
+        "whole-line and partial marks coexist, with the whole-line background retained");
+
+  const QVariantList pausingMultiRules{
+      QVariantMap{{"id", 30}, {"name", "pause index"}, {"pattern", "index"}, {"ignoreCase", false},
+                  {"color", "#f79a93"}, {"pauseOnMatch", true}, {"highlightWholeLine", false}},
+      QVariantMap{{"id", 31}, {"name", "mark label"}, {"pattern", "label"}, {"ignoreCase", false},
+                  {"color", "#80b9ff"}, {"pauseOnMatch", false}, {"highlightWholeLine", false}}};
+  SshLogStream pausingMultiStream;
+  SshMonitorMatcher pausingMulti;
+  pausingMulti.configure(pausingMultiRules, 15, pausingMultiStream.logicalId(), {}, 0);
+  auto pausingMultiLines = pausingMultiStream.feed("index label\n");
+  SshLogLine pausingMultiTail{pausingMultiStream.partialLine(), pausingMultiStream.logicalId()};
+  pausingMulti.feed(pausingMultiLines, pausingMultiTail);
+  check(pausingMultiLines[0].monitorMarks.size() == 2 && pausingMulti.hit().data.value("ruleId").toInt() == 30,
+        "a pause hit still retains later mark-only matches for display");
+
   terminal.clearBuffer();
   std::vector<SshLogLine> history;
   for (int i = 0; i < 100; ++i) history.push_back({QString(8192, 'x'), 99, i > 0, true});
   SshTerminalTestAccess::publish(terminal, std::move(history), {});
   SshLogLine densePartial{"tail", 99, true, true};
-  densePartial.monitorColor = "#7ed6a0"; densePartial.monitorWholeLine = false; densePartial.monitorOffset = 100 * 8192;
-  densePartial.monitorRanges.reserve(65536);
-  for (int i = 0; i < 65536; ++i) densePartial.monitorRanges.append({2 * i, 1});
+  QList<QPair<int, int>> denseRanges;
+  denseRanges.reserve(65536);
+  for (int i = 0; i < 65536; ++i) denseRanges.append({2 * i, 1});
+  densePartial.setMonitorMarks({{1, "dense", "#7ed6a0", false, 100 * 8192, denseRanges}});
   QSignalSpy countChanges(&terminal, &SshTerminal::lineCountChanged);
   SshTerminalTestAccess::publish(terminal, {}, densePartial);
   check(terminal.lineModel()->byteSize() <= SshLogStream::HistoryBytes && terminal.currentLineCount() < 100 && countChanges.size() == 1,

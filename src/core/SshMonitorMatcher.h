@@ -88,14 +88,14 @@ public:
         fail(QStringLiteral("当前日志行超过检测缓存上限，匹配已停止")); return;
       }
       if (!line.continues) {
-        mark(line, match(m_prefix), m_prefix, m_prefix.size() - line.text.size());
+        mark(line, m_prefix, m_prefix.size() - line.text.size());
         if (m_latched) return;
       }
     }
     advanceLine(partial.logicalId);
     if (!partial.text.isEmpty()) {
       const auto text = m_prefix + partial.text;
-      mark(partial, match(text), text, m_prefix.size());
+      mark(partial, text, m_prefix.size());
     }
   }
   const SshMonitorHit &hit() const { return m_hit; }
@@ -103,27 +103,46 @@ public:
 
 private:
   struct Rule { int id; QString name; QString color; QRegularExpression re; bool pause; bool wholeLine; };
-  void mark(SshLogLine &line, const Rule *rule, const QString &text, qsizetype offset) {
-    if (!rule) return;
-    line.monitorColor = rule->color; line.monitorRuleName = rule->name;
-    line.monitorWholeLine = rule->wholeLine;
-    line.monitorOffset = m_segmentOffset + offset;
-    line.monitorRanges.clear();
-    if (!rule->wholeLine) {
-      auto iterator = rule->re.globalMatch(text);
+  void mark(SshLogLine &line, const QString &text, qsizetype offset) {
+    const Rule *hitRule = nullptr;
+    QRegularExpressionMatch hitMatch;
+    bool hitPause = false;
+    QList<SshMonitorMark> marks;
+    for (const auto &rule : m_rules) {
+      auto iterator = rule.re.globalMatch(text);
+      if (!iterator.isValid()) { fail(QStringLiteral("规则「%1」运行超出匹配限制，请简化表达式").arg(rule.name)); return; }
+      bool matched = false;
+      QRegularExpressionMatch firstMatch;
+      QList<QPair<int, int>> ranges;
       while (iterator.hasNext()) {
-        const auto match = iterator.next();
-        if (match.capturedStart() < m_baseline || match.capturedEnd() <= m_baseline) continue;
-        const auto start = m_segmentOffset + match.capturedStart();
-        const auto length = match.capturedLength();
-        if (length > 0) {
-          if (!line.monitorRanges.isEmpty() && line.monitorRanges.last().first + line.monitorRanges.last().second == start)
-            line.monitorRanges.last().second += int(length);
-          else line.monitorRanges.append({int(start), int(length)});
-        }
+        const auto found = iterator.next();
+        if (found.capturedStart() < m_baseline || found.capturedEnd() <= m_baseline) continue;
+        if (!matched) { matched = true; firstMatch = found; }
+        if (!rule.wholeLine && found.capturedLength() > 0)
+          ranges.append({int(m_segmentOffset + found.capturedStart()), int(found.capturedLength())});
+        if (rule.wholeLine) break;
+      }
+      if (!matched) continue;
+      marks.append({rule.id, rule.name, rule.color, rule.wholeLine, m_segmentOffset + offset, ranges});
+      if (!hitRule || (rule.pause && !hitPause)) {
+        hitRule = &rule;
+        hitMatch = firstMatch;
+        hitPause = rule.pause;
       }
     }
-    if (!m_hit.data.isEmpty()) m_hit.data["ranges"] = line.matchRanges();
+    line.setMonitorMarks(std::move(marks));
+    if (!hitRule || m_notified.contains(hitRule->id)) return;
+    m_notified.insert(hitRule->id);
+    const auto start = qMax(qsizetype(0), hitMatch.capturedStart() - 1024);
+    QVariantList hitRanges;
+    for (const auto &mark : line.monitorMarks)
+      if (mark.ruleId == hitRule->id) { hitRanges = mark.visibleRanges(line.text); break; }
+    m_hit = {m_revision, m_logicalId, m_segmentOffset + hitMatch.capturedStart(),
+        {{"ruleId", hitRule->id}, {"ruleName", hitRule->name}, {"color", hitRule->color}, {"pauseOnMatch", hitRule->pause},
+         {"highlightWholeLine", hitRule->wholeLine}, {"ranges", hitRanges},
+         {"text", text.mid(start, 4096)}, {"matchStart", hitMatch.capturedStart() - start}, {"matchLength", hitMatch.capturedLength()},
+         {"truncated", start > 0 || text.size() > start + 4096}}};
+    m_latched = hitRule->pause;
   }
   void advanceLine(quint64 logicalId) {
     if (logicalId == m_logicalId) return;
@@ -132,31 +151,6 @@ private:
   void fail(const QString &error) {
     m_latched = true;
     m_hit = {m_revision, m_logicalId, 0, {{"error", error}}};
-  }
-  const Rule *match(const QString &text) {
-    const Rule *selected = nullptr;
-    QRegularExpressionMatch selectedMatch;
-    for (const auto &rule : m_rules) {
-      auto iterator = rule.re.globalMatch(text);
-      if (!iterator.isValid()) { fail(QStringLiteral("规则「%1」运行超出匹配限制，请简化表达式").arg(rule.name)); return nullptr; }
-      while (iterator.hasNext()) {
-        const auto found = iterator.next();
-        if (found.capturedStart() < m_baseline || found.capturedEnd() <= m_baseline) continue;
-        if (!selected || rule.pause) { selected = &rule; selectedMatch = found; }
-        break;
-      }
-      if (selected && selected->pause) break;
-    }
-    if (!selected || m_notified.contains(selected->id)) return selected;
-    m_notified.insert(selected->id);
-    const auto start = qMax(qsizetype(0), selectedMatch.capturedStart() - 1024);
-    m_hit = {m_revision, m_logicalId, m_segmentOffset + selectedMatch.capturedStart(),
-        {{"ruleId", selected->id}, {"ruleName", selected->name}, {"color", selected->color}, {"pauseOnMatch", selected->pause},
-         {"highlightWholeLine", selected->wholeLine},
-         {"text", text.mid(start, 4096)}, {"matchStart", selectedMatch.capturedStart() - start}, {"matchLength", selectedMatch.capturedLength()},
-         {"truncated", start > 0 || text.size() > start + 4096}}};
-    m_latched = selected->pause;
-    return selected;
   }
   std::vector<Rule> m_rules;
   quint64 m_revision = 0, m_logicalId = 0;

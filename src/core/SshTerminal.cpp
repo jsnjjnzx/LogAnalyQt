@@ -684,6 +684,7 @@ QVariant TerminalLineModel::data(const QModelIndex &index, int role) const {
   if (role == MonitorRuleNameRole) return line.monitorRuleName;
   if (role == MonitorWholeLineRole) return line.monitorWholeLine;
   if (role == MonitorRangesRole) return line.matchRanges();
+  if (role == MonitorMarksRole) return line.monitorMarkList();
   if (role == ContinuesRole) return line.continues;
   return {};
 }
@@ -691,7 +692,7 @@ QVariant TerminalLineModel::data(const QModelIndex &index, int role) const {
 QHash<int, QByteArray> TerminalLineModel::roleNames() const {
   return {{LineTextRole, "lineText"}, {LineIdRole, "lineId"},
           {ContinuationRole, "continuation"}, {ContinuesRole, "continues"}, {MonitorColorRole, "monitorColor"}, {MonitorRuleNameRole, "monitorRuleName"},
-          {MonitorWholeLineRole, "monitorWholeLine"}, {MonitorRangesRole, "monitorRanges"}};
+          {MonitorWholeLineRole, "monitorWholeLine"}, {MonitorRangesRole, "monitorRanges"}, {MonitorMarksRole, "monitorMarks"}};
 }
 
 void TerminalLineModel::appendLines(const QStringList &lines) {
@@ -757,20 +758,19 @@ void TerminalLineModel::appendRecords(std::vector<SshLogLine> lines) {
 }
 
 void TerminalLineModel::applyMonitorMark(const SshLogLine &source, int before) {
-  if (source.monitorWholeLine || source.monitorColor.isEmpty()) return;
+  if (source.monitorMarks.isEmpty()) return;
   if (before < 0) before = rowCount();
-  auto offset = source.monitorOffset;
+  auto marks = source.monitorMarks;
   int first = before;
   for (int i = before - 1; i >= 0 && m_lines[size_t(i)].logicalId == source.logicalId; --i) {
     auto &line = m_lines[size_t(i)];
-    offset -= line.text.size();
+    for (auto &mark : marks) mark.offset -= line.text.size();
     m_bytes -= line.storageBytes();
-    line.monitorColor = source.monitorColor; line.monitorRuleName = source.monitorRuleName;
-    line.monitorWholeLine = false; line.monitorOffset = offset; line.monitorRanges = source.monitorRanges;
+    line.setMonitorMarks(marks);
     m_bytes += line.storageBytes(); first = i;
   }
   if (first < before) emit dataChanged(index(first), index(before - 1),
-      {MonitorColorRole, MonitorRuleNameRole, MonitorWholeLineRole, MonitorRangesRole});
+      {MonitorColorRole, MonitorRuleNameRole, MonitorWholeLineRole, MonitorRangesRole, MonitorMarksRole});
 }
 
 void TerminalLineModel::setMaxLines(int maxLines) {
@@ -1716,6 +1716,7 @@ void SshTerminal::resetPendingData(bool discardPartial) {
   m_flushTimer->stop();
   m_committedPartial.clear(); m_committedMonitorColor.clear();
   m_committedMonitorWholeLine = true; m_committedMonitorRanges.clear();
+  m_committedMonitorMarks.clear();
   m_cursorColumn = 0;
   m_cursorPosition = m_cursorPadding = 0;
   emit liveLineChanged();
@@ -1757,6 +1758,7 @@ void SshTerminal::flushFinalPendingData() {
   m_flushTimer->stop();
   m_committedPartial.clear(); m_committedMonitorColor.clear();
   m_committedMonitorWholeLine = true; m_committedMonitorRanges.clear();
+  m_committedMonitorMarks.clear();
   m_cursorColumn = m_cursorPosition = m_cursorPadding = 0; emit liveLineChanged();
 }
 
@@ -1769,6 +1771,7 @@ void SshTerminal::flushPendingData() {
   QString liveColor;
   bool liveWholeLine;
   QVariantList liveRanges;
+  QVariantList liveMarks;
   SshLogLine monitorPartial;
   int column, position, padding;
   SshMonitorHit hit;
@@ -1785,6 +1788,7 @@ void SshTerminal::flushPendingData() {
     liveColor = more ? QString() : m_buffer->partial.monitorColor;
     liveWholeLine = more || m_buffer->partial.monitorWholeLine;
     liveRanges = more ? QVariantList{} : m_buffer->partial.matchRanges();
+    liveMarks = more ? QVariantList{} : m_buffer->partial.monitorMarkList();
     if (!more) monitorPartial = m_buffer->partial;
     partialLogicalId = m_buffer->partial.logicalId;
     column = more ? 0 : m_buffer->cursorColumn;
@@ -1797,7 +1801,7 @@ void SshTerminal::flushPendingData() {
     tabOverflow = m_buffer->tabOverflow; m_buffer->tabOverflow = false;
   }
   const auto previousCount = m_lineModel->rowCount();
-  if (!lines.empty() || (!monitorPartial.monitorWholeLine && !monitorPartial.monitorColor.isEmpty()))
+  if (!lines.empty() || !monitorPartial.monitorMarks.isEmpty())
     emit linesAboutToChange();
   if (!lines.empty()) m_lineModel->appendRecords(std::move(lines));
   m_lineModel->applyMonitorMark(monitorPartial);
@@ -1813,10 +1817,12 @@ void SshTerminal::flushPendingData() {
   }
   if (bytes || previousCount != m_lineModel->rowCount()) emit lineCountChanged();
   if (m_committedPartial != live || m_cursorColumn != column || m_committedMonitorColor != liveColor
-      || m_committedMonitorWholeLine != liveWholeLine || m_committedMonitorRanges != liveRanges) {
+      || m_committedMonitorWholeLine != liveWholeLine || m_committedMonitorRanges != liveRanges
+      || m_committedMonitorMarks != liveMarks) {
     m_committedPartial = std::move(live); m_cursorColumn = column;
     m_committedMonitorColor = liveColor;
     m_committedMonitorWholeLine = liveWholeLine; m_committedMonitorRanges = std::move(liveRanges);
+    m_committedMonitorMarks = std::move(liveMarks);
     m_cursorPosition = position; m_cursorPadding = padding;
     emit liveLineChanged();
   }

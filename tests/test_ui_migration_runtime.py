@@ -86,10 +86,11 @@ def main():
             return state["monitorRules"], [(entry["config"]["monitorEnabled"], entry["config"]["monitorRuleIds"]) for entry in state["sessions"]]
         monitor_before_restart = monitor_preferences()
         rules, selections = monitor_before_restart
-        assert len(rules) == 3 and rules[0]["color"] == "#bb9cf5" and rules[0]["pauseOnMatch"] is True
+        assert len(rules) == 4 and rules[0]["color"] == "#bb9cf5" and rules[0]["pauseOnMatch"] is True
         assert rules[2]["pauseOnMatch"] is False and rules[2]["color"] == "#7ed6a0", "mark-only action/color were not persisted"
-        assert rules[0]["highlightWholeLine"] is True and rules[2]["highlightWholeLine"] is False, "per-rule highlight scope was not persisted"
-        assert selections == [(True, [rules[0]["id"], rules[2]["id"]]), (True, [rules[1]["id"]])], "session rule selections were not persisted independently"
+        assert rules[3]["pauseOnMatch"] is False and rules[3]["color"] == "#bb9cf5", "the second mark-only rule was not persisted"
+        assert rules[0]["highlightWholeLine"] is True and rules[2]["highlightWholeLine"] is False and rules[3]["highlightWholeLine"] is False, "per-rule highlight scope was not persisted"
+        assert selections == [(True, [rules[0]["id"], rules[2]["id"], rules[3]["id"]]), (True, [rules[1]["id"]])], "session rule selections were not persisted independently"
         conflict_home = runtime / "conflict-home"
         conflict_data = conflict_home / "Library/Application Support/LogAnalyQt" if sys.platform == "darwin" else runtime
         if sys.platform == "darwin":

@@ -1001,6 +1001,43 @@ Item {
             verify(!item(a, "ssh-monitor-live-hit").visible)
             compare(live.ranges.length, 1)
         }
+        function test_multipleRuleMarksOverlayAndLastWholeLineWins() {
+            make()
+            const a = page.activeSession; connected(a)
+            a.connectionConfigExpanded = false
+            const indexId = page.saveMonitorRule(-1, "index", "index", false, "#7ed6a0", false, false)
+            const labelId = page.saveMonitorRule(-1, "label", "label", false, "#80b9ff", false, false)
+            const logicId = page.saveMonitorRule(-1, "logic", "logic", false, "#e8b76a", false, true)
+            const sessionId = page.saveMonitorRule(-1, "session", "SessionEncode", false, "#bb9cf5", false, true)
+            a.monitorRuleIds = [indexId, labelId, logicId, sessionId]; a.monitorEnabled = true
+            a.terminal.appendTestLines(["index[1] label[2] logic SessionEncode"], 100); wait(40)
+            const row = a.terminal.lineModel.get(0)
+            compare(row.monitorMarks.length, 4)
+            const view = item(a, "ssh-log-list")
+            view.forceLayout()
+            const visualRow = view.itemAtIndex(0); verify(visualRow !== null)
+            compare(visualRow.wholeLineColor.toString(), "#bb9cf5")
+            const highlights = item(visualRow, "ssh-log-match-highlights")
+            const spans = highlights.children.filter(child => child.objectName === "ssh-match-span")
+            compare(spans.length, 2)
+            compare(spans[0].spanColor.toString(), "#7ed6a0")
+            compare(spans[1].spanColor.toString(), "#80b9ff")
+            verify(spans[1].x > spans[0].x + spans[0].width)
+            a.terminal.liveLine = "index[3] label[4] logic SessionEncode"
+            a.terminal.liveMonitorMarks = [
+                {ruleId:indexId, ruleName:"index", color:"#7ed6a0", wholeLine:false, ranges:[{start:0,length:5}]},
+                {ruleId:labelId, ruleName:"label", color:"#80b9ff", wholeLine:false, ranges:[{start:9,length:5}]},
+                {ruleId:logicId, ruleName:"logic", color:"#e8b76a", wholeLine:true},
+                {ruleId:sessionId, ruleName:"session", color:"#bb9cf5", wholeLine:true}
+            ]; wait(40)
+            verify(item(a, "ssh-monitor-live-hit").visible)
+            const liveHighlights = item(a, "ssh-live-match-highlights")
+            const liveSpans = liveHighlights.children.filter(child => child.objectName === "ssh-match-span")
+            compare(liveSpans.length, 2)
+            compare(liveSpans[0].spanColor.toString(), "#7ed6a0")
+            compare(liveSpans[1].spanColor.toString(), "#80b9ff")
+            compare(liveHighlights.parent.wholeLineColor.toString(), "#bb9cf5")
+        }
         function test_pauseRulesTakePrecedenceOverMarkOnlyRules() {
             make()
             const a = page.activeSession

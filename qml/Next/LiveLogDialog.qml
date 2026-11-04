@@ -37,10 +37,9 @@ GlassPage {
     onMonitorConfigurationChanged: { monitorError = ""; configureMonitorRules(); }
     function configureMonitorRules() {
         if (!sshTerminal) return;
-        const rules = autoScroll ? selectedMonitorRules : selectedMonitorRules
-            .filter(function(rule) { return rule.pauseOnMatch !== false; })
-            .concat(selectedMonitorRules.filter(function(rule) { return rule.pauseOnMatch === false; }))
-            .map(function(rule) { return Object.assign({}, rule, {pauseOnMatch: false}); });
+        const rules = selectedMonitorRules.map(function(rule) {
+            return Object.assign({}, rule, {pauseOnMatch: autoScroll && rule.pauseOnMatch !== false});
+        });
         if (!sshTerminal.setMonitorRules(rules, monitorEnabled && monitorError === "")) {
             sshTerminal.setMonitorRules([], false);
             monitorError = "规则无效，请在规则库中检查表达式。";
@@ -452,11 +451,23 @@ GlassPage {
         property string sourceText
         property var ranges: []
         property color markColor: "transparent"
+        property var markSet: []
+        readonly property var paintedMarks: markSet && markSet.length ? markSet
+            : ranges.length ? [{color: String(markColor), wholeLine: false, ranges: ranges}] : []
         clip: true
+        function flatRanges() {
+            const result = [];
+            for (const mark of paintedMarks) {
+                if (mark.wholeLine) continue;
+                for (const range of mark.ranges || [])
+                    result.push({start: range.start, length: range.length, color: String(mark.color)});
+            }
+            return result;
+        }
         Loader {
             id: wrappedLayout
             anchors.fill: parent
-            active: liveLogDialog.wrapLogLines && marks.ranges.length > 0
+            active: liveLogDialog.wrapLogLines && marks.paintedMarks.length > 0
             visible: false
             sourceComponent: TextEdit {
                 text: marks.sourceText; textFormat: TextEdit.PlainText
@@ -473,23 +484,26 @@ GlassPage {
             const layoutText = layout.text, layoutWidth = layout.width, layoutHeight = layout.implicitHeight;
             if (layoutText !== text) return [];
             const result = [];
-            for (const range of ranges) {
-                let start = Math.max(0, range.start);
-                const end = Math.min(text.length, layout.length, range.start + range.length);
-                while (start < end) {
-                    const first = layout.positionToRectangle(start), last = layout.positionToRectangle(end);
-                    if (first.y === last.y) {
-                        result.push({x:first.x,y:first.y,width:Math.max(0,last.x-first.x),height:first.height});
-                        break;
+            for (const mark of paintedMarks) {
+                if (mark.wholeLine) continue;
+                for (const range of mark.ranges || []) {
+                    let start = Math.max(0, range.start);
+                    const end = Math.min(text.length, layout.length, range.start + range.length);
+                    while (start < end) {
+                        const first = layout.positionToRectangle(start), last = layout.positionToRectangle(end);
+                        if (first.y === last.y) {
+                            result.push({x:first.x,y:first.y,width:Math.max(0,last.x-first.x),height:first.height,color:String(mark.color)});
+                            break;
+                        }
+                        let lo = start + 1, hi = end;
+                        while (lo < hi) {
+                            const mid = Math.floor((lo + hi) / 2);
+                            if (layout.positionToRectangle(mid).y > first.y) hi = mid;
+                            else lo = mid + 1;
+                        }
+                        result.push({x:first.x,y:first.y,width:Math.max(0,available-first.x),height:first.height,color:String(mark.color)});
+                        start = lo;
                     }
-                    let lo = start + 1, hi = end;
-                    while (lo < hi) {
-                        const mid = Math.floor((lo + hi) / 2);
-                        if (layout.positionToRectangle(mid).y > first.y) hi = mid;
-                        else lo = mid + 1;
-                    }
-                    result.push({x:first.x,y:first.y,width:Math.max(0,available-first.x),height:first.height});
-                    start = lo;
                 }
             }
             return result;
@@ -500,11 +514,12 @@ GlassPage {
                 objectName: "ssh-wrapped-match-span"
                 required property var modelData
                 x: modelData.x; y: modelData.y; width: modelData.width; height: modelData.height
-                color: Qt.rgba(marks.markColor.r, marks.markColor.g, marks.markColor.b, 0.3)
+                property color spanColor: modelData.color
+                color: Qt.rgba(spanColor.r, spanColor.g, spanColor.b, 0.3)
             }
         }
         Repeater {
-            model: liveLogDialog.wrapLogLines ? [] : parent.ranges
+            model: liveLogDialog.wrapLogLines ? [] : marks.flatRanges()
             Rectangle {
                 id: highlight
                 objectName: "ssh-match-span"
@@ -512,7 +527,8 @@ GlassPage {
                 x: prefixMetrics.advanceWidth
                 width: endMetrics.advanceWidth - x
                 height: parent.height
-                color: Qt.rgba(parent.markColor.r, parent.markColor.g, parent.markColor.b, 0.3)
+                property color spanColor: modelData.color
+                color: Qt.rgba(spanColor.r, spanColor.g, spanColor.b, 0.3)
                 TextMetrics { id: prefixMetrics; font: charMeasurer.font; text: highlight.parent.sourceText.slice(0, highlight.modelData.start) }
                 TextMetrics { id: endMetrics; font: charMeasurer.font; text: highlight.parent.sourceText.slice(0, highlight.modelData.start + highlight.modelData.length) }
             }
@@ -2476,17 +2492,30 @@ GlassPage {
                             objectName: "ssh-log-line-" + stableId
                             property real stableId: model && model.lineId !== undefined ? model.lineId : -1
                             readonly property string displayText: model && model.lineText !== undefined ? model.lineText : ""
-                            readonly property color ruleColor: model && model.monitorColor ? model.monitorColor : "transparent"
                             readonly property var pausedHit: liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === stableId ? liveLogDialog.monitorHit : null
-                            readonly property bool wholeLine: pausedHit ? pausedHit.highlightWholeLine !== false : !model || model.monitorWholeLine !== false
+                            readonly property var lineMonitorMarks: model && model.monitorMarks ? model.monitorMarks : []
+                            readonly property var pausedMarks: pausedHit
+                                ? [{color: String(pausedHit.color || monitorHitColor), wholeLine: pausedHit.highlightWholeLine !== false,
+                                    ranges: pausedHit.ranges || []}]
+                                : []
+                            readonly property var paintedMarks: lineMonitorMarks && lineMonitorMarks.length ? lineMonitorMarks : pausedMarks
+                            readonly property color wholeLineColor: {
+                                let result = "transparent";
+                                for (const mark of paintedMarks)
+                                    if (mark.wholeLine) result = mark.color;
+                                return result;
+                            }
+                            readonly property color ruleColor: wholeLineColor.a > 0
+                                ? wholeLineColor
+                                : paintedMarks.length ? paintedMarks[paintedMarks.length - 1].color : "transparent"
+                            readonly property bool wholeLine: wholeLineColor.a > 0
                             property int rowIndex: index
                             onStableIdChanged: applyHexSelection()
                             onRowIndexChanged: applyHexSelection()
                             width: liveLogDialog.wrapLogLines ? logListView.width : logListView.contentWidth
                             height: Math.max(charMeasurer.implicitHeight, lineText.implicitHeight, selectionLoader.item ? selectionLoader.item.implicitHeight : 0) + 4
-                            color: wholeLine && pausedHit
-                                ? Qt.rgba(monitorHitColor.r, monitorHitColor.g, monitorHitColor.b, 0.3)
-                                : wholeLine && ruleColor.a > 0 ? Qt.rgba(ruleColor.r, ruleColor.g, ruleColor.b, 0.25)
+                            color: wholeLineColor.a > 0
+                                ? Qt.rgba(wholeLineColor.r, wholeLineColor.g, wholeLineColor.b, 0.25)
                                 : (searchKeyword !== "" && displayText.toLowerCase().indexOf(searchKeyword.toLowerCase()) >= 0) ? terminalMatchBg : "transparent"
                             Rectangle {
                                 width: 3; height: parent.height; color: lineItem.ruleColor.a > 0 ? lineItem.ruleColor : monitorHitColor
@@ -2497,7 +2526,8 @@ GlassPage {
                                 objectName: "ssh-log-match-highlights"
                                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 6
                                 sourceText: lineItem.displayText
-                                ranges: lineItem.wholeLine ? [] : lineItem.ruleColor.a > 0 ? model.monitorRanges || [] : lineItem.pausedHit ? lineItem.pausedHit.ranges || [] : []
+                                markSet: lineItem.paintedMarks
+                                ranges: []
                                 markColor: lineItem.pausedHit ? monitorHitColor : lineItem.ruleColor
                             }
 
@@ -2585,8 +2615,26 @@ GlassPage {
                             property real caretX: 10 + cursorRect.x + sshTerminal.cursorPadding * liveLogDialog.charWidth
                             property real caretY: cursorRect.y
                             readonly property var pausedHit: liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === liveSelectionId ? liveLogDialog.monitorHit : null
-                            readonly property bool wholeLine: pausedHit ? pausedHit.highlightWholeLine !== false : sshTerminal.liveMonitorWholeLine
-                            readonly property color markColor: sshTerminal.liveMonitorColor || (pausedHit ? monitorHitColor : "transparent")
+                            readonly property var liveMarks: sshTerminal.liveMonitorMarks || []
+                            readonly property var pausedMarks: pausedHit
+                                ? [{color: String(pausedHit.color || monitorHitColor), wholeLine: pausedHit.highlightWholeLine !== false,
+                                    ranges: pausedHit.ranges || []}]
+                                : []
+                            readonly property var fallbackMarks: !liveMarks.length && !pausedMarks.length && sshTerminal.liveMonitorRanges.length
+                                ? [{color: sshTerminal.liveMonitorColor, wholeLine: sshTerminal.liveMonitorWholeLine,
+                                    ranges: sshTerminal.liveMonitorRanges}]
+                                : []
+                            readonly property var paintedMarks: liveMarks.length ? liveMarks : pausedMarks.length ? pausedMarks : fallbackMarks
+                            readonly property color wholeLineColor: {
+                                let result = "transparent";
+                                for (const mark of paintedMarks)
+                                    if (mark.wholeLine) result = mark.color;
+                                return result;
+                            }
+                            readonly property bool wholeLine: wholeLineColor.a > 0
+                            readonly property color markColor: wholeLineColor.a > 0
+                                ? wholeLineColor
+                                : paintedMarks.length ? paintedMarks[paintedMarks.length - 1].color : "transparent"
                             Rectangle {
                                 objectName: "ssh-monitor-live-hit"
                                 anchors.fill: parent
@@ -2598,6 +2646,7 @@ GlassPage {
                                 objectName: "ssh-live-match-highlights"
                                 x: 10; width: parent.width - 16; height: parent.height
                                 sourceText: sshTerminal.liveLine
+                                markSet: parent.paintedMarks
                                 ranges: parent.wholeLine ? [] : parent.pausedHit ? parent.pausedHit.ranges || [] : sshTerminal.liveMonitorRanges
                                 markColor: parent.markColor
                             }

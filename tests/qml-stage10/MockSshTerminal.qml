@@ -63,6 +63,7 @@ QtObject {
     property string liveMonitorColor: ""
     property bool liveMonitorWholeLine: true
     property var liveMonitorRanges: []
+    property var liveMonitorMarks: []
     property int cursorColumn: 0
     property int cursorPosition: liveLine.length
     property int cursorPadding: 0
@@ -166,29 +167,41 @@ QtObject {
         if (receptionPaused) { pendingPeerLines = pendingPeerLines.concat(lines); return }
         linesAboutToChange()
         const nextId = receivedFirstLineId + receiveModel.count
-        for (const text of lines) receiveModel.append({lineText:text,lineId:receivedFirstLineId+receiveModel.count,continuation:false,continues:false,monitorColor:"",monitorRuleName:"",monitorWholeLine:true,monitorRanges:[]})
+        for (const text of lines) receiveModel.append({lineText:text,lineId:receivedFirstLineId+receiveModel.count,continuation:false,continues:false,monitorColor:"",monitorRuleName:"",monitorWholeLine:true,monitorRanges:[],monitorMarks:[]})
         while (receiveModel.count > limit) { receiveModel.remove(0); receivedFirstLineId++ }
         for (let i = 0; i < lines.length && monitorArmed; ++i) {
-            const found = monitorRules.filter(rule => new RegExp(rule.pattern, rule.ignoreCase ? "i" : "").test(lines[i]))
-            const rule = found.find(value => value.pauseOnMatch !== false) || found[0]
-            if (!rule) continue
-            const ranges = []
-            if (rule.highlightWholeLine === false) {
-                const regex = new RegExp(rule.pattern, rule.ignoreCase ? "gi" : "g"); let match
-                while ((match = regex.exec(lines[i])) !== null) {
-                    if (match[0].length) ranges.push({start:match.index,length:match[0].length})
-                    else regex.lastIndex++
+            const matched = []
+            for (const rule of monitorRules) {
+                const ranges = []
+                const regex = new RegExp(rule.pattern, rule.ignoreCase ? "gi" : "g")
+                if (!regex.test(lines[i])) continue
+                regex.lastIndex = 0
+                if (rule.highlightWholeLine === false) {
+                    let match
+                    while ((match = regex.exec(lines[i])) !== null) {
+                        if (match[0].length) ranges.push({start:match.index,length:match[0].length})
+                        else regex.lastIndex++
+                    }
                 }
+                matched.push({rule:rule, ranges:ranges, color:rule.color || "#e8b76a",
+                    wholeLine:rule.highlightWholeLine !== false})
             }
+            if (!matched.length) continue
+            const summary = matched.filter(value => value.wholeLine).slice(-1)[0] || matched[matched.length - 1]
             const row = nextId + i - receivedFirstLineId
             if (row >= 0 && row < receiveModel.count) {
-                receiveModel.setProperty(row, "monitorColor", rule.color || "#e8b76a")
-                receiveModel.setProperty(row, "monitorRuleName", rule.name)
-                receiveModel.setProperty(row, "monitorWholeLine", rule.highlightWholeLine !== false)
-                receiveModel.setProperty(row, "monitorRanges", ranges)
+                receiveModel.setProperty(row, "monitorColor", summary.color)
+                receiveModel.setProperty(row, "monitorRuleName", summary.rule.name)
+                receiveModel.setProperty(row, "monitorWholeLine", summary.wholeLine)
+                receiveModel.setProperty(row, "monitorRanges", summary.ranges)
+                receiveModel.setProperty(row, "monitorMarks", matched.map(value => ({
+                    ruleId:value.rule.id, ruleName:value.rule.name, color:value.color,
+                    wholeLine:value.wholeLine, ranges:value.ranges
+                })))
             }
-            monitorMatched({ruleId:rule.id,ruleName:rule.name,color:rule.color || "#e8b76a",pauseOnMatch:rule.pauseOnMatch !== false,
-                highlightWholeLine:rule.highlightWholeLine !== false,ranges:ranges,
+            const hit = matched.find(value => value.rule.pauseOnMatch !== false) || matched[0]
+            monitorMatched({ruleId:hit.rule.id,ruleName:hit.rule.name,color:hit.color,pauseOnMatch:hit.rule.pauseOnMatch !== false,
+                highlightWholeLine:hit.wholeLine,ranges:hit.ranges,
                 text:lines[i],lineId:nextId+i,receivedLineId:receivedFirstLineId+receiveModel.count,time:"12:00:00"})
         }
         lineCountChanged()

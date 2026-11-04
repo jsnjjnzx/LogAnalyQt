@@ -1,5 +1,29 @@
 # 测试结果
 
+## 2026-11-04 v5.3.1 发布准备（T65 / RELEASE-20、21）
+
+- 版本与范围：CMake/README/CHANGELOG 更新为 5.3.1，发布内容限定 T63/T64 及相关正式测试和流程文档；不纳入个人配置、构建缓存或固定应用。
+- 本地发布前验证：`check_build.py`确认5.3.1；136项配置断言、158项监控QML、38项发布工具、完整Debug构建及`ui_migration_runtime`/`ssh_stream_tests` 2/2通过。
+- 用户明确本次只发布远端、不更新固定本地自测应用；不把本地构建包作为发行产物。Windows x64/macOS arm64正式包将由同一release commit的CI生成和验收。
+- 远端双平台构建、标签发布和公开更新验收必须在实际运行完成后补记，不以本地通过代替。
+
+## 2026-11-04 多规则命中叠加（T64 / SSHRULE-03、04）
+
+- `python3 tests/stage10_qml_tests.py`：158 passed / 0 failed / 0 skipped。新增用例在同一行同时验证 `index`、`label` 两条部分规则的两种颜色和位置，以及 `logic`、`SessionEncode` 两条全行规则时背景取后者；同一用例还验证未完成尾行多色渲染。暂停回看、单规则、换行分段、选区、快捷命令和既有监控用例全部保留通过。
+- `cmake --build --preset macos-debug --target ssh_stream_tests -j2 && build/macos-debug/ssh_stream_tests`：`PASS: 470 SSH stream/model/session-log assertions`。覆盖多部分规则独立区间与颜色、多个全行规则最后者取色、全行与部分并存、暂停命中仍保留后续仅标记规则、未完成尾行多标记及原有分段、缓存预算和单条通知行为。
+- `cmake --build --preset macos-debug -j2`：完整 Debug 构建成功，仅既有 OpenSSL 重复链接告警。`ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure`：2/2通过（41.61秒、0.98秒）；整应用原生用例确认两个 `NOTICE` 规则在真实 `TerminalLineModel` 中保留两条颜色标记并随工作区重启持久化。
+- 独立成品 `build/macos-debug/t64-package/通联工坊.app`：从已验收5.3.0包更新主程序后重新运行 `macdeployqt`、库ID归一化和ad-hoc签名；`codesign --verify --deep --strict`及`check_build.py --macos-bundle`通过，126个随包Mach-O均为arm64且仅依赖系统或包内库。
+- 成品 Cocoa 完整回归：清除开发库路径并设置 `QT_QPA_PLATFORM=cocoa` 运行 `tests/test_ui_migration_runtime.py`，配置迁移、外观、监控规则/会话选择重启、MQTT及完整工作区恢复全部通过。固定`release_package/通联工坊.app`已同步该接受包，2351项普通文件/符号链接的SHA-256与链接目标逐项一致。
+- 未验证：Windows、真实外部SSH设备、用户实际规则集的独立人工视觉验收；未修改真实用户配置或日志。历史缓冲仍不重扫，本次只保证保存后新到达日志的多色叠加。
+
+## 2026-11-04 迁移空快捷命令启动修复（T63 / CONFIG-01、02）
+
+- `cmake --build --preset macos-debug --target config_tests -j2 && build/macos-debug/config_tests`：通过，`PASS: 136 configuration assertions`。新增旧 INI 迁移用例覆盖“有效命令 + 空命令”，确认迁移完成、有效命令保留；空名称、空命令、空文件夹名称及异常类型不再阻断，顶层非数组仍拒绝。
+- `cmake --build --preset macos-debug -j2`：完整 Debug 构建成功，仅既有 OpenSSL 重复链接及现有弃用告警。使用隔离测试目录和 `--ui-smoke --screenshot` 启动含空快捷命令的配置：退出码 0，生成1440×860主界面截图 `/tmp/loganalyqt-t63-bad-command.png`，未出现迁移阻断页。
+- 本地应用：以 5.3.0 发布包为基线替换新主程序，运行 `macdeployqt`、库 ID 归一化及 ad-hoc 签名；`codesign --verify --deep --strict` 通过，`check_build.py --macos-bundle` 验证126个随包 Mach-O 均为 arm64 且只依赖系统或包内库。`release_package/通联工坊.app` 与接受包的全部2048项普通文件/符号链接一致，并由 GUI 实际打开，窗口标题为“通联工坊 v5.3.0”。
+- 程序区安装：确认所有通联工坊实例退出后，将 `/Applications/通联工坊.app` 从5.2.0替换为同一5.3.0修复包。安装目录与固定包2048项普通文件/符号链接完全一致，签名及126个Mach-O检查通过；GUI实际打开到主界面。操作前后 `settings.json` 时间不变，6条快捷命令仍全部存在。
+- 未验证：直接以终端启动打包内 Cocoa 可执行文件做自动化截图时，当前会话因 PasteBoard/XPC 不可用退出134，未将该结果作为成品失败或通过证据；固定路径应用已通过正常 GUI 启动验证。真实用户触发报错的来源文件未能与当前可见配置对应，因此只对隔离旧配置完成复现和回归；未主动修改真实用户配置，未验证 Windows，未提交、推送或发布。
+
 ## 2026-11-03 v5.3.0 发布准备（T62 / RELEASE-18、19）
 
 - 版本与范围：CMake/README/CHANGELOG 统一为 5.3.0；提交范围包含 T55～T61 累计源码、正式测试、设计预览和流程记录，不包含个人配置、`build/`、`release_package/` 或生成证据。

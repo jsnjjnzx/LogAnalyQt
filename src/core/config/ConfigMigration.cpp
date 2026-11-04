@@ -248,13 +248,7 @@ bool ConfigMigration::validate(const QJsonObject &root, QString *error) {
   }
   const auto commands = root.value("ssh").toObject().value("customCommands");
   if (!commands.isUndefined() && !commands.isArray()) return ConfigJson::fail(error, QStringLiteral("快捷命令格式无效"));
-  for (const auto &command : commands.toArray()) {
-    const auto row = command.toObject();
-    if (row.value("name").toString().trimmed().isEmpty()) return ConfigJson::fail(error, QStringLiteral("快捷命令名称或内容为空"));
-    if (row.value("type").toString() == "folder") continue;
-    if (row.contains("type") || row.value("command").toString().trimmed().isEmpty()) return ConfigJson::fail(error, QStringLiteral("快捷命令名称或内容为空"));
-    if (row.contains("folder") && row.value("folder").toString().trimmed().isEmpty()) return ConfigJson::fail(error, QStringLiteral("快捷命令文件夹无效"));
-  }
+  // The command loader drops unusable shortcuts; one bad row must not block all settings.
   if (root.contains("messages")) {
     QJsonObject roundtrip;
     if (!PresetCodec::decode(PresetCodec::encode(root.value("messages").toObject()), &roundtrip, error)) return false;
