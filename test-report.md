@@ -3,7 +3,11 @@
 ## 2026-11-05 v5.4.1 发布验收（T84 / RELEASE-24、25）
 
 - 提交前核对 `scripts/ci/check_build.py` 识别 5.4.1，发布工具测试 38/38 通过，`git diff --check` 通过。三个模拟 HTTP 用例在沙箱无法绑定回环端口，允许本机回环后重跑通过。
-- 本次发行提交沿用下列 T80、T81 和 T83 的原生及 macOS 隔离成品证据。5.4.1 完整构建、双平台产物来源及公开更新结果在发布后补记。
+- 发行提交 `0fea664a2b47751a39826fba97c48074bcc93b8e` 本地 macOS Debug 完整编译通过，版本为 5.4.1。排除 QML 和成品界面自动化后，原生 CTest 27/27 通过（36.43 秒）。本机 SSH 完整连接回归 62 项断言通过，覆盖自动日志首批输出、单文件追加、自动重连和断开。
+- 本地 5.4.1 自测包通过 126 个 arm64 Mach-O、包内依赖、deep strict 签名和 Cocoa 隔离启动检查。固定路径 `release_package/通联工坊.app` 与验收包逐文件一致，主程序 SHA-256 为 `9efe589e2694741e77e131a0243b202ad32c86fc1b28f18148bd156345fd10b3`。
+- [双平台构建 41993499974](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41993499974) 成功。Windows x64 用时 13m13s，macOS arm64 用时 10m44s。两端完成编译、原生测试、包检查和独立成品探测。产物来源门禁确认同一个 main 提交后推送标签。
+- [发布与公开更新 41995280783](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41995280783) 成功。[v5.4.1](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.4.1) 于北京时间 16:33:12 公开，GitHub API 确认为最新正式版。七个附件齐全，匿名下载 `update.json` 并核对其 SHA-256，同时核对清单与正式附件的名称、下载地址、字节数及 SHA-256。
+- Windows x64 和 macOS arm64 的公开更新演练分别用时 41s、37s，均完成公开下载、校验、替换和重启。按项目约定跳过 QML 和成品界面自动化。Windows 实机长时间刷屏和 Apple 公证未验证。
 
 ## 2026-11-05 暂停跟随后持续刷屏闪动（T83 / SSHFOLLOW-07）
 
