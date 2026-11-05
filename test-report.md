@@ -5,7 +5,10 @@
 - `cmake --build --preset macos-debug -j4`：完成 5.4.0 全量编译与 QML 资源构建。
 - `ctest --test-dir build/macos-debug --output-on-failure --no-tests=error -E '^(prot698_qml_tests|stage10_qml_tests|ui_.*_runtime|macos_window_activation)$'`：27/27 通过，36.80 秒；包括断线续传、HTTP 416 完整重下、枚举边界、SSH 分卷与安全、MQTT、原生 macOS 和更新器替换。
 - `scripts/ci/check_build.py` 确认版本 5.4.0；发布工具 Python 测试 38/38 通过。沙盒初跑有 3 个回环端口权限错误，授权后重跑通过。修改的 Actions YAML 可解析，`git diff --check` 通过。
-- 按用户确认，本地和远端不运行 QML 套件、成品界面自动化或公开更新的工作区界面场景。待核对同提交双平台产物、正式附件和公开更新；Windows 实机、真实 SSH 设备和 Apple 公证不在本次验收范围。
+- 发行提交 `d3d8b141e6a6ca4782cbdc8b8cc4177cdbe9e836` 的 [双平台构建 41976745564](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41976745564) 成功。Windows x64 用时 12m31s，macOS arm64 用时 11m13s。两端均通过编译、原生测试、包校验和独立成品 HTTPS 探测。`find_validated_build.py` 核对同一 main 提交、产物来源及有效期后推送标签。
+- [发布与公开更新 41978158672](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/41978158672) 成功。发布作业复用上述构建的产物，于北京时间 14:06:29 公开 [v5.4.0](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.4.0)。GitHub API 确认为最新正式版。匿名下载公开 `update.json` 成功，核对 7 个附件及清单记录的地址、大小和 SHA256。
+- Windows x64 和 macOS arm64 公开更新作业分别用时 36s、43s。两端均模拟旧版客户端从正式 Release 下载，核对 SHA256，替换并重启至 5.4.0，确认测试数据文件保留。
+- 按用户确认跳过本地和远端 QML 套件、成品界面自动化及公开更新的工作区界面场景。Windows 实机、真实 SSH 设备和 Apple 公证未验证。
 
 ## 2026-11-05 应用层消息枚举含义（T78 / APPMSG-01）
 
