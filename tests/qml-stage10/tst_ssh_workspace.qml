@@ -456,11 +456,14 @@ Item {
             verify(Math.abs(view.contentY - y) < 1); verify(!view.atYEnd)
 
             view.positionViewAtEnd()
+            wait(30)
+            verify(!a.autoScroll, "programmatic relayout at the bottom must not resume following")
+            mouseWheel(view, 40, 100, 0, -120)
             tryCompare(a, "autoScroll", true); tryCompare(view, "atYEnd", true)
             a.terminal.appendTestLines(["new after reaching bottom"], 1000)
             tryCompare(view, "atYEnd", true)
 
-            view.positionViewAtIndex(80, ListView.Beginning); view.contentY += 7; wait(40)
+            mouseWheel(view, 40, 100, 0, 240)
             tryCompare(a, "autoScroll", false)
             a.focusTerminal(); keyClick(Qt.Key_Return)
             tryCompare(a, "autoScroll", true); tryCompare(view, "atYEnd", true)
@@ -530,6 +533,28 @@ Item {
                 verify(horizontalBar.visible)
             }
             verify(!a.autoScroll)
+        }
+        function test_pausedUnfinishedLineKeepsScrollbarAndViewportHeight() {
+            make()
+            const a = page.activeSession
+            a.connectionConfigExpanded = false
+            a.terminal.appendTestLines(Array(120).fill("short history"), 120)
+            a.autoScroll = false
+            const view = item(a, "ssh-log-list")
+            const bar = item(a, "ssh-log-horizontal-scroll")
+            const wide = "x".repeat(1600)
+            a.terminal.liveLine = wide
+            tryCompare(bar, "visible", true)
+            const height = view.height
+            for (let i = 0; i < 4; ++i) {
+                a.terminal.liveLine = i % 2 ? wide : "short"
+                wait(30)
+                compare(view.height, height)
+                verify(bar.visible && !a.autoScroll)
+            }
+            a.terminal.liveLine = "short"
+            a.resumeFollowing()
+            tryCompare(bar, "visible", false)
         }
         function test_primaryMenuOptionsAndSharedFlatTerminalFrame() {
             make()

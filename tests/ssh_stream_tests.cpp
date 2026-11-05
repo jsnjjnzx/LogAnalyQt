@@ -497,6 +497,23 @@ static void receptionPauseChecks() {
   check(state.wait(1000) && terminal.receptionPaused(), "rapid stop/resume ignores stale worker acknowledgements");
 }
 
+static void liveViewportNotificationChecks() {
+  QTemporaryDir temporary;
+  SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
+  terminal.setUseSystemCredentials(false);
+  QStringList viewportSnapshots;
+  QObject observer;
+  QObject::connect(&terminal, &SshTerminal::linesAboutToChange, &observer,
+                   [&] { viewportSnapshots.append(terminal.liveLine()); });
+  QSignalSpy liveChanges(&terminal, &SshTerminal::liveLineChanged);
+  SshTerminalTestAccess::publish(terminal, {}, {QString(800, 'x'), 1, false, true});
+  SshTerminalTestAccess::publish(terminal, {}, {"short", 1, false, true});
+  SshTerminalTestAccess::publish(terminal, {}, {"short", 1, false, true});
+  check(viewportSnapshots == QStringList{QString(), QString(800, 'x')} && liveChanges.count() == 2
+            && terminal.currentLineCount() == 0 && terminal.liveLine() == "short",
+        "live-only geometry changes notify the viewport before replacing the previous text");
+}
+
 static QByteArray readLog(const QString &path) {
   QFile file(path);
   check(file.open(QIODevice::ReadOnly), "saved session log is readable");
@@ -773,7 +790,7 @@ void SshTerminalTestAccess::connectionStateChecks() {
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); folderLogChecks(); currentConnectionErrorChecks(); SshTerminalTestAccess::connectionStateChecks();
+    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); liveViewportNotificationChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); folderLogChecks(); currentConnectionErrorChecks(); SshTerminalTestAccess::connectionStateChecks();
     QTextStream(stdout) << "PASS: " << checks << " SSH stream/model/session-log assertions; files used isolated temporary directories\n";
     return 0;
   } catch (const std::exception &error) {

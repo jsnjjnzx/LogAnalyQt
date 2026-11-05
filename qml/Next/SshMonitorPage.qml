@@ -110,7 +110,7 @@ GlassPage {
     property int connectionEditorSavedIndex: -1
     property string connectionEditorOldKey: ""
     property string connectionEditorNameSuffix: ""
-    property bool applyingConnectionEditor: false
+    property bool applyingConfiguration: false
     property bool waitingForLogShutdown: false
     enabled: !waitingForLogShutdown
     property var logShutdownTargets: []
@@ -226,6 +226,8 @@ GlassPage {
             && (config.logFlushIntervalSeconds === undefined || Number.isInteger(config.logFlushIntervalSeconds) && config.logFlushIntervalSeconds >= 1 && config.logFlushIntervalSeconds <= 60)
             && (config.logBufferKiB === undefined || Number.isInteger(config.logBufferKiB) && config.logBufferKiB >= 16 && config.logBufferKiB <= 8192)
             && (config.logDestination === undefined || config.logDestination === "file" || config.logDestination === "folder")
+            && (config.logFile === undefined || typeof config.logFile === "string" && config.logFile.length <= 4096
+                && (config.logFile === "" || config.logFile.startsWith("file:")))
             && (config.logFolder === undefined || typeof config.logFolder === "string" && config.logFolder.length <= 4096)
             && (config.logNameTemplate === undefined || typeof config.logNameTemplate === "string" && config.logNameTemplate.length <= 256)
             && (config.logRotateBySize === undefined || typeof config.logRotateBySize === "boolean")
@@ -579,6 +581,30 @@ GlassPage {
         delete row.autoFollowEnabled;
         return row;
     }
+    function saveSessionLogSettings(page, config) {
+        const target = page.connectionConfiguration();
+        const key = connectionKey(target);
+        const hasTarget = target.host.trim() && target.username.trim() && Number(target.port) > 0;
+        const matching = hasTarget ? sessions.filter(function(session) {
+            return connectionKey(session.connectionConfiguration()) === key;
+        }) : [page];
+        const before = matching.map(function(session) { return session.logConfiguration(); });
+        const savedBefore = savedConnections;
+        applyingConfiguration = true;
+        for (const session of matching) session.restoreLogConfiguration(config);
+        if (hasTarget) {
+            savedConnections = savedConnections.map(function(row) {
+                return connectionKey(row) === key ? Object.assign({}, row, config) : row;
+            });
+        }
+        const saved = saveWorkspace();
+        if (!saved) {
+            savedConnections = savedBefore;
+            matching.forEach(function(session, index) { session.restoreLogConfiguration(before[index]); });
+        }
+        applyingConfiguration = false;
+        return saved;
+    }
     function openConnectionEditor(page, savedIndex) {
         let config = null, index = savedIndex === undefined ? -1 : savedIndex;
         if (page) {
@@ -615,12 +641,12 @@ GlassPage {
         let index = connectionEditorSavedIndex;
         const beforeRows = savedConnections;
         const beforeConfig = page ? page.connectionConfiguration() : null;
-        applyingConnectionEditor = true;
+        applyingConfiguration = true;
         if (page) {
             if (index < 0) index = savedConnections.findIndex(function(value) { return connectionKey(value) === connectionEditorOldKey; });
             const pageConfig = Object.assign({}, config, {name: config.name + connectionEditorNameSuffix});
             if (!page.applyConnectionConfiguration(pageConfig)) {
-                applyingConnectionEditor = false;
+                applyingConfiguration = false;
                 connectionEditor.showError("当前连接正在使用，主机、端口、用户和密码需断开后修改。");
                 return false;
             }
@@ -635,12 +661,12 @@ GlassPage {
         if (!saveWorkspace()) {
             savedConnections = beforeRows;
             if (page && beforeConfig) page.applyConnectionConfiguration(beforeConfig);
-            applyingConnectionEditor = false;
+            applyingConfiguration = false;
             connectionEditor.showError(workspaceError);
             return false;
         }
         if (page && index >= 0) page.savedConnectionKey = connectionKey(rows[index]);
-        applyingConnectionEditor = false;
+        applyingConfiguration = false;
         if (!keepOpen) connectionEditor.close();
         return true;
     }
@@ -709,8 +735,10 @@ GlassPage {
             ownerWindow: detached ? monitorWindow : root.ownerWindow
             persistConnectionSettings: false; workspaceManaged: true
             sharedCommands: commandLibrary; monitorRuleLibrary: root
+            commitLogSettings: function(config) { return root.saveSessionLogSettings(sessionPage, config); }
             onConfigurationEdited: {
-                if (!root.applyingConnectionEditor) root.syncSavedConnection(sessionPage);
+                if (root.applyingConfiguration) return;
+                root.syncSavedConnection(sessionPage);
                 root.scheduleSave();
             }
             onConnectionSettingsRequested: root.openConnectionEditor(sessionPage)
@@ -730,7 +758,7 @@ GlassPage {
             readonly property var activePage: container.activeGroup ? container.activeGroup.active : null
             title: (activePage ? activePage.sessionName + " · " : "") + "实时监控 — 通联工坊"
             width: 1100; height: 760; minimumWidth: 440; minimumHeight: 480
-            flags: Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
+            flags: Qt.Window | Qt.WindowTitleHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
                    Qt.WindowCloseButtonHint | Qt.WindowSystemMenuHint
             modality: Qt.NonModal; transientParent: null
             color: root.theme ? root.theme.background : "#1d2025"; palette: root.palette; font: root.font
@@ -743,8 +771,17 @@ GlassPage {
             ColumnLayout {
                 anchors.fill: parent; spacing: 0
                 RowLayout {
-                    Layout.fillWidth: true; Layout.margins: 6
-                    Label { text: "实时监控"; color: root.theme ? root.theme.text : "white"; Layout.fillWidth: true }
+                    Layout.fillWidth: true; Layout.fillHeight: false; Layout.margins: 6
+                    Label {
+                        text: "实时监控"; color: root.theme ? root.theme.text : "white"
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        verticalAlignment: Text.AlignVCenter
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: floatingWindow.visibility === Window.Windowed
+                            onPressed: floatingWindow.startSystemMove()
+                        }
+                    }
                     Next.GlassButton {
                         objectName: "ssh-window-maximize-" + (floatingWindow.activePage ? floatingWindow.activePage.sessionId : 0)
                         text: floatingWindow.visibility === Window.Maximized ? "还原" : "最大化"; implicitHeight: 28

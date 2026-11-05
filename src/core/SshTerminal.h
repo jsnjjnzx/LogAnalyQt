@@ -218,7 +218,7 @@ public:
   int cursorPadding() const { return m_cursorPadding; }
   void setPresentationActive(bool active);
 
-  Q_INVOKABLE void connectToHost();
+  Q_INVOKABLE void connectToHost(const QVariantMap &logOptions = {});
   Q_INVOKABLE void disconnectFromHost();
   Q_INVOKABLE void sendCommand(const QString &cmd);
   Q_INVOKABLE void sendRawBytes(const QString &text);

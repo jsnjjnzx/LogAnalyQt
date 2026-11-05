@@ -24,6 +24,7 @@ GlassPage {
     property bool useSystemCredentials: false
     property var sharedCommands: null
     property var monitorRuleLibrary: null
+    property var commitLogSettings: null
     property bool monitorEnabled: false
     property var monitorRuleIds: []
     property string savedConnectionKey: ""
@@ -64,7 +65,7 @@ GlassPage {
         logListView.positionViewAtEnd();
     }
     function finishAutoFollowScroll() {
-        if (logListView && logListView.atYEnd) resumeFollowing();
+        if (!autoScroll && logListView && logListView.atYEnd) resumeFollowing();
     }
     function positionMonitorHit() {
         if (!monitorHit || autoScroll) return;
@@ -82,19 +83,21 @@ GlassPage {
     signal connectionSettingsRequested()
     onConfigurationSnapshotChanged: configurationEdited()
     function connectionConfiguration() {
-        return {name: sessionName, host: hostInput.text, port: portInput.text, username: userInput.text,
+        return Object.assign({name: sessionName, host: hostInput.text, port: portInput.text, username: userInput.text,
             password: secureCredentials ? "" : pwdInput.text,
             encoding: encodingCombo.currentText, maxLines: maxLinesInput.text,
             autoReconnect: sshTerminal.autoReconnectEnabled, reconnectCount: reconnectCountInput.text,
             reconnectInterval: reconnectIntervalInput.text,
             expanded: workspaceManaged ? false : connectionConfigExpanded,
             commandManagementExpanded: commandManagementExpanded, copyOnSelect: copyOnSelect,
-            wrapLogLines: wrapLogLines,
+            wrapLogLines: wrapLogLines, monitorEnabled: monitorEnabled, monitorRuleIds: monitorRuleIds}, logConfiguration());
+    }
+    function logConfiguration() {
+        return {
             logFlushIntervalSeconds: logFlushIntervalSeconds, logBufferKiB: logBufferKiB,
-            logDestination: logDestination, logFolder: logFolder, logNameTemplate: logNameTemplate,
+            logDestination: logDestination, logFile: String(logFile), logFolder: logFolder, logNameTemplate: logNameTemplate,
             logRotateBySize: logRotateBySize, logRotateSizeMiB: logRotateSizeMiB,
-            logRotateByDuration: logRotateByDuration, logRotateMinutes: logRotateMinutes,
-            monitorEnabled: monitorEnabled, monitorRuleIds: monitorRuleIds};
+            logRotateByDuration: logRotateByDuration, logRotateMinutes: logRotateMinutes};
     }
     function restoreConfiguration(config) {
         sessionName = config.name;
@@ -107,9 +110,19 @@ GlassPage {
         connectionConfigExpanded = config.expanded; commandManagementExpanded = config.commandManagementExpanded;
         copyOnSelect = config.copyOnSelect === true;
         wrapLogLines = config.wrapLogLines === true;
+        restoreLogConfiguration(config);
+        monitorRuleIds = config.monitorRuleIds || [];
+        monitorEnabled = config.monitorEnabled === true;
+        sshTerminal.host = config.host; sshTerminal.username = config.username;
+        if (portInput.acceptableInput) sshTerminal.port = Number(config.port);
+        pwdInput.text = config.password || "";
+        sshTerminal.password = pwdInput.text;
+    }
+    function restoreLogConfiguration(config) {
         logFlushIntervalSeconds = config.logFlushIntervalSeconds === undefined ? 1 : config.logFlushIntervalSeconds;
         logBufferKiB = config.logBufferKiB === undefined ? 256 : config.logBufferKiB;
         logDestination = config.logDestination === "folder" ? "folder" : "file";
+        logFile = typeof config.logFile === "string" ? config.logFile : "";
         logFolder = typeof config.logFolder === "string" ? config.logFolder : "";
         logNameTemplate = typeof config.logNameTemplate === "string" && config.logNameTemplate.length > 0
             ? config.logNameTemplate : defaultLogNameTemplate;
@@ -117,12 +130,6 @@ GlassPage {
         logRotateSizeMiB = Number.isInteger(config.logRotateSizeMiB) ? config.logRotateSizeMiB : 100;
         logRotateByDuration = config.logRotateByDuration === true;
         logRotateMinutes = Number.isInteger(config.logRotateMinutes) ? config.logRotateMinutes : 60;
-        monitorRuleIds = config.monitorRuleIds || [];
-        monitorEnabled = config.monitorEnabled === true;
-        sshTerminal.host = config.host; sshTerminal.username = config.username;
-        if (portInput.acceptableInput) sshTerminal.port = Number(config.port);
-        pwdInput.text = config.password || "";
-        sshTerminal.password = pwdInput.text;
     }
     function applyConnectionConfiguration(config) {
         if (!config) return false;
@@ -132,16 +139,7 @@ GlassPage {
             sessionName = config.name;
             copyOnSelect = config.copyOnSelect === true;
             wrapLogLines = config.wrapLogLines === true;
-            logFlushIntervalSeconds = config.logFlushIntervalSeconds === undefined ? 1 : config.logFlushIntervalSeconds;
-            logBufferKiB = config.logBufferKiB === undefined ? 256 : config.logBufferKiB;
-            logDestination = config.logDestination === "folder" ? "folder" : "file";
-            logFolder = typeof config.logFolder === "string" ? config.logFolder : "";
-            logNameTemplate = typeof config.logNameTemplate === "string" && config.logNameTemplate.length > 0
-                ? config.logNameTemplate : defaultLogNameTemplate;
-            logRotateBySize = config.logRotateBySize === true;
-            logRotateSizeMiB = Number.isInteger(config.logRotateSizeMiB) ? config.logRotateSizeMiB : 100;
-            logRotateByDuration = config.logRotateByDuration === true;
-            logRotateMinutes = Number.isInteger(config.logRotateMinutes) ? config.logRotateMinutes : 60;
+            restoreLogConfiguration(config);
             monitorRuleIds = config.monitorRuleIds || [];
             monitorEnabled = config.monitorEnabled === true;
             sshTerminal.autoReconnectEnabled = config.autoReconnect !== false;
@@ -214,7 +212,7 @@ GlassPage {
             sshTerminal.maxBufferLines = parseInt(maxLinesInput.text) || 10000
             sshTerminal.reconnectMaxAttempts = parseInt(reconnectCountInput.text) || 0
             sshTerminal.reconnectIntervalMs = parseInt(reconnectIntervalInput.text) || 2000
-            sshTerminal.connectToHost()
+            connectWithLogSettings()
             if (sshTerminal.connectionState === SshTerminal.Connecting || sshTerminal.connected) pwdInput.text = ""
         } else {
             const id = action.kind === "save" ? sshTerminal.savePassword(action.password) : sshTerminal.clearSavedPassword()
@@ -254,10 +252,21 @@ GlassPage {
             sshTerminal.maxBufferLines = parseInt(maxLinesInput.text) || 10000
             sshTerminal.reconnectMaxAttempts = parseInt(reconnectCountInput.text) || 0
             sshTerminal.reconnectIntervalMs = parseInt(reconnectIntervalInput.text) || 2000
-            sshTerminal.connectToHost()
+            connectWithLogSettings()
             return
         }
         beginSshAction("connect")
+    }
+    function connectWithLogSettings() {
+        const destination = logDestination === "folder" ? logFolder : String(logFile);
+        sshTerminal.connectToHost(destination ? {
+            file: logDestination === "file" ? String(logFile) : "",
+            folder: logDestination === "folder" ? logFolder : "",
+            template: logNameTemplate, sessionName: sessionName,
+            intervalMs: logFlushIntervalSeconds * 1000, bufferKiB: logBufferKiB,
+            rotateSizeMiB: logRotateBySize ? logRotateSizeMiB : 0,
+            rotateMinutes: logRotateByDuration ? logRotateMinutes : 0
+        } : {});
     }
     function respondHostKey(accept) {
         const key = pendingHostKey
@@ -282,11 +291,18 @@ GlassPage {
     property bool copyOnSelect: false
     property bool wrapLogLines: false
     property real widestLogText: 0
-    readonly property real logContentWidth: wrapLogLines ? logListView.width : Math.max(logListView.width,
-        widestLogText + 16, logListView.footerItem ? logListView.footerItem.naturalTextWidth : 0)
+    property real pausedLogWidth: 0
+    readonly property real measuredLogWidth: Math.max(widestLogText + 16,
+        logListView.footerItem ? logListView.footerItem.naturalTextWidth : 0)
+    readonly property real logContentWidth: wrapLogLines ? logListView.width
+        : Math.max(logListView.width, measuredLogWidth, pausedLogWidth)
+    onMeasuredLogWidthChanged: {
+        if (!autoScroll && !wrapLogLines) pausedLogWidth = Math.max(pausedLogWidth, measuredLogWidth);
+    }
     onWrapLogLinesChanged: {
         if (!logListView) return;
         captureLogViewport();
+        pausedLogWidth = !autoScroll && !wrapLogLines ? measuredLogWidth : 0;
         logListView.contentX = 0;
         Qt.callLater(function() { logListView.forceLayout(); applyLogViewport(); });
     }
@@ -340,12 +356,16 @@ GlassPage {
     property string customCmdError: ""
     readonly property alias folderPopup: commandFolderPopup
     property bool exportCurrentLog: false
+    property bool selectingLogSettingFile: false
     property url pendingLogFile: ""
     readonly property string defaultLogNameTemplate: "{session}-{host}_{date}_{time}.log"
     property int logFlushIntervalSeconds: 1
     property int logBufferKiB: 256
     property string logDestination: "file"
     property string logDestinationDraft: "file"
+    property url logFile: ""
+    property url logFileDraft: ""
+    property string logSettingsError: ""
     property string logFolder: ""
     property string logNameTemplate: defaultLogNameTemplate
     property bool logRotateBySize: false
@@ -355,6 +375,8 @@ GlassPage {
 
     function openLogSettings() {
         logDestinationDraft = logDestination;
+        logFileDraft = String(logFile) !== "" ? logFile : sshTerminal.suggestedLogFile(sessionName);
+        logSettingsError = "";
         logFolderInput.text = logFolder !== "" ? logFolder : sshTerminal.defaultLogFolder();
         logNameTemplateInput.text = logNameTemplate;
         logIntervalInput.text = String(logFlushIntervalSeconds);
@@ -372,20 +394,24 @@ GlassPage {
             ? sshTerminal.previewLogFolderPath(folderText, templateText, sessionName, hostInput.text) : "";
         const folderReady = folderText.length <= 4096 && templateText.length <= 256
             && (logDestinationDraft !== "folder" || preview !== "");
-        return folderReady && logIntervalInput.acceptableInput && logBufferInput.acceptableInput
+        const fileReady = logDestinationDraft !== "file" || (String(logFileDraft).startsWith("file:") && String(logFileDraft).length <= 4096);
+        return fileReady && folderReady && logIntervalInput.acceptableInput && logBufferInput.acceptableInput
             && logRotateSizeInput.acceptableInput && logRotateMinutesInput.acceptableInput;
     }
     function saveLogSettings() {
         if (!logSettingsValid()) return;
-        logFlushIntervalSeconds = Number(logIntervalInput.text);
-        logBufferKiB = Number(logBufferInput.text);
-        logDestination = logDestinationDraft;
-        logFolder = logFolderInput.text.trim();
-        logNameTemplate = logNameTemplateInput.text.trim();
-        logRotateBySize = logRotateSizeCheck.checked;
-        logRotateSizeMiB = Number(logRotateSizeInput.text);
-        logRotateByDuration = logRotateDurationCheck.checked;
-        logRotateMinutes = Number(logRotateMinutesInput.text);
+        const config = {
+            logFlushIntervalSeconds: Number(logIntervalInput.text), logBufferKiB: Number(logBufferInput.text),
+            logDestination: logDestinationDraft, logFile: String(logFileDraft), logFolder: logFolderInput.text.trim(),
+            logNameTemplate: logNameTemplateInput.text.trim(),
+            logRotateBySize: logRotateSizeCheck.checked, logRotateSizeMiB: Number(logRotateSizeInput.text),
+            logRotateByDuration: logRotateDurationCheck.checked, logRotateMinutes: Number(logRotateMinutesInput.text)
+        };
+        if (commitLogSettings && !commitLogSettings(config)) {
+            logSettingsError = "日志设置保存失败，请检查磁盘或目录权限后重试。";
+            return;
+        }
+        if (!commitLogSettings) restoreLogConfiguration(config);
         logSettingsDialog.close();
     }
     Next.GlassDialog {
@@ -408,6 +434,23 @@ GlassPage {
                     objectName: "ssh-log-destination-folder"
                     text: "文件夹"; highlighted: liveLogDialog.logDestinationDraft === "folder"
                     onClicked: liveLogDialog.logDestinationDraft = "folder"
+                }
+            }
+            RowLayout {
+                visible: liveLogDialog.logDestinationDraft === "file"
+                spacing: 8
+                Label { text: "文件"; color: liveLogDialog.labelColor; Layout.preferredWidth: 72 }
+                StyledTextField {
+                    Layout.fillWidth: true; readOnly: true
+                    text: sshTerminal.localPath(liveLogDialog.logFileDraft)
+                }
+                Next.GlassButton {
+                    text: "选择…"
+                    onClicked: {
+                        liveLogDialog.selectingLogSettingFile = true;
+                        logFileDialog.selectedFile = liveLogDialog.logFileDraft;
+                        logFileDialog.open();
+                    }
                 }
             }
             RowLayout {
@@ -495,7 +538,13 @@ GlassPage {
             }
             Label {
                 Layout.fillWidth: true; wrapMode: Text.Wrap; color: liveLogDialog.labelColor
-                text: "设置在下次开始记录时生效；分卷失败会继续写入当前卷。"
+                text: liveLogDialog.logDestinationDraft === "file"
+                    ? "下次连接自动记录，已有文件将追加。"
+                    : "下次连接自动新建日志，分卷失败时继续写入当前卷。"
+            }
+            Label {
+                Layout.fillWidth: true; wrapMode: Text.Wrap; color: theme ? theme.error : "#d9534f"
+                visible: text !== ""; text: liveLogDialog.logSettingsError
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
@@ -517,8 +566,9 @@ GlassPage {
 
     function requestLogFile(exportCurrent) {
         if (sshTerminal.logBusy || (!exportCurrent && sshTerminal.logging)) return;
+        selectingLogSettingFile = false;
         exportCurrentLog = exportCurrent;
-        logFileDialog.selectedFile = sshTerminal.suggestedLogFile(sessionName);
+        logFileDialog.selectedFile = !exportCurrent && String(logFile) !== "" ? logFile : sshTerminal.suggestedLogFile(sessionName);
         logFileDialog.open();
     }
     function selectLogFile(file) {
@@ -552,12 +602,16 @@ GlassPage {
 
     Dialogs.FileDialog {
         id: logFileDialog
-        title: liveLogDialog.exportCurrentLog ? "导出当前缓冲日志" : "开始记录会话日志"
+        title: liveLogDialog.selectingLogSettingFile ? "选择日志文件"
+            : liveLogDialog.exportCurrentLog ? "导出当前缓冲日志" : "开始记录会话日志"
         fileMode: Dialogs.FileDialog.SaveFile
         nameFilters: ["日志文本 (*.log *.txt)", "所有文件 (*)"]
         defaultSuffix: "log"
         options: Dialogs.FileDialog.DontConfirmOverwrite
-        onAccepted: liveLogDialog.selectLogFile(selectedFile)
+        onAccepted: {
+            if (liveLogDialog.selectingLogSettingFile) liveLogDialog.logFileDraft = selectedFile;
+            else liveLogDialog.selectLogFile(selectedFile);
+        }
     }
     Next.GlassDialog {
         id: existingLogDialog
@@ -602,7 +656,10 @@ GlassPage {
     property real viewAnchorOffset: 0
     property bool viewUpdatePending: false
     property bool followingCursor: false
-    onAutoScrollChanged: if (autoScroll) { viewAnchorId = -1; monitorHit = null; monitorNotice = null; }
+    onAutoScrollChanged: {
+        pausedLogWidth = !autoScroll && !wrapLogLines ? measuredLogWidth : 0;
+        if (autoScroll) { viewAnchorId = -1; monitorHit = null; monitorNotice = null; }
+    }
     property int selectedHexStart: -1
     property int selectedHexEnd: -1
     property string selectedHexText: ""
@@ -814,7 +871,8 @@ GlassPage {
     function captureLogViewport() {
         if (!logListView || !sshTerminal || viewUpdatePending) return;
         viewUpdatePending = true;
-        if (autoScroll) { viewAnchorId = -1; return; }
+        viewAnchorId = -1;
+        if (autoScroll || logListView.userScrollDirection || logVerticalBar.pressed) return;
         const row = logListView.indexAt(1, logListView.contentY + 1);
         const item = logListView.itemAtIndex(row);
         viewAnchorId = sshTerminal.lineIdAt(row);
@@ -823,11 +881,13 @@ GlassPage {
 
     function applyLogViewport() {
         if (!logListView || !sshTerminal) return;
+        const hadPendingUpdate = viewUpdatePending;
         viewUpdatePending = false;
         if (autoScroll) {
             logListView.positionViewAtEnd();
             const footer = logListView.footerItem;
             if (followingCursor && !wrapLogLines && footer && sshTerminal.connected && !hasTextSelection) {
+                footer.updateCursorRect();
                 const cursor = footer.caretX;
                 if (cursor > logListView.contentX + logListView.width - 24)
                     logListView.contentX = Math.max(0, Math.min(logListView.contentWidth - logListView.width, cursor - logListView.width + 24));
@@ -835,11 +895,11 @@ GlassPage {
             }
             return;
         }
-        if (viewAnchorId < 0) return;
+        if (!hadPendingUpdate || viewAnchorId < 0 || logListView.userScrollDirection || logVerticalBar.pressed) return;
         logListView.forceLayout();
         const row = sshTerminal.indexForLineId(viewAnchorId);
         if (row < 0) {
-            logListView.positionViewAtBeginning();
+            if (!logListView.atYBeginning) logListView.positionViewAtBeginning();
             statusHint.text = "回看的旧日志已超出缓存范围，已定位到最早保留内容";
         } else {
             let item = logListView.itemAtIndex(row);
@@ -847,7 +907,12 @@ GlassPage {
                 logListView.positionViewAtIndex(row, ListView.Beginning);
                 item = logListView.itemAtIndex(row);
             }
-            if (item) logListView.contentY = item.y - viewAnchorOffset;
+            if (item) {
+                const beginning = logListView.originY;
+                const end = beginning + Math.max(0, logListView.contentHeight - logListView.height);
+                const target = Math.max(beginning, Math.min(end, item.y - viewAnchorOffset));
+                if (Math.abs(logListView.contentY - target) > 0.5) logListView.contentY = target;
+            }
         }
     }
 
@@ -867,6 +932,8 @@ GlassPage {
         }
         var targetIndex = sshTerminal.indexForLineId(searchMatches[searchCursor]);
         if (targetIndex < 0) return;
+        autoScroll = false;
+        viewAnchorId = -1;
         logListView.positionViewAtIndex(targetIndex, ListView.Center);
         selectLineAndExtractHex(targetIndex);
     }
@@ -1649,7 +1716,10 @@ GlassPage {
             statusHint.text = "输出过快，已自动丢弃最早缓冲数据";
         }
 
-        onLinesAboutToChange: liveLogDialog.captureLogViewport()
+        onLinesAboutToChange: {
+            liveLogDialog.captureLogViewport();
+            Qt.callLater(liveLogDialog.applyLogViewport);
+        }
 
         onMonitorMatched: function(hit) {
             if (!liveLogDialog.monitorEnabled) return;
@@ -1674,7 +1744,7 @@ GlassPage {
             if (!sshTerminal) return;
             if (sshTerminal.currentLineCount === 0) viewAnchorId = -1;
             if (sshTerminal.currentLineCount === 0 && sshTerminal.liveLine === "") {
-                liveLogDialog.widestLogText = 0; logListView.contentX = 0;
+                liveLogDialog.widestLogText = 0; liveLogDialog.pausedLogWidth = 0; logListView.contentX = 0;
             }
             if (sshTerminal.currentLineCount === 0 || textSelectionRange
                     && (textSelectionRange.firstId < sshTerminal.firstLineId || textSelectionRange.lastId > liveSelectionId))
@@ -2658,14 +2728,18 @@ GlassPage {
                         contentWidth: liveLogDialog.logContentWidth
                         spacing: 0
                         bottomMargin: 0
-                        property real previousContentY: 0
-                        onContentYChanged: {
-                            const movedUp = contentY < previousContentY;
-                            previousContentY = contentY;
-                            if (movedUp && !atYEnd && liveLogDialog.autoScroll) liveLogDialog.autoScroll = false;
-                            else if (!movedUp && atYEnd && !liveLogDialog.autoScroll
-                                    && !liveLogDialog.monitorHit && !liveLogDialog.hasTextSelection)
-                                Qt.callLater(liveLogDialog.resumeFollowing);
+                        property int userScrollDirection: 0
+                        function finishPointerScroll() {
+                            if (!userScrollDirection || movingVertically) return;
+                            const towardEnd = userScrollDirection > 0;
+                            userScrollDirection = 0;
+                            if (towardEnd) liveLogDialog.finishAutoFollowScroll();
+                        }
+                        onMovementEnded: Qt.callLater(finishPointerScroll)
+                        onDraggingVerticallyChanged: if (draggingVertically) {
+                            liveLogDialog.viewAnchorId = -1;
+                            liveLogDialog.autoScroll = false;
+                            userScrollDirection = 1;
                         }
 
                         WheelHandler {
@@ -2791,12 +2865,12 @@ GlassPage {
                                 ? Math.max(charMeasurer.implicitHeight, liveLineText.implicitHeight) + 4 : 0
                             property real cursorX: liveCursorMetrics.advanceWidth + sshTerminal.cursorPadding * liveLogDialog.charWidth
                             readonly property real naturalTextWidth: Math.max(liveLineMetrics.advanceWidth, cursorX) + 16
-                            readonly property rect cursorRect: {
-                                return liveLogDialog.wrapLogLines
-                                    ? liveLineText.positionToRectangle(Math.max(0, Math.min(sshTerminal.cursorPosition, liveLineText.length)))
-                                    : Qt.rect(liveCursorMetrics.advanceWidth, 0, 2, charMeasurer.implicitHeight);
+                            property rect cursorRect
+                            function updateCursorRect() {
+                                const position = Math.max(0, Math.min(sshTerminal.cursorPosition, liveLineText.length));
+                                cursorRect = liveLineText.positionToRectangle(position);
                             }
-                            property real caretX: 10 + cursorRect.x + sshTerminal.cursorPadding * liveLogDialog.charWidth
+                            property real caretX: liveLineText.x + cursorRect.x + sshTerminal.cursorPadding * liveLogDialog.charWidth
                             property real caretY: cursorRect.y
                             readonly property var pausedHit: liveLogDialog.monitorHit && liveLogDialog.monitorHit.lineId === liveSelectionId ? liveLogDialog.monitorHit : null
                             readonly property var liveMarks: sshTerminal.liveMonitorMarks || []
@@ -2872,17 +2946,23 @@ GlassPage {
                                 color: terminalText
                                 selectedTextColor: terminalText
                                 selectionColor: theme ? theme.terminalSelection : "#446688"
+                                Component.onCompleted: Qt.callLater(liveFooter.updateCursorRect)
+                                onFontChanged: Qt.callLater(liveFooter.updateCursorRect)
+                                onWidthChanged: Qt.callLater(liveFooter.updateCursorRect)
+                                onWrapModeChanged: Qt.callLater(liveFooter.updateCursorRect)
+                                onContentHeightChanged: Qt.callLater(liveFooter.updateCursorRect)
                             }
                             Connections {
                                 target: sshTerminal
                                 function onLiveLineChanged() {
+                                    Qt.callLater(liveFooter.updateCursorRect);
                                     if (liveLogDialog.selectionContains(liveLogDialog.liveSelectionId))
                                         liveFooter.applyTextSelection();
                                 }
                             }
                             Rectangle {
                                 objectName: "ssh-terminal-caret"
-                                x: parent.caretX; y: parent.caretY; width: 2; height: charMeasurer.implicitHeight
+                                x: parent.caretX; y: parent.caretY; width: 2; height: parent.cursorRect.height
                                 color: terminalText
                                 visible: sshTerminal.connected && terminalCapture.activeFocus && liveLogDialog.visible
                                 SequentialAnimation on opacity {
@@ -2901,8 +2981,11 @@ GlassPage {
                             objectName: "ssh-log-vertical-scroll"
                             policy: ScrollBar.AsNeeded
                             onPressedChanged: {
-                                if (pressed) liveLogDialog.autoScroll = false
-                                else Qt.callLater(liveLogDialog.finishAutoFollowScroll)
+                                if (pressed) {
+                                    logListView.userScrollDirection = 0;
+                                    liveLogDialog.viewAnchorId = -1;
+                                    liveLogDialog.autoScroll = false;
+                                } else Qt.callLater(liveLogDialog.finishAutoFollowScroll);
                             }
                         }
                         ScrollBar.horizontal: ScrollBar {
@@ -2925,8 +3008,12 @@ GlassPage {
                         onWheel: function(wheel) {
                             if (wheel.modifiers === Qt.NoModifier) {
                                 const delta = wheel.pixelDelta.y || wheel.angleDelta.y;
-                                if (delta > 0) liveLogDialog.autoScroll = false;
-                                else if (delta < 0) Qt.callLater(liveLogDialog.finishAutoFollowScroll);
+                                if (delta !== 0) {
+                                    liveLogDialog.viewAnchorId = -1;
+                                    logListView.userScrollDirection = delta < 0 ? 1 : -1;
+                                    if (delta > 0) liveLogDialog.autoScroll = false;
+                                    Qt.callLater(logListView.finishPointerScroll);
+                                }
                             }
                             wheel.accepted = false;
                         }

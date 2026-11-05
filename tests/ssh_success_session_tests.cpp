@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMap>
@@ -67,6 +68,10 @@ void echo(SshTerminal &terminal, const QString &text) {
   check(waitFor([&]{return terminal.getBufferText().contains("TEST_ECHO:" + text);}),
         "encrypted PTY/shell echo returned: " + text + " / " + terminal.statusMessage());
 }
+QByteArray logContents(const QString &path) {
+  QFile file(path);
+  return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+}
 void reconnectNoticeChecks() {
   QTemporaryDir directory;
   SshTerminal terminal(std::make_shared<MemoryCredentials>(), directory.path());
@@ -111,29 +116,49 @@ int main(int argc,char **argv) {
         check(host == "127.0.0.1" && targetPort == port && !algorithm.isEmpty(), "confirmation names the isolated endpoint and algorithm");
         request=id; observedFingerprint=value; ++confirmations;
       });
-    terminal.connectToHost();
+    const auto logFolder = directory.filePath("logs");
+    const QVariantMap folderLog{{"folder", logFolder}, {"template", "{session}-{seq}.log"},
+                                {"sessionName", "Loopback"}, {"intervalMs", 1000}, {"bufferKiB", 16},
+                                {"rotateSizeMiB", 1}, {"rotateMinutes", 1}};
+    terminal.connectToHost(folderLog);
     check(waitFor([&]{return terminal.hostKeyPending();}), "first host key confirmation: " + terminal.statusMessage());
     check(!terminal.isConnected() && !request.isEmpty() && observedFingerprint == fingerprint, "no connection before matching independent fingerprint acceptance");
     settle(100);
     check(authCount(stats) == 0, "no password authentication attempt before first host-key decision");
+    check(!QFile::exists(logFolder) && !terminal.logging(), "host-key wait does not create log files");
     terminal.confirmHostKey(request, observedFingerprint, true);
     check(waitFor([&]{return terminal.isConnected();}), "first full authenticated session: " + terminal.statusMessage());
+    const auto folderLogPath = directory.filePath("logs/Loopback-001.log");
+    check(terminal.logging() && terminal.logFilePath() == QFileInfo(folderLogPath).canonicalFilePath(),
+          "configured folder and template are used when the shell opens: " + terminal.logFilePath() + " / " + terminal.logError());
     echo(terminal,"LOOPBACK_FIRST"); echo(terminal,QString::fromUtf8("中文回显"));
     terminal.disconnectFromHost();
     check(waitFor([&]{return terminal.connectionState()==SshTerminal::Disconnected;}), "explicit disconnect");
     check(!terminal.isConnected() && !terminal.hostKeyPending(), "disconnect invalidates session and trust wait");
+    check(waitFor([&]{return !terminal.logging();}) && logContents(folderLogPath).startsWith("TEST_READY\n")
+              && logContents(folderLogPath).contains("TEST_ECHO:LOOPBACK_FIRST"),
+          "automatic folder log includes the first shell output and flushes on disconnect");
     QString savedOperation; bool saveOk = false;
     QObject::connect(&terminal,&SshTerminal::passwordOperationFinished,
       [&](const QString &id,bool ok,const QString &){savedOperation=id;saveOk=ok;});
     const auto operation=terminal.savePassword("synthetic-loopback-password");
     check(!operation.isEmpty() && waitFor([&]{return savedOperation==operation;} ) && saveOk, "password stored only in injected memory store");
-    terminal.setPassword(""); terminal.connectToHost();
+    const auto appendPath = directory.filePath("existing log.log");
+    {
+      QFile previous(appendPath);
+      check(previous.open(QIODevice::WriteOnly) && previous.write("previous\n") == 9, "seed existing log");
+    }
+    const QVariantMap fileLog{{"file", QUrl::fromLocalFile(appendPath).toString()},
+                              {"intervalMs", 1000}, {"bufferKiB", 16}};
+    terminal.setPassword(""); terminal.connectToHost(fileLog);
     check(waitFor([&]{return terminal.isConnected();}), "reconnect with pinned key and memory credential: " + terminal.statusMessage());
     check(confirmations==1, "same-key reconnect does not ask TOFU again"); echo(terminal,"LOOPBACK_SECOND");
+    check(terminal.logging() && terminal.logFilePath() == appendPath, "explicit reconnect uses configured file");
     terminal.setAutoReconnectEnabled(true); terminal.setReconnectMaxAttempts(2); terminal.setReconnectIntervalMs(500);
     terminal.sendCommand("__DROP_TEST_SESSION__");
     check(waitFor([&]{return connectedCount>=3 && terminal.isConnected();}), "automatic reconnect after isolated peer closes");
     echo(terminal,"AUTO_RECONNECTED"); check(confirmations==1, "automatic reconnect retains original pin");
+    check(terminal.logging() && terminal.logFilePath() == appendPath, "network reconnect keeps the active log");
     check(terminal.getBufferText().count(QStringLiteral("] SSH 已重新连接成功")) == 1
               && terminal.getBufferText().contains("TEST_ECHO:LOOPBACK_FIRST"),
           "real automatic reconnect adds one recovery notice and preserves earlier history");
@@ -142,15 +167,23 @@ int main(int argc,char **argv) {
     terminal.disconnectFromHost(); settle(1000);
     check(!terminal.isConnected() && terminal.connectionState()==SshTerminal::Disconnected, "manual cancellation stops queued automatic reconnect");
     check(authCount(stats)==3, "cancelled reconnect made no extra password authentication");
+    const auto appended = logContents(appendPath);
+    check(!terminal.logging() && appended.startsWith("previous\nTEST_READY\n")
+              && appended.contains("TEST_ECHO:LOOPBACK_SECOND") && appended.contains("TEST_ECHO:AUTO_RECONNECTED"),
+          "automatic file log appends without truncation and flushes both connections");
     {
       QTemporaryDir cancelRoot; SshTerminal cancelled(credentials,cancelRoot.path()); configure(cancelled,port);
       QString cancelId, cancelFingerprint;
       QObject::connect(&cancelled,&SshTerminal::hostKeyConfirmationRequested,
         [&](const QString &,int,const QString &,const QString &value,const QString &id){cancelId=id;cancelFingerprint=value;});
-      cancelled.connectToHost(); check(waitFor([&]{return cancelled.hostKeyPending();}), "second isolated trust root waits for confirmation");
+      const auto cancelledFolder = cancelRoot.filePath("logs");
+      auto cancelledLog = folderLog;
+      cancelledLog["folder"] = cancelledFolder;
+      cancelled.connectToHost(cancelledLog); check(waitFor([&]{return cancelled.hostKeyPending();}), "second isolated trust root waits for confirmation");
       cancelled.disconnectFromHost(); cancelled.confirmHostKey(cancelId,cancelFingerprint,true); settle(300);
       check(!cancelled.isConnected() && !cancelled.hostKeyPending(), "late acceptance after cancellation does not connect");
       check(!QFile::exists(cancelRoot.filePath("ssh-known-hosts.json")), "late decision did not create trust record");
+      check(!QFile::exists(cancelledFolder), "cancelled connection did not create a log");
       check(authCount(stats)==3, "cancelled host-key wait did not authenticate");
     }
     {

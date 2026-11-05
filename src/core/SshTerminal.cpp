@@ -24,6 +24,7 @@
 #include <QSocketNotifier>
 #include <algorithm>
 #include <system_error>
+#include <utility>
 
 
 // libssh2 和 socket 头文件
@@ -62,6 +63,18 @@ static bool validSshIdentity(const QString &host, int port, const QString &user)
   };
   return !host.trimmed().isEmpty() && !user.isEmpty() && port > 0 && port <= 65535 &&
          !hasControl(host) && !hasControl(user);
+}
+
+static bool validLogFile(const QUrl &file) {
+  return file.isLocalFile() && QFileInfo(file.toLocalFile()).isAbsolute();
+}
+
+static bool validLogBuffer(int intervalMs, int bufferKiB) {
+  return intervalMs >= 1000 && intervalMs <= 60000 && bufferKiB >= 16 && bufferKiB <= 8192;
+}
+
+static bool validLogRotation(int sizeMiB, int minutes) {
+  return sizeMiB >= 0 && sizeMiB <= 4096 && minutes >= 0 && minutes <= 1440;
 }
 
 static QString sshCredentialProfile(const QString &host, int port,
@@ -117,8 +130,17 @@ public:
 
 public slots:
   void shutdown() { stopLog(); cleanup(); }
-  void startLog(const QString &path, const QString &encoding, bool append, int intervalMs, int bufferKiB) {
+  void setConfiguredLog(const QVariantMap &options) { m_configuredLog = options; }
+  void stopConfiguredLog() {
+    m_configuredLog.clear();
+    if (m_automaticLogging) stopLog(true);
+  }
+  void startLog(const QString &path, const QString &encoding, bool append, int intervalMs, int bufferKiB,
+                bool automatic = false) {
+    if (!automatic) m_configuredLog.clear();
+    if (m_sessionLog.active()) { emit logStateChanged(true, m_logPath, {}, automatic); return; }
     const bool success = m_sessionLog.start(path, encoding, append, bufferKiB);
+    m_automaticLogging = success && automatic;
     m_logPath = path;
     m_logRotationRevision = 0;
     m_logWarning.clear();
@@ -132,14 +154,17 @@ public slots:
       }
       m_logFlushTimer->start(intervalMs);
     }
-    emit logStateChanged(m_sessionLog.active(), path, success ? QString{} : m_sessionLog.errorString());
+    emit logStateChanged(m_sessionLog.active(), path, success ? QString{} : m_sessionLog.errorString(), automatic);
   }
   void startFolderLog(const QString &folder, const QString &nameTemplate, const QString &encoding,
                       int intervalMs, int bufferKiB, const QString &sessionName,
-                      const QString &host, int rotateSizeMiB, int rotateMinutes) {
+                      const QString &host, int rotateSizeMiB, int rotateMinutes, bool automatic = false) {
+    if (!automatic) m_configuredLog.clear();
+    if (m_sessionLog.active()) { emit logStateChanged(true, m_logPath, {}, automatic); return; }
     const bool success = m_sessionLog.startFolder(
         folder, nameTemplate, encoding, bufferKiB, sessionName, host,
         qint64(rotateSizeMiB) * 1024 * 1024, qint64(rotateMinutes) * 60 * 1000);
+    m_automaticLogging = success && automatic;
     m_logPath = success ? m_sessionLog.currentPath() : folder;
     m_logRotationRevision = m_sessionLog.rotationRevision();
     m_logWarning = m_sessionLog.warningString();
@@ -153,14 +178,16 @@ public slots:
       }
       m_logFlushTimer->start(intervalMs);
     }
-    emit logStateChanged(m_sessionLog.active(), m_logPath, success ? QString{} : m_sessionLog.errorString());
+    emit logStateChanged(m_sessionLog.active(), m_logPath, success ? QString{} : m_sessionLog.errorString(), automatic);
     if (success && !m_logWarning.isEmpty()) emit logWarningChanged(m_logWarning);
   }
-  void stopLog() {
+  void stopLog(bool automatic = false) {
+    m_configuredLog.clear();
+    m_automaticLogging = false;
     if (m_logFlushTimer) m_logFlushTimer->stop();
     const bool success = m_sessionLog.stop();
     m_logWarning.clear();
-    emit logStateChanged(false, m_logPath, success ? QString{} : m_sessionLog.errorString());
+    emit logStateChanged(false, m_logPath, success ? QString{} : m_sessionLog.errorString(), automatic);
   }
   void exportLog(const QString &path, const QByteArray &data) {
     emit logExportFinished(path, SshSessionLog::exportSnapshot(path, data));
@@ -291,7 +318,7 @@ public slots:
   }
 
 signals:
-  void logStateChanged(bool active, const QString &path, const QString &error);
+  void logStateChanged(bool active, const QString &path, const QString &error, bool automatic = false);
   void logRotated(const QString &path);
   void logWarningChanged(const QString &warning);
   void logExportFinished(const QString &path, const QString &error);
@@ -307,6 +334,28 @@ signals:
   void credentialReadState(quint64 generation, bool busy);
 
 private:
+  void startConfiguredLog() {
+    const auto options = std::exchange(m_configuredLog, {});
+    if (options.isEmpty() || m_sessionLog.active()) return;
+    const auto folder = options.value("folder").toString();
+    const auto file = options.value("file").toUrl();
+    const auto nameTemplate = options.value("template").toString();
+    const int intervalMs = options.value("intervalMs").toInt();
+    const int bufferKiB = options.value("bufferKiB").toInt();
+    const int sizeMiB = options.value("rotateSizeMiB").toInt();
+    const int minutes = options.value("rotateMinutes").toInt();
+    if (!validLogBuffer(intervalMs, bufferKiB) || (!folder.isEmpty()
+        ? !QFileInfo(folder).isAbsolute() || nameTemplate.trimmed().isEmpty() || nameTemplate.size() > 256
+          || !validLogRotation(sizeMiB, minutes)
+        : !validLogFile(file))) {
+      emit logStateChanged(false, {}, QStringLiteral("已保存的日志设置无效，请重新设置记录位置和写入参数"), true);
+      return;
+    }
+    if (folder.isEmpty()) startLog(file.toLocalFile(), m_encoding, true, intervalMs, bufferKiB, true);
+    else startFolderLog(folder, nameTemplate, m_encoding, intervalMs, bufferKiB,
+                        options.value("sessionName").toString(), m_host, sizeMiB, minutes, true);
+  }
+
   enum Phase { Stopped, Resolving, TcpConnecting, Handshaking, AwaitingTrust,
                Authenticating, OpeningChannel, RequestingPty, RequestingShell, Running };
   void tryNextAddress() {
@@ -542,6 +591,8 @@ private:
     case RequestingShell:
       rc = libssh2_channel_shell(m_channel);
       if (rc == 0) {
+        if (m_generation != m_buffer->activeGeneration.load()) { cleanup(); return; }
+        startConfiguredLog();
         m_phase = Running;
         m_timer->stop(); m_timer->setSingleShot(true);
         m_readNotifier = new QSocketNotifier(qintptr(m_sock), QSocketNotifier::Read, this);
@@ -627,7 +678,8 @@ private:
   }
   void logWriteFailed() {
     if (m_logFlushTimer) m_logFlushTimer->stop();
-    emit logStateChanged(false, m_logPath, m_sessionLog.errorString());
+    emit logStateChanged(false, m_logPath, m_sessionLog.errorString(), m_automaticLogging);
+    m_automaticLogging = false;
   }
   void syncLogStatus() {
     if (m_sessionLog.rotationRevision() != m_logRotationRevision) {
@@ -695,6 +747,8 @@ private:
   QString m_encoding = QStringLiteral("UTF-8");
   SshLogStream m_stream;
   SshSessionLog m_sessionLog;
+  QVariantMap m_configuredLog;
+  bool m_automaticLogging = false;
   QTimer *m_logFlushTimer = nullptr;
   QString m_logPath;
   QString m_logWarning;
@@ -1055,8 +1109,9 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
         if (!operationId.isEmpty()) emit passwordOperationFinished(operationId, error.isEmpty(), error);
       });
   connect(m_worker, &SshWorker::logStateChanged, this,
-      [this](bool active, const QString &path, const QString &error) {
-        m_logging = active; m_logBusy = false; m_logFilePath = path; m_logError = error;
+      [this](bool active, const QString &path, const QString &error, bool automatic) {
+        m_logging = active; if (!automatic) m_logBusy = false;
+        m_logFilePath = path; m_logError = error;
         if (!active) m_logWarning.clear();
         emit loggingChanged();
         emit logOperationFinished(error.isEmpty(), error.isEmpty()
@@ -1394,7 +1449,7 @@ void SshTerminal::startConnection() {
   emit sigStartConnect(m_generation, m_host, m_port, m_username, m_password, m_encoding, usesSecureCredentials());
 }
 
-void SshTerminal::connectToHost() {
+void SshTerminal::connectToHost(const QVariantMap &logOptions) {
   if (!validSshIdentity(m_host, m_port, m_username)) {
     setConnectionState(ConnectionState::Failed);
     setStatusMessage(QStringLiteral("请输入有效的主机、端口和用户名"));
@@ -1413,6 +1468,7 @@ void SshTerminal::connectToHost() {
   setConnected(false);
   setConnectionState(ConnectionState::Connecting);
   setStatusMessage(QStringLiteral("正在建立连接并验证 SSH 主机密钥..."));
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, logOptions] { worker->setConfiguredLog(logOptions); });
   startConnection();
 }
 
@@ -1434,6 +1490,7 @@ void SshTerminal::disconnectFromHost() {
   setConnectionState(ConnectionState::Disconnected);
   setStatusMessage(QStringLiteral("已断开连接"));
   emit sigDisconnect(generation);
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker] { worker->stopConfiguredLog(); });
 }
 
 void SshTerminal::sendCommand(const QString &cmd) {
@@ -1512,7 +1569,7 @@ bool SshTerminal::logFileExists(const QUrl &file) const {
 
 bool SshTerminal::beginLogOperation(const QUrl &file) {
   if (m_logBusy) return false;
-  if (!file.isLocalFile() || file.toLocalFile().isEmpty() || !QFileInfo(file.toLocalFile()).isAbsolute()) {
+  if (!validLogFile(file)) {
     m_logError = QStringLiteral("请选择有效的本地日志文件");
     emit loggingChanged();
     emit logOperationFinished(false, m_logError);
@@ -1525,7 +1582,7 @@ bool SshTerminal::beginLogOperation(const QUrl &file) {
 
 bool SshTerminal::startLogging(const QUrl &file, bool append, int intervalMs, int bufferKiB) {
   if (m_logging || m_logBusy) return false;
-  if (intervalMs < 1000 || intervalMs > 60000 || bufferKiB < 16 || bufferKiB > 8192) {
+  if (!validLogBuffer(intervalMs, bufferKiB)) {
     m_logError = QStringLiteral("日志写入间隔须为 1～60 秒，缓存大小须为 16～8192 KiB");
     emit loggingChanged(); emit logOperationFinished(false, m_logError);
     return false;
@@ -1553,12 +1610,12 @@ bool SshTerminal::startLoggingToFolder(const QString &folder, const QString &nam
     emit loggingChanged(); emit logOperationFinished(false, m_logError);
     return false;
   }
-  if (intervalMs < 1000 || intervalMs > 60000 || bufferKiB < 16 || bufferKiB > 8192) {
+  if (!validLogBuffer(intervalMs, bufferKiB)) {
     m_logError = QStringLiteral("日志写入间隔须为 1～60 秒，缓存大小须为 16～8192 KiB");
     emit loggingChanged(); emit logOperationFinished(false, m_logError);
     return false;
   }
-  if (rotateSizeMiB < 0 || rotateSizeMiB > 4096 || rotateMinutes < 0 || rotateMinutes > 1440) {
+  if (!validLogRotation(rotateSizeMiB, rotateMinutes)) {
     m_logError = QStringLiteral("日志分卷大小须为 0～4096 MiB，时长须为 0～1440 分钟");
     emit loggingChanged(); emit logOperationFinished(false, m_logError);
     return false;
@@ -1907,7 +1964,8 @@ void SshTerminal::flushPendingData() {
     tabOverflow = m_buffer->tabOverflow; m_buffer->tabOverflow = false;
   }
   const auto previousCount = m_lineModel->rowCount();
-  if (!lines.empty() || !monitorPartial.monitorMarks.isEmpty())
+  const bool liveTextChanged = m_committedPartial != live;
+  if (!lines.empty() || liveTextChanged || !monitorPartial.monitorMarks.isEmpty())
     emit linesAboutToChange();
   if (!lines.empty()) m_lineModel->appendRecords(std::move(lines));
   m_lineModel->applyMonitorMark(monitorPartial);
@@ -1922,7 +1980,7 @@ void SshTerminal::flushPendingData() {
     emit monitorMatched(data);
   }
   if (bytes || previousCount != m_lineModel->rowCount()) emit lineCountChanged();
-  if (m_committedPartial != live || m_cursorColumn != column || m_committedMonitorColor != liveColor
+  if (liveTextChanged || m_cursorColumn != column || m_committedMonitorColor != liveColor
       || m_committedMonitorWholeLine != liveWholeLine || m_committedMonitorRanges != liveRanges
       || m_committedMonitorMarks != liveMarks) {
     m_committedPartial = std::move(live); m_cursorColumn = column;
