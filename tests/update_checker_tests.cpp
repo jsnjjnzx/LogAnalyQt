@@ -1,18 +1,32 @@
 #include "core/UpdateChecker.h"
 #include <QElapsedTimer>
+#include <QTemporaryDir>
 #include <QThread>
 #include <QTextStream>
 #include <cstring>
+#include <functional>
 
 class Reply : public QNetworkReply {
 public:
-  Reply(const QNetworkRequest &request, QByteArray data, QObject *parent)
+  Reply(const QNetworkRequest &request, QByteArray data, QObject *parent,
+        int status = 200, const QByteArray &contentRange = {},
+        qint64 declaredLength = -1,
+        QNetworkReply::NetworkError finishError = QNetworkReply::NoError)
       : QNetworkReply(parent), payload(std::move(data)) {
     setRequest(request);
     setUrl(request.url());
+    setAttribute(QNetworkRequest::HttpStatusCodeAttribute, status);
+    setRawHeader("content-length",
+                 QByteArray::number(declaredLength >= 0 ? declaredLength
+                                                        : payload.size()));
+    if (!contentRange.isEmpty()) setRawHeader("content-range", contentRange);
     open(QIODevice::ReadOnly);
-    QTimer::singleShot(0, this, [this] {
+    QTimer::singleShot(0, this, [this, finishError] {
       if (isFinished()) return;
+      emit metaDataChanged();
+      if (isFinished()) return;
+      if (finishError != QNetworkReply::NoError)
+        setError(finishError, "synthetic interruption");
       setFinished(true);
       emit readyRead();
       emit finished();
@@ -40,9 +54,37 @@ private:
 class Network : public QNetworkAccessManager {
 public:
   QHash<QUrl, QByteArray> responses;
+  QUrl resumableUrl;
+  bool interruptFirstDownload = false;
+  bool interrupted = false;
+  bool rejectRange = false;
+  QByteArray lastRange;
 protected:
   QNetworkReply *createRequest(Operation, const QNetworkRequest &request, QIODevice *) override {
-    return new Reply(request, responses.value(request.url()), this);
+    const QByteArray payload = responses.value(request.url());
+    const QByteArray range = request.rawHeader("Range");
+    if (request.url() == resumableUrl) lastRange = range;
+    if (request.url() == resumableUrl && interruptFirstDownload && !interrupted) {
+      interrupted = true;
+      return new Reply(request, payload.left(9), this, 200, {}, payload.size(),
+                       QNetworkReply::RemoteHostClosedError);
+    }
+    if (request.url() == resumableUrl && range.startsWith("bytes=") &&
+        range.endsWith("-")) {
+      if (rejectRange) {
+        return new Reply(request, "range rejected", this, 416, {}, -1,
+                         QNetworkReply::ContentOperationNotPermittedError);
+      }
+      bool ok = false;
+      const qint64 offset = range.mid(6).chopped(1).toLongLong(&ok);
+      if (ok && offset >= 0 && offset < payload.size()) {
+        return new Reply(request, payload.mid(offset), this, 206,
+                         "bytes " + QByteArray::number(offset) + "-" +
+                             QByteArray::number(payload.size() - 1) + "/" +
+                             QByteArray::number(payload.size()));
+      }
+    }
+    return new Reply(request, payload, this);
   }
 };
 
@@ -59,7 +101,18 @@ public:
         QThread::msleep(1);
       }
     };
+    auto waitUntil = [](const std::function<bool()> &condition, int timeoutMs = 4000) {
+      QElapsedTimer timer;
+      timer.start();
+      while (!condition() && timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents();
+        QThread::msleep(5);
+      }
+      return condition();
+    };
     UpdateChecker checker;
+    QTemporaryDir cacheDirectory;
+    checker.m_downloadCacheRoot = cacheDirectory.path();
     delete checker.m_networkManager;
     auto *network = new Network;
     network->setParent(&checker);
@@ -130,7 +183,78 @@ public:
     settle();
     expect(!checker.isDownloadComplete() && !checker.isVerifySuccess(), "corrupt download cannot install");
     expect(!QFile::exists(checker.m_downloadedFilePath), "corrupt temporary file is removed");
-    QTextStream(stdout) << (failures ? "FAILED" : "PASS") << ": GitHub metadata, platform, downgrade, SHA256 and cancellation checks\n";
+
+    QTemporaryDir resumeDirectory;
+    const QByteArray prefix = payload.left(9);
+    QFile partial(QDir(resumeDirectory.path()).filePath(name + ".part"));
+    expect(partial.open(QIODevice::WriteOnly) && partial.write(prefix) == prefix.size(),
+           "resume prefix fixture is writable");
+    partial.close();
+    QJsonObject resumeMetadata{{"name", name}, {"url", url},
+                               {"sha256", QString(QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex())},
+                               {"size", payload.size()}, {"etag", "resume-etag"}};
+    QFile metadataFile(QDir(resumeDirectory.path()).filePath(name + ".meta.json"));
+    expect(metadataFile.open(QIODevice::WriteOnly) &&
+               metadataFile.write(QJsonDocument(resumeMetadata).toJson()) > 0,
+           "resume metadata fixture is writable");
+    metadataFile.close();
+
+    UpdateChecker resumed;
+    resumed.m_downloadCacheRoot = resumeDirectory.path();
+    delete resumed.m_networkManager;
+    auto *resumeNetwork = new Network;
+    resumeNetwork->setParent(&resumed);
+    resumed.m_networkManager = resumeNetwork;
+    resumed.m_currentVersion = "3.1.0";
+    resumeNetwork->resumableUrl = QUrl(url);
+    resumeNetwork->responses[resumed.m_manifestUrl] = QJsonDocument(metadata).toJson();
+    resumeNetwork->responses[QUrl(url)] = payload;
+    resumed.checkForUpdate();
+    settle();
+    expect(resumed.isDownloadResumeAvailable() && resumed.downloadedBytes() == prefix.size(),
+           "a restarted app discovers the saved partial download");
+    resumed.downloadUpdate();
+    settle();
+    expect(resumeNetwork->lastRange == "bytes=" + QByteArray::number(prefix.size()) + "-",
+           "resume requests only the missing byte range");
+    expect(resumed.isDownloadComplete() && resumed.isVerifySuccess() &&
+               QFile(resumed.m_downloadedFilePath).size() == payload.size(),
+           "resumed download completes and verifies");
+    QFile resumedFile(resumed.m_downloadedFilePath);
+    expect(resumedFile.open(QIODevice::ReadOnly) && resumedFile.readAll() == payload,
+           "resumed file contains the original bytes without duplication");
+
+    QTemporaryDir interruptionDirectory;
+    UpdateChecker interrupted;
+    interrupted.m_downloadCacheRoot = interruptionDirectory.path();
+    delete interrupted.m_networkManager;
+    auto *interruptedNetwork = new Network;
+    interruptedNetwork->setParent(&interrupted);
+    interrupted.m_networkManager = interruptedNetwork;
+    interrupted.m_currentVersion = "3.1.0";
+    interruptedNetwork->resumableUrl = QUrl(url);
+    interruptedNetwork->interruptFirstDownload = true;
+    interruptedNetwork->responses[interrupted.m_manifestUrl] =
+        QJsonDocument(metadata).toJson();
+    interruptedNetwork->responses[QUrl(url)] = payload;
+    interrupted.checkForUpdate();
+    settle();
+    interrupted.downloadUpdate();
+    expect(waitUntil([&] { return interrupted.isDownloadComplete(); }),
+           "an interrupted transfer automatically resumes from its byte range");
+    expect(interruptedNetwork->lastRange == "bytes=9-",
+           "automatic retry asks only for the missing suffix");
+
+    interrupted.cancelDownload();
+    interruptedNetwork->interrupted = false;
+    interruptedNetwork->rejectRange = true;
+    interrupted.downloadUpdate();
+    expect(waitUntil([&] { return interrupted.isDownloadComplete(); }),
+           "a rejected range restarts and verifies the full download");
+    expect(interruptedNetwork->lastRange.isEmpty(),
+           "the restarted transfer drops the rejected range");
+
+    QTextStream(stdout) << (failures ? "FAILED" : "PASS") << ": GitHub metadata, platform, downgrade, SHA256, cancellation and resume checks\n";
     return failures ? 1 : 0;
   }
 };

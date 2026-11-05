@@ -113,13 +113,18 @@ ApplicationWindow {
     title: "通联工坊 v" + backend.appVersion
     color: "transparent"
     readonly property bool nativeTitleBar: Qt.platform.os === "osx"
+    readonly property bool resizableWindow: !nativeTitleBar && visibility !== Window.Maximized
+        && visibility !== Window.FullScreen
+    property bool windowStateChangePending: false
     flags: nativeTitleBar ? Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint
-                         : Qt.Window | Qt.FramelessWindowHint
+                         : Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint |
+                           Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint | Qt.WindowSystemMenuHint
     // Only the sidebar needs space for native controls; fullscreen keeps the system safe area.
     topPadding: nativeTitleBar && visibility !== Window.FullScreen ? 0 : SafeArea.margins.top
     readonly property real windowCornerRadius: nativeTitleBar || visibility === Window.Maximized || visibility === Window.FullScreen ? 0 : 18
     background: Rectangle { color: theme.nativeGlass ? "transparent" : theme.background; radius: mainWindow.windowCornerRadius }
-    contentItem.layer.enabled: windowCornerRadius > 0
+    // Windows 用 DWM 原生圆角；整窗图层在最大化/还原往返时会让场景图重入并卡死。
+    contentItem.layer.enabled: windowCornerRadius > 0 && Qt.platform.os !== "windows"
     contentItem.layer.effect: MultiEffect {
         maskEnabled: true
         maskThresholdMin: 0.5
@@ -182,7 +187,7 @@ ApplicationWindow {
     palette.light: theme.highlightEdge
     palette.placeholderText: theme.placeholderText
     palette.brightText: "white"
-    palette.highlightedText: "white"
+    palette.highlightedText: theme.highlightedText
     palette.highlight: theme.accentMuted
 
     // 窗口初始化完成后设置无边框窗口
@@ -190,8 +195,11 @@ ApplicationWindow {
         loadMainUiSettings();
         restoreParseWorkspace();
         theme.reducedTransparency = Boolean(backend.getUiSetting("next/appearance/reducedTransparency", false));
-        theme.lightMode = backend.getUiSetting("next/appearance/colorMode", "dark") === "light";
+        const savedColorMode = backend.getUiSetting("next/appearance/colorMode", "dark");
+        theme.colorMode = savedColorMode === "light" || savedColorMode === "monokai" ? savedColorMode : "dark";
         WindowHelper.setApplicationLightMode(theme.lightMode);
+        if (Qt.platform.os === "windows")
+            Qt.callLater(function() { WindowHelper.setWindowCornerPreference(mainWindow, 2); });
         Qt.callLater(ensureMinimumWindowWidth);
         // 延迟调用确保窗口完全创建
 
@@ -241,10 +249,22 @@ ApplicationWindow {
         return reply && reply.ok
     }
     function saveWindowGeometry() {
+        if (mainWindow.visibility !== Window.Windowed) return;
         saveMainUiSetting("next/window/x", mainWindow.x);
         saveMainUiSetting("next/window/y", mainWindow.y);
         saveMainUiSetting("next/window/width", mainWindow.width);
         saveMainUiSetting("next/window/height", mainWindow.height);
+    }
+    function toggleWindowMaximized() {
+        if (mainWindow.windowStateChangePending) return;
+        mainWindow.windowStateChangePending = true;
+        const maximize = mainWindow.visibility !== Window.Maximized && mainWindow.visibility !== Window.FullScreen;
+        // Windows 会在点击事件内同步派发窗口状态消息，延后一帧避免重入原生移动/最大化循环。
+        Qt.callLater(function() {
+            mainWindow.windowStateChangePending = false;
+            if (maximize) mainWindow.showMaximized();
+            else mainWindow.showNormal();
+        });
     }
 
     function requestSaveWindowGeometry() {
@@ -483,7 +503,7 @@ ApplicationWindow {
 
     GlassTheme {
         id: theme
-        onLightModeChanged: WindowHelper.setApplicationLightMode(lightMode)
+        onColorModeChanged: WindowHelper.setApplicationLightMode(lightMode)
     }
 
     // 定义统一的颜色过渡动画
@@ -617,7 +637,7 @@ ApplicationWindow {
                     text: control.iconChar
                     font.family: mdiFont.name !== "" ? mdiFont.name : "Material Design Icons"
                     font.pixelSize: control.iconSize
-                    color: control.highlighted ? "white" : theme.buttonText
+                    color: control.highlighted ? theme.highlightedText : theme.buttonText
                     visible: text !== ""
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -626,7 +646,7 @@ ApplicationWindow {
                     text: control.text
                     font: control.font
 
-                    color: control.highlighted ? "white" : theme.buttonText
+                    color: control.highlighted ? theme.highlightedText : theme.buttonText
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
@@ -1179,9 +1199,14 @@ ApplicationWindow {
             performParse(hexStr, 1)
         }
     }
-    MouseArea { enabled: !mainWindow.nativeTitleBar; width: 5; anchors.left: parent.left; height: parent.height; cursorShape: Qt.SizeHorCursor; onPressed: mainWindow.startSystemResize(Qt.LeftEdge) }
-    MouseArea { enabled: !mainWindow.nativeTitleBar; width: 5; anchors.right: parent.right; height: parent.height; cursorShape: Qt.SizeHorCursor; onPressed: mainWindow.startSystemResize(Qt.RightEdge) }
-    MouseArea { enabled: !mainWindow.nativeTitleBar; height: 5; anchors.bottom: parent.bottom; width: parent.width; cursorShape: Qt.SizeVerCursor; onPressed: mainWindow.startSystemResize(Qt.BottomEdge) }
+    MouseArea { objectName: "window-resize-left"; enabled: mainWindow.resizableWindow; width: 5; anchors.left: parent.left; height: parent.height; cursorShape: Qt.SizeHorCursor; onPressed: mainWindow.startSystemResize(Qt.LeftEdge) }
+    MouseArea { objectName: "window-resize-right"; enabled: mainWindow.resizableWindow; width: 5; anchors.right: parent.right; height: parent.height; cursorShape: Qt.SizeHorCursor; onPressed: mainWindow.startSystemResize(Qt.RightEdge) }
+    MouseArea { objectName: "window-resize-bottom"; enabled: mainWindow.resizableWindow; height: 5; anchors.bottom: parent.bottom; width: parent.width; cursorShape: Qt.SizeVerCursor; onPressed: mainWindow.startSystemResize(Qt.BottomEdge) }
+    MouseArea { objectName: "window-resize-top"; enabled: mainWindow.resizableWindow; height: 5; anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; anchors.rightMargin: customTitleBar.controlsWidth + 8; cursorShape: Qt.SizeVerCursor; onPressed: mainWindow.startSystemResize(Qt.TopEdge) }
+    MouseArea { objectName: "window-resize-top-left"; enabled: mainWindow.resizableWindow; width: 10; height: 10; anchors.top: parent.top; anchors.left: parent.left; cursorShape: Qt.SizeFDiagCursor; onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.LeftEdge) }
+    MouseArea { objectName: "window-resize-top-right"; enabled: mainWindow.resizableWindow; width: 10; height: 10; anchors.top: parent.top; anchors.right: parent.right; cursorShape: Qt.SizeBDiagCursor; onPressed: mainWindow.startSystemResize(Qt.TopEdge | Qt.RightEdge) }
+    MouseArea { objectName: "window-resize-bottom-left"; enabled: mainWindow.resizableWindow; width: 10; height: 10; anchors.bottom: parent.bottom; anchors.left: parent.left; cursorShape: Qt.SizeBDiagCursor; onPressed: mainWindow.startSystemResize(Qt.BottomEdge | Qt.LeftEdge) }
+    MouseArea { objectName: "window-resize-bottom-right"; enabled: mainWindow.resizableWindow; width: 10; height: 10; anchors.bottom: parent.bottom; anchors.right: parent.right; cursorShape: Qt.SizeFDiagCursor; onPressed: mainWindow.startSystemResize(Qt.BottomEdge | Qt.RightEdge) }
 
     ColumnLayout {
         id: mainContentLayout
@@ -2277,7 +2302,8 @@ ApplicationWindow {
         property string apduHex: ""
         width: 800
         height: 600
-        flags: Qt.Window | Qt.FramelessWindowHint
+        flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint |
+               Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint | Qt.WindowSystemMenuHint
         title: "明文 APDU 解析 - 通联工坊 v" + mainWindow.appVersion
         visible: false
         color: theme.background
@@ -2999,6 +3025,22 @@ ApplicationWindow {
                 visible: !updateWindow.isUpdateAvailable
             }
 
+            Text {
+                objectName: "update-resume-status"
+                visible: updateWindow.updateState === "idle" && updateChecker.downloadResumeAvailable
+                text: {
+                    const percent = updateChecker.expectedDownloadBytes > 0
+                        ? Math.round(updateChecker.downloadedBytes / updateChecker.expectedDownloadBytes * 100) : 0;
+                    const size = (updateChecker.downloadedBytes / 1024 / 1024).toFixed(1);
+                    return percent > 0 ? "已下载 " + percent + "%（" + size + " MB），可继续下载"
+                                       : "已有 " + size + " MB 下载内容，可继续下载";
+                }
+                color: theme.subText
+                font.pixelSize: 12
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+
             // === 下载进度区域 ===
             ColumnLayout {
                 Layout.fillWidth: true
@@ -3136,7 +3178,7 @@ ApplicationWindow {
 
                 // 重试按钮（错误状态）
                 StyledButton {
-                    text: "重试 🔄"
+                    text: updateChecker.downloadResumeAvailable ? "继续下载 🔄" : "重试 🔄"
                     visible: updateWindow.updateState === "error"
                     onClicked: {
                         updateWindow.updateState = "idle";
@@ -3147,7 +3189,7 @@ ApplicationWindow {
 
                 // 下载更新按钮（初始状态）
                 StyledButton {
-                    text: "下载更新 ⬇"
+                    text: updateChecker.downloadResumeAvailable ? "继续下载 ⬇" : "下载更新 ⬇"
                     visible: updateWindow.isUpdateAvailable && updateWindow.updateState === "idle" &&
                              updateChecker.automaticInstallAvailable
                     onClicked: {

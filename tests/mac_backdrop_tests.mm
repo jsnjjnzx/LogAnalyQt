@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
   check(theme->metaObject()->indexOfProperty("isDark") == -1 && theme->metaObject()->indexOfProperty("followSystem") == -1,
         "obsolete appearance flags remain unsupported");
   check([effect.appearance.name isEqualToString:NSAppearanceNameDarkAqua], "default material stays dark");
-  theme->setProperty("lightMode", true);
+  theme->setProperty("colorMode", "light");
   check([effect.appearance.name isEqualToString:NSAppearanceNameAqua] &&
         [qtView.window.appearance.name isEqualToString:NSAppearanceNameAqua] &&
         [NSApp.appearance.name isEqualToString:NSAppearanceNameAqua], "light appearance reaches material, window and app");
@@ -50,7 +50,11 @@ int main(int argc, char **argv) {
   theme->setProperty("reducedTransparency", false);
   check(effect.material == NSVisualEffectMaterialSidebar && effect.state == NSVisualEffectStateActive &&
         effect.blendingMode == NSVisualEffectBlendingModeBehindWindow, "light keeps the existing native glass mechanism");
-  theme->setProperty("lightMode", false);
+  theme->setProperty("colorMode", "monokai");
+  check([effect.appearance.name isEqualToString:NSAppearanceNameDarkAqua] &&
+        [qtView.window.appearance.name isEqualToString:NSAppearanceNameDarkAqua] &&
+        !theme->property("nativeGlass").toBool(), "Monokai keeps dark native chrome and opaque themed surfaces");
+  theme->setProperty("colorMode", "dark");
   check([effect.appearance.name isEqualToString:NSAppearanceNameDarkAqua] &&
         [qtView.window.appearance.name isEqualToString:NSAppearanceNameDarkAqua], "switching back restores the original dark material");
   check(effect.hidden == NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceTransparency,

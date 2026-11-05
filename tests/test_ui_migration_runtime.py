@@ -110,7 +110,7 @@ def main():
             run("--workspace-phase", phase)
         assert prompt_path.read_text(encoding="utf-8") == "User edited prompt survives app restart.\n", "restart overwrote the user's prompt"
         appearance_settings = data_root / "settings.json"
-        for stored, expected in [("light", "light"), ("dark", "dark"), ("invalid", "dark")]:
+        for stored, expected in [("light", "light"), ("monokai", "monokai"), ("dark", "dark"), ("invalid", "dark")]:
             saved = json.loads(appearance_settings.read_text())
             saved.setdefault("ui", {}).setdefault("next", {}).setdefault("appearance", {})["colorMode"] = stored
             appearance_settings.write_text(json.dumps(saved), encoding="utf-8")
@@ -119,7 +119,7 @@ def main():
         saved["ui"]["next"]["appearance"].pop("colorMode")
         appearance_settings.write_text(json.dumps(saved), encoding="utf-8")
         run("--expect-color-mode", "dark")
-        print("PASS: saved light/dark appearance restores on startup; missing/invalid preference defaults to dark")
+        print("PASS: saved light/Monokai/dark appearance restores on startup; missing/invalid preference defaults to dark")
         if sys.platform == "darwin":
             assert not any((runtime / name).exists() for name in ("settings.json", "device-state.ini", "mqtt", "LogAnalyQt.ini", "protocol_xml", "prompts", "preset", "log")), "Mac app generated data beside its bundle"
         print("PASS: platform data directories, prompt extraction and restart preservation")

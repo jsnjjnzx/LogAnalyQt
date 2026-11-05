@@ -3,6 +3,25 @@
 
 namespace AppMsg {
 
+namespace {
+
+void AppendEnumValue(const QDomElement &element, FieldDef &field) {
+  bool ok = false;
+  const int value = element.attribute("value").toInt(&ok);
+  if (ok) {
+    field.enumMap.insert(value, element.attribute("name"));
+  }
+}
+
+void AppendSiblingEnumValue(const QDomElement &element,
+                            QList<FieldDef> &fields) {
+  if (!fields.isEmpty() && fields.last().type == FieldType::Enum) {
+    AppendEnumValue(element, fields.last());
+  }
+}
+
+} // namespace
+
 AppMsgLoader &AppMsgLoader::instance() {
   static AppMsgLoader instance;
   return instance;
@@ -193,6 +212,7 @@ FieldDef AppMsgLoader::parseFieldNode(const QDomElement &elem) {
   }
 
   // Handle children
+  bool followsField = false;
   QDomNode child = elem.firstChild();
   while (!child.isNull()) {
     QDomElement childElem = child.toElement();
@@ -201,12 +221,15 @@ FieldDef AppMsgLoader::parseFieldNode(const QDomElement &elem) {
           childElem.tagName() == "choice") {
         // choice 子标签也递归解析
         field.children.append(parseFieldNode(childElem));
+        followsField = true;
       } else if (childElem.tagName() == "enum_value") {
-        bool ok;
-        int val = childElem.attribute("value").toInt(&ok);
-        if (ok) {
-          field.enumMap.insert(val, childElem.attribute("name"));
+        if (field.type == FieldType::Enum) {
+          AppendEnumValue(childElem, field);
+        } else if (followsField) {
+          AppendSiblingEnumValue(childElem, field.children);
         }
+      } else {
+        followsField = false;
       }
     }
     child = child.nextSibling();
@@ -229,12 +252,20 @@ MessageDef AppMsgLoader::parseMessageNode(const QDomElement &elem) {
       msg.format = elem.attribute("type");
   }
 
+  bool followsField = false;
   QDomNode child = elem.firstChild();
   while (!child.isNull()) {
     QDomElement childElem = child.toElement();
     if (!childElem.isNull() &&
         (childElem.tagName() == "field" || childElem.tagName() == "element")) {
       msg.fields.append(parseFieldNode(childElem));
+      followsField = true;
+    } else if (!childElem.isNull()) {
+      if (childElem.tagName() == "enum_value") {
+        if (followsField) AppendSiblingEnumValue(childElem, msg.fields);
+      } else {
+        followsField = false;
+      }
     }
     child = child.nextSibling();
   }

@@ -69,7 +69,7 @@ Item {
         }
         function item(parent, name) {
             let value = findChild(parent, name)
-            if (!value && parent && parent.group && ["ssh-pause", "ssh-stop-reception", "ssh-clear", "ssh-monitor-enabled"].indexOf(name) >= 0) {
+            if (!value && parent && parent.group && ["ssh-stop-reception", "ssh-clear", "ssh-monitor-enabled"].indexOf(name) >= 0) {
                 if (parent.group.active !== parent || !parent.group.menu || !parent.group.menu.visible) openSessionMenu(parent)
                 value = visualItem(parent.group.menu.contentItem, name)
             }
@@ -155,7 +155,7 @@ Item {
             connected(a); connected(b); connected(c)
             for (const session of [a,b,c]) session.connectionConfigExpanded = false
             a.terminal.appendTestLines(["A"], 20); b.terminal.appendTestLines(["B"], 20)
-            a.autoFollowEnabled = false; a.terminal.receptionPaused = true
+            a.autoScroll = false; a.terminal.receptionPaused = true
             a.selectLogFile("file:///tmp/group-move.log")
             const terminal = a.terminal, disconnects = terminal.disconnectCalls
             const first = a.group, container = first.container
@@ -165,7 +165,7 @@ Item {
             verify(a.group !== b.group && a.terminal === terminal)
             verify(page.moveSession(a, b.group)); wait(30)
             verify(a.visible && c.visible); verify(!b.visible)
-            compare(a.terminal.lineAt(0), "A"); verify(a.terminal.logging && a.terminal.receptionPaused && !a.autoScroll && !a.autoFollowEnabled)
+            compare(a.terminal.lineAt(0), "A"); verify(a.terminal.logging && a.terminal.receptionPaused && !a.autoScroll)
             compare(a.terminal.disconnectCalls, disconnects)
             verify(page.detachSession(a)); wait(30)
             const window = a.monitorWindow
@@ -314,16 +314,15 @@ Item {
             verify(a.y<=1 && a.group.contentHost.y<=28)
             mouseClick(tab,25,13,Qt.RightButton); wait(30)
             verify(a.group.menu.visible)
-            for (const name of ["ssh-pause","ssh-stop-reception","ssh-clear","ssh-monitor-enabled","ssh-menu-match-details"])
+            for (const name of ["ssh-stop-reception","ssh-clear","ssh-monitor-enabled","ssh-menu-match-details"])
                 verify(visualItem(a.group.menu.contentItem,name)!==null,name)
-            const follow=visualItem(a.group.menu.contentItem,"ssh-pause"), stop=visualItem(a.group.menu.contentItem,"ssh-stop-reception")
-            verify(follow.checked && !stop.checked)
-            follow.forceActiveFocus(); keyClick(Qt.Key_Return); wait(20)
-            verify(!a.autoScroll && a.group.menu.visible)
-            verify(item(a,"ssh-monitor-footer").text.indexOf("暂停跟随")>=0)
-            mouseClick(stop); wait(20); verify(stop.checked && a.group.menu.visible)
+            verify(visualItem(a.group.menu.contentItem,"ssh-pause")===null)
+            const stop=visualItem(a.group.menu.contentItem,"ssh-stop-reception")
+            verify(!stop.checked)
+            stop.forceActiveFocus(); keyClick(Qt.Key_Return); wait(20)
+            verify(stop.checked && a.group.menu.visible)
             verify(item(a,"ssh-monitor-footer").text.indexOf("接收已停止")>=0)
-            mouseClick(stop); mouseClick(follow); wait(20)
+            mouseClick(stop); wait(20); verify(!stop.checked && a.group.menu.visible)
             verify(a.autoScroll && !a.terminal.receptionPaused)
         }
         function test_leftAndRightEdgesPreviewBeforeCommitAndCenterMerges() {
@@ -403,9 +402,9 @@ Item {
             compare(a.terminal.connectCalls,0); compare(a.terminal.sentCommands.length,0)
             a.commandManagementExpanded=false
             openSessionMenu(a)
-            const menu=a.group.menu, follow=visualItem(menu.contentItem,"ssh-pause")
-            follow.forceActiveFocus(); keyClick(Qt.Key_Return); wait(20)
-            verify(!a.autoScroll && menu.visible); compare(a.terminal.connectCalls,0)
+            const menu=a.group.menu, stop=visualItem(menu.contentItem,"ssh-stop-reception")
+            stop.forceActiveFocus(); keyClick(Qt.Key_Return); wait(20)
+            verify(a.terminal.receptionPaused && menu.visible); compare(a.terminal.connectCalls,0)
             menu.close(); wait(20)
             a.focusTerminal(); keyClick(Qt.Key_Return,Qt.ControlModifier); wait(20)
             compare(a.terminal.connectCalls,0)
@@ -428,13 +427,10 @@ Item {
             a.pendingSshAction=null; a.passwordOperationId="test-pending"; verify(!a.connectIfIdle())
             compare(a.terminal.connectCalls,0); compare(a.terminal.disconnectCalls,0)
         }
-        function test_manualReviewPausesAgainAfterReturn_data() {
-            return [{tag:"wheel-disabled", scrollbar:false, enabled:false},
-                {tag:"scrollbar-disabled", scrollbar:true, enabled:false},
-                {tag:"wheel-enabled", scrollbar:false, enabled:true},
-                {tag:"scrollbar-enabled", scrollbar:true, enabled:true}]
+        function test_manualReviewPausesAndResumesFollowing_data() {
+            return [{tag:"wheel", scrollbar:false}, {tag:"scrollbar", scrollbar:true}]
         }
-        function test_manualReviewPausesAgainAfterReturn(data) {
+        function test_manualReviewPausesAndResumesFollowing(data) {
             make()
             const a = page.activeSession, b = page.addSession()
             page.activateSession(a); connected(a); a.connectionConfigExpanded = false
@@ -442,35 +438,33 @@ Item {
             const lines = []; for (let i = 0; i < 160; ++i) lines.push("history " + i)
             a.terminal.appendTestLines(lines, 1000)
             tryCompare(view, "atYEnd", true)
-            toggleSessionOption(a, "ssh-pause")
-            verify(!a.autoFollowEnabled && !a.autoScroll)
-            const stoppedY = view.contentY
-            a.terminal.appendTestLines(["new with follow switch off"], 1000); wait(40)
-            verify(Math.abs(view.contentY - stoppedY) < 1); verify(!view.atYEnd)
-            a.focusTerminal(); keyClick(Qt.Key_Return)
-            tryCompare(a, "autoScroll", true); tryCompare(view, "atYEnd", true)
-            compare(a.terminal.rawInput.join(""), "\r")
+            verify(a.autoScroll)
             openSessionMenu(a)
-            verify(!item(a, "ssh-pause").checked); verify(!a.autoFollowEnabled)
+            verify(visualItem(a.group.menu.contentItem, "ssh-pause") === null)
             a.group.menu.close()
-            if (data.enabled) toggleSessionOption(a, "ssh-pause")
             if (data.scrollbar) {
                 const bar = item(a, "ssh-log-vertical-scroll")
                 mousePress(bar, bar.width / 2, bar.height * (bar.position + bar.size / 2))
                 mouseMove(bar, bar.width / 2, bar.height / 3, 50, Qt.LeftButton)
                 mouseRelease(bar, bar.width / 2, bar.height / 3)
             } else mouseWheel(view, 40, 100, 0, 240)
-            tryCompare(a, "autoScroll", data.enabled); tryCompare(view, "moving", false)
-            compare(a.autoFollowEnabled, data.enabled)
+            tryCompare(a, "autoScroll", false); tryCompare(view, "moving", false)
             verify(!view.atYEnd); verify(b.autoScroll); verify(!a.terminal.receptionPaused)
             const y = view.contentY, count = a.terminal.currentLineCount
             a.terminal.appendTestLines(["new while reviewing"], 1000); wait(40)
             compare(a.terminal.currentLineCount, count + 1)
-            if (data.enabled) tryCompare(view, "atYEnd", true)
-            else { verify(Math.abs(view.contentY - y) < 1); verify(!view.atYEnd) }
+            verify(Math.abs(view.contentY - y) < 1); verify(!view.atYEnd)
+
+            view.positionViewAtEnd()
+            tryCompare(a, "autoScroll", true); tryCompare(view, "atYEnd", true)
+            a.terminal.appendTestLines(["new after reaching bottom"], 1000)
+            tryCompare(view, "atYEnd", true)
+
+            view.positionViewAtIndex(80, ListView.Beginning); view.contentY += 7; wait(40)
+            tryCompare(a, "autoScroll", false)
             a.focusTerminal(); keyClick(Qt.Key_Return)
             tryCompare(a, "autoScroll", true); tryCompare(view, "atYEnd", true)
-            compare(a.autoFollowEnabled, data.enabled)
+            compare(a.terminal.rawInput.join(""), "\r")
             a.terminal.appendTestLines(["new while following"], 1000)
             tryCompare(view, "atYEnd", true)
         }
@@ -484,7 +478,7 @@ Item {
             a.connectionConfigExpanded = false; a.wrapLogLines = data.wrap
             const lines = []; for (let i = 0; i < 160; ++i) lines.push("history " + i + " " + "x".repeat(i % 5 * 50))
             a.terminal.appendTestLines(lines, data.limit); wait(40)
-            a.autoFollowEnabled = false
+            a.autoScroll = false
             const view = item(a, "ssh-log-list")
             view.positionViewAtIndex(80, ListView.Beginning); view.contentY += 7; wait(40)
             const anchor = a.terminal.lineIdAt(view.indexAt(1, view.contentY + 1))
@@ -502,13 +496,40 @@ Item {
                 }
                 verify(offsets.every(value => Math.abs(value - offset) < 1),
                     "paused viewport moved during restoration: " + JSON.stringify(offsets))
-                verify(!a.autoFollowEnabled && !a.autoScroll && !a.terminal.receptionPaused)
+                verify(!a.autoScroll && !a.terminal.receptionPaused)
             } finally { view.contentYChanged.disconnect(track) }
             const overflow = []; for (let i = 0; i < data.limit + 10; ++i) overflow.push("overflow " + i)
             a.terminal.appendTestLines(overflow, data.limit)
             tryCompare(view, "atYBeginning", true)
             compare(a.terminal.lineIdAt(view.indexAt(1, view.contentY + 1)), a.terminal.firstLineId)
             verify(item(a, "ssh-footer-hint").text.indexOf("超出缓存范围") >= 0)
+        }
+        function test_pausedLongLinesKeepViewportAndWidthStable() {
+            make()
+            const a = page.activeSession
+            a.connectionConfigExpanded = false
+            const lines = []; for (let i = 0; i < 200; ++i) lines.push("history " + i)
+            a.terminal.appendTestLines(lines, 1000); wait(40)
+            a.autoScroll = false
+            const view = item(a, "ssh-log-list")
+            view.positionViewAtEnd(); view.contentY -= 7; wait(40)
+            const anchor = a.terminal.lineIdAt(view.indexAt(1, view.contentY + 1))
+            const row = view.itemAtIndex(a.terminal.indexForLineId(anchor))
+            const offset = row.y - view.contentY
+            const horizontalBar = item(a, "ssh-log-horizontal-scroll")
+            const wide = "wide " + "x".repeat(1200)
+            let contentWidth = 0
+            for (let batch = 0; batch < 8; ++batch) {
+                a.terminal.appendTestLines([batch % 2 ? "short " + batch : wide], 1000)
+                a.terminal.liveLine = batch % 2 ? "" : wide
+                wait(30)
+                compare(a.terminal.lineIdAt(view.indexAt(1, view.contentY + 1)), anchor)
+                verify(Math.abs(row.y - view.contentY - offset) < 1)
+                if (batch === 0) contentWidth = view.contentWidth
+                else compare(view.contentWidth, contentWidth)
+                verify(horizontalBar.visible)
+            }
+            verify(!a.autoScroll)
         }
         function test_primaryMenuOptionsAndSharedFlatTerminalFrame() {
             make()
@@ -519,17 +540,18 @@ Item {
             verify(findChild(menu,"ssh-display-menu")===null && findChild(menu,"ssh-connection-menu")===null)
             const config=visualItem(menu.contentItem,"ssh-session-config-"+a.sessionId)
             const connect=visualItem(menu.contentItem,"ssh-session-connect-"+a.sessionId)
-            verify(config!==null && connect!==null); compare(config.text,"连接配置")
-            for (const name of ["ssh-pause","ssh-stop-reception","ssh-copy-on-select","ssh-wrap-lines"]) {
+            verify(config!==null && connect!==null); compare(config.text,"连接参数…")
+            verify(visualItem(menu.contentItem, "ssh-pause") === null)
+            for (const name of ["ssh-stop-reception","ssh-copy-on-select","ssh-wrap-lines"]) {
                 const option=visualItem(menu.contentItem,name)
                 verify(option!==null && option.visible); compare(option.menu,menu)
             }
             mouseClick(visualItem(menu.contentItem,"ssh-copy-on-select")); wait(20)
             mouseClick(visualItem(menu.contentItem,"ssh-wrap-lines")); wait(20)
             verify(a.copyOnSelect && a.wrapLogLines && menu.opened)
-            mouseClick(config); wait(20); verify(a.connectionConfigExpanded)
-            openSessionMenu(a); compare(visualItem(menu.contentItem,"ssh-session-config-"+a.sessionId).text,"连接配置")
-            menu.close(); a.connectionConfigExpanded=false; wait(20)
+            mouseClick(config); wait(30); verify(item(page,"ssh-connection-editor").opened)
+            item(page,"ssh-connection-editor").close(); wait(20)
+            verify(!item(a,"ssh-connection-panel").visible)
             const frame=item(a,"ssh-terminal-pane"), group=a.group.visualHost
             compare(frame.radius,0); compare(frame.border.width,0); compare(group.radius,0)
             verify(!a.background.visible)
@@ -562,9 +584,8 @@ Item {
             a.terminal.appendTestLines(rows, 300); wait(30)
             const view = item(a, "ssh-log-list")
             view.positionViewAtIndex(80, ListView.Beginning); wait(20)
-            const stop = item(a, "ssh-stop-reception"), pause = item(a, "ssh-pause"), clear = item(a, "ssh-clear")
-            verify(stop.y > pause.y && clear.y > stop.y)
-            compare(stop.height, pause.height)
+            const stop = item(a, "ssh-stop-reception"), clear = item(a, "ssh-clear")
+            verify(clear.y > stop.y)
             mouseClick(stop); wait(30)
             verify(a.terminal.receptionPaused); verify(stop.checked); verify(!a.autoScroll)
             compare(a.terminal.lineIdAt(view.indexAt(1, view.contentY + 1)), 80)
@@ -599,7 +620,7 @@ Item {
                 compare(item(page, "ssh-tab-bar-" + session.group.groupId).height, 26)
             }
             verify(findChild(page, "ssh-layout-single-0") === null)
-            mouseClick(item(a,"ssh-pause")); verify(!a.autoScroll && b.autoScroll)
+            a.autoScroll = false; verify(!a.autoScroll && b.autoScroll)
             mouseClick(item(a,"ssh-stop-reception")); verify(a.terminal.receptionPaused && !b.terminal.receptionPaused)
             mouseClick(item(a,"ssh-clear")); compare(a.terminal.currentLineCount,0); compare(b.terminal.currentLineCount,1)
             verify(page.detachSession(a)); wait(30)
@@ -615,8 +636,8 @@ Item {
             const list=item(page,"ssh-tab-bar-"+a.group.groupId)
             list.cacheBuffer=0; list.positionViewAtEnd(); wait(40)
             openSessionMenu(a)
-            verify(item(a,"ssh-pause").visible)
-            verify(findChild(a,"ssh-pause")===null)
+            verify(item(a,"ssh-stop-reception").visible)
+            verify(findChild(a,"ssh-stop-reception")===null)
         }
         function test_footerHintAndConnectionShareTheBottomRow() {
             make()
@@ -656,26 +677,19 @@ Item {
             a.monitorWindow.width = 760; checkFooter()
             verify(page.dockSession(a)); wait(30); checkFooter()
         }
-        function test_followAndReceptionPauseHaveDistinctHoverHelp() {
+        function test_receptionPauseTooltipDoesNotToggleAutomaticFollowing() {
             make()
             const a = page.activeSession
-            const pause = item(a, "ssh-pause"), stop = item(a, "ssh-stop-reception")
-            verify(pause.ToolTip.text.indexOf("自动滚动") >= 0)
+            const stop = item(a, "ssh-stop-reception")
+            verify(findChild(a, "ssh-pause") === null)
             verify(stop.ToolTip.text.indexOf("停止接收") >= 0)
             verify(waitForPolish(a))
             mouseMove(a, 1, 1)
-            mouseMove(pause, pause.width/2, pause.height/2)
-            tryCompare(pause, "hovered", true)
-            tryVerify(() => pause.ToolTip.toolTip.visible, 5000, "follow pause tooltip must appear after hovering")
             mouseMove(stop, stop.width/2, stop.height/2)
             tryCompare(stop, "hovered", true)
             tryVerify(() => stop.ToolTip.toolTip.visible, 5000, "reception pause tooltip must appear after hovering")
-            mouseClick(pause); verify(!a.autoScroll && !a.terminal.receptionPaused)
-            a.terminal.appendTestLines(["updates while follow is paused"], 100); wait(20)
-            compare(a.terminal.currentLineCount, 1)
             mouseClick(stop); verify(a.terminal.receptionPaused)
             verify(stop.ToolTip.text.indexOf("保留 SSH 连接") >= 0)
-            mouseClick(pause); verify(a.autoScroll && a.terminal.receptionPaused)
             mouseClick(stop); wait(20); verify(a.autoScroll && !a.terminal.receptionPaused)
         }
         function test_monitorRulesAreSharedButSelectionAndColorArePerSession() {
@@ -699,17 +713,17 @@ Item {
             a.sendTerminalText("x"); verify(!a.autoScroll)
             verify(page.detachSession(a)); wait(30)
             compare(a.monitorHit.lineId, id); verify(!a.autoScroll)
-            verify(a.autoFollowEnabled && item(a, "ssh-pause").checked)
-            mouseClick(item(a, "ssh-pause")); wait(20)
-            verify(!a.autoFollowEnabled && !a.autoScroll && a.monitorHit !== null)
-            mouseClick(item(a, "ssh-pause")); wait(20)
+            a.resumeFollowing(); wait(20)
             verify(a.autoScroll && a.monitorHit === null && a.terminal.monitorArmed)
             a.terminal.appendTestLines(["normal after resume"], 100); wait(20); verify(a.autoScroll)
             a.terminal.appendTestLines(["ERROR new"], 100); wait(20); verify(!a.autoScroll)
+            a.focusTerminal(); keyClick(Qt.Key_Return)
+            tryCompare(a, "autoScroll", true)
+            verify(a.monitorHit === null); verify(a.terminal.rawInput.join("").endsWith("\r"))
             b.terminal.appendTestLines(["设备 12 离线"], 100); wait(20)
             compare(b.monitorHit.color, "#80b9ff"); verify(!b.autoScroll)
             verify(page.dockSession(a)); wait(20)
-            a.resumeFollowing(); a.terminal.liveLine = "ERROR unfinished output"; wait(20)
+            a.terminal.liveLine = "ERROR unfinished output"; wait(20)
             a.terminal.monitorMatched({ruleId:first,ruleName:"错误",color:"#f79a93",text:a.terminal.liveLine,lineId:a.liveSelectionId,receivedLineId:a.liveSelectionId,time:"12:00:01"})
             wait(20); verify(!a.autoScroll); verify(item(a, "ssh-monitor-live-hit").visible)
         }
@@ -840,7 +854,7 @@ Item {
             page.activateSession(a)
             a.connectionConfigExpanded = false
             a.terminal.appendTestLines(data.rows, 100); a.terminal.liveLine = data.live
-            a.autoFollowEnabled = false
+            a.autoScroll = false
             if (data.detached) { verify(page.detachSession(a)); wait(40) }
             const start = data.tag === "hex" ? 3 : 0
             const lastId = data.live ? a.liveSelectionId : data.rows.length - 1
@@ -858,7 +872,7 @@ Item {
             compare(item(editor, "ssh-rule-pattern").text, data.pattern)
             compare(item(editor, "ssh-rule-sample").text, data.text)
             compare(page.monitorRules.length, 0); compare(clipboard(), "unchanged")
-            compare(a.terminal.rawInput.length, 0); verify(!a.autoFollowEnabled && !a.autoScroll)
+            compare(a.terminal.rawInput.length, 0); verify(!a.autoScroll)
             verify(!a.monitorEnabled && a.monitorRuleIds.length === 0)
             const check = testBackend.testMonitorExpression(data.pattern, false, data.text)
             verify(check.valid); verify(check.matches.length > 0)
@@ -874,7 +888,7 @@ Item {
             compare(page.monitorRules[0].pattern, data.pattern)
             compare(page.monitorRules[0].color, "#80b9ff")
             compare(page.monitorRules[0].pauseOnMatch, pauses); verify(!page.monitorRules[0].highlightWholeLine)
-            verify(a.monitorEnabled && a.monitorRuleIds[0] === page.monitorRules[0].id && !a.autoFollowEnabled && !a.autoScroll)
+            verify(a.monitorEnabled && a.monitorRuleIds[0] === page.monitorRules[0].id && !a.autoScroll)
             verify(!b.monitorEnabled && b.monitorRuleIds.length === 0)
             const count = a.terminal.currentLineCount, matching = data.text.split("\n")[0]
             a.terminal.appendTestLines([matching, "ordinary", matching], 100); wait(30)
@@ -1087,7 +1101,7 @@ Item {
             clipboard("unchanged")
             mouseDoubleClickSequence(row, x, y); wait(20)
             verify(a.hasTextSelection)
-            compare(item(a, "ssh-selected-text").selectedText, "aabb")
+            compare(item(a, "ssh-log-text").selectedText, "aabb")
             compare(a.parseableHexText, "AA BB"); compare(clipboard(), "unchanged")
             mouseClick(row, x, y, Qt.RightButton); wait(20)
             const parse = item(a, "ssh-parse-auto")
@@ -1181,6 +1195,47 @@ Item {
             a.copyTextSelection()
             compare(clipboard(), text)
         }
+        function test_selectionKeepsTheSameVisibleEditorForHistoryAndLiveRows() {
+            make()
+            const a = page.activeSession; connected(a)
+            const historyText = "history line stays visible"
+            const liveText = "prompt$ stays visible"
+            a.terminal.appendTestLines([historyText], 10)
+            a.terminal.liveLine = liveText; wait(30)
+            const row = item(a, "ssh-log-line-0")
+            const footer = item(a, "ssh-log-list").footerItem
+            const editor = item(row, "ssh-log-text")
+            const live = item(footer, "ssh-terminal-live-line")
+            compare(editor.text, historyText)
+            compare(live.text, liveText)
+            verify(editor.visible && live.visible)
+            verify(findChild(row, "ssh-selected-text") === null)
+            verify(findChild(footer, "ssh-selected-live-text") === null)
+
+            a.textSelectionAnchor = {id: 0, position: 0}
+            a.textSelectionFocus = {id: 0, position: historyText.length}; wait(20)
+            verify(item(row, "ssh-log-text") === editor)
+            verify(editor.visible)
+            compare(editor.selectedText, historyText)
+
+            a.clearTextSelection(); wait(20)
+            verify(item(row, "ssh-log-text") === editor)
+            verify(editor.visible)
+            compare(editor.selectedText, "")
+            compare(editor.text, historyText)
+
+            a.textSelectionAnchor = {id: a.liveSelectionId, position: 0}
+            a.textSelectionFocus = {id: a.liveSelectionId, position: liveText.length}; wait(20)
+            verify(item(footer, "ssh-terminal-live-line") === live)
+            verify(live.visible)
+            compare(live.selectedText, liveText)
+
+            a.clearTextSelection(); wait(20)
+            verify(item(footer, "ssh-terminal-live-line") === live)
+            verify(live.visible)
+            compare(live.selectedText, "")
+            compare(live.text, liveText)
+        }
         function test_dragSelectionAcrossRowsAndLivePrompt() {
             make()
             const a = page.activeSession; connected(a)
@@ -1197,7 +1252,7 @@ Item {
             mouseMove(footer, 10 + a.charWidth * 5.05, footer.height / 2, 20, Qt.LeftButton)
             mouseRelease(footer, 10 + a.charWidth * 5.05, footer.height / 2); wait(20)
             compare(clipboard(), "omp")
-            verify(item(a, "ssh-selected-live-text").selectedText === "omp")
+            verify(item(a, "ssh-terminal-live-line").selectedText === "omp")
         }
         function test_copyOnSelectIsPerSessionAndRestoresWithoutCopying() {
             make()
@@ -1241,7 +1296,9 @@ Item {
             select(0); compare(page.activeSession, a)
             openSessionMenu(a)
             mouseClick(item(scene.Window.window.contentItem, "ssh-session-config-" + a.sessionId)); wait(20)
-            verify(a.connectionConfigExpanded && !item(a, "ssh-config-toggle").visible)
+            verify(item(page, "ssh-connection-editor").opened)
+            verify(!item(a, "ssh-connection-panel").visible)
+            item(page, "ssh-connection-editor").close()
         }
         function test_sidebarConfigurationConnectionAndCollapseAreIndependent() {
             make()
@@ -1274,7 +1331,7 @@ Item {
         function test_detachAndNativeCloseKeepTheSameSessionAndViewport() {
             make()
             const a = page.activeSession; connected(a)
-            a.connectionConfigExpanded = false; a.autoFollowEnabled = false; a.terminalFontSize = 18
+            a.connectionConfigExpanded = false; a.autoScroll = false; a.terminalFontSize = 18
             a.terminal.liveLine = "device-a$ "
             const rows = []
             for (let i = 0; i < 200; ++i) rows.push("Row " + i + " RX 68 04 07 00 00 00")
@@ -1287,7 +1344,7 @@ Item {
             const disconnects = terminal.disconnectCalls; const connects = terminal.connectCalls
             verify(page.detachSession(a)); wait(50)
             const window = a.monitorWindow
-            verify(a.detached && window.visible && a.visible && !a.autoFollowEnabled)
+            verify(a.detached && window.visible && a.visible && !a.autoScroll)
             compare(a.ownerWindow, window); verify(window.transientParent === null)
             compare(window.modality, Qt.NonModal); verify((window.flags & Qt.Window) !== 0)
             compare(a.terminal, terminal); compare(a.terminal.lineModel, model)
@@ -1302,7 +1359,7 @@ Item {
             window.width = 1400; window.height = 850; wait(30)
             verify(view.width > 1200)
             window.close(); wait(50)
-            verify(!a.detached && !window.visible && a.visible && !a.autoFollowEnabled)
+            verify(!a.detached && !window.visible && a.visible && !a.autoScroll)
             compare(page.activeSession, a); compare(a.terminal, terminal)
             compare(terminal.disconnectCalls, disconnects); compare(terminal.connectCalls, connects)
             compare(a.selectedHexText, selected); compare(a.terminalFontSize, 18)
@@ -1373,45 +1430,44 @@ Item {
                 parent = originalParent
             }
         }
-        function test_visibleConfigCloseKeepsDraftsConnectionAndLogging() {
+        function test_connectionEditorKeepsLiveStateAndDoesNotPutParametersAboveTerminal() {
             make()
             const a = page.activeSession
-            item(a, "ssh-host").text = "draft.example"
-            item(a, "ssh-port").text = "2222"
-            item(a, "ssh-password-draft").text = "synthetic-draft"
-            connected(a); a.terminal.logging = true
-            const before = a.connectionConfiguration()
+            const config = page.blankConfiguration("设备 A")
+            config.host = "draft.example"; config.port = "2222"; config.password = "synthetic-draft"
+            a.restoreConfiguration(config)
+            connected(a); a.terminal.logging = true; wait(30)
             const connects = a.terminal.connectCalls, disconnects = a.terminal.disconnectCalls
-            const close = item(a, "ssh-config-close")
-            verify(close.visible && close.text === "收起配置")
-            verify(waitForPolish(a)); wait(20)
-            const grid = item(a, "ssh-connection-fields")
-            verify(close.mapToItem(a, 0, close.height).y <= grid.mapToItem(a, 0, 0).y)
-            const scroll = item(a, "ssh-connection-scroll")
-            for (const width of [940, 1180]) {
-                page.width = width; verify(waitForPolish(page)); wait(20)
-                verify(scroll.contentWidth <= scroll.width + 1, "four groups must fit the normal main window")
-                const firstRow = ["ssh-session-name", "ssh-host", "ssh-port", "ssh-username"]
-                const first = item(a, firstRow[0])
-                for (const name of firstRow) {
-                    const field = item(a, name)
-                    compare(field.y, first.y); compare(field.height, 30)
-                    verify(field.x + field.width <= scroll.width + 1)
-                }
-            }
-            mouseClick(close); wait(20)
-            verify(!a.connectionConfigExpanded && !item(a, "ssh-connection-scroll").visible)
-            verify(a.terminal.connected && a.terminal.logging)
-            compare(a.terminal.connectCalls, connects); compare(a.terminal.disconnectCalls, disconnects)
+            verify(!item(a, "ssh-config-heading").visible)
+            verify(!item(a, "ssh-connection-scroll").visible)
+            verify(item(a, "ssh-connection-panel").height < 80)
+
             openSessionMenu(a); wait(20)
-            mouseClick(item(scene.Window.window.contentItem, "ssh-session-config-" + a.sessionId)); wait(20)
-            verify(a.connectionConfigExpanded && close.visible)
-            const after = a.connectionConfiguration()
-            compare(after.host, before.host); compare(after.port, before.port); compare(after.password, before.password)
-            verify(page.detachSession(a)); a.connectionConfigExpanded = true; wait(30)
-            verify(close.visible && !item(a, "ssh-config-toggle").visible)
-            close.forceActiveFocus(); keyClick(Qt.Key_Space); wait(20)
-            verify(!a.connectionConfigExpanded && !item(a, "ssh-config-toggle").visible)
+            mouseClick(item(scene.Window.window.contentItem, "ssh-session-config-" + a.sessionId)); wait(30)
+            const editor = item(page, "ssh-connection-editor")
+            verify(editor.opened)
+            verify(!item(page, "ssh-editor-host").enabled)
+            const encoding = item(page, "ssh-editor-encoding")
+            compare(encoding.leftPadding + encoding.contentItem.leftPadding,
+                    item(page, "ssh-editor-host").leftPadding)
+            verify(findChild(page, "ssh-editor-auto-follow") === null)
+            item(page, "ssh-editor-copy-on-select").checked = true
+            item(page, "ssh-editor-wrap-lines").checked = true
+            mouseClick(item(page, "ssh-editor-save")); wait(30)
+            verify(!editor.opened)
+            verify(a.terminal.connected && a.terminal.logging)
+            verify(a.copyOnSelect && a.wrapLogLines)
+            compare(a.terminal.connectCalls, connects); compare(a.terminal.disconnectCalls, disconnects)
+            verify(!item(a, "ssh-config-heading").visible)
+            const saved = page.savedConnections.find(function(value) { return value.host === "draft.example" })
+            verify(!!saved && saved.autoFollowEnabled === undefined && saved.copyOnSelect && saved.wrapLogLines)
+
+            verify(page.detachSession(a)); wait(30)
+            openSessionMenu(a); wait(20)
+            mouseClick(item(scene.Window.window.contentItem, "ssh-session-config-" + a.sessionId)); wait(30)
+            verify(editor.opened && !item(page, "ssh-editor-host").enabled)
+            mouseClick(item(page, "ssh-editor-cancel")); wait(20)
+            verify(!editor.opened)
             verify(a.terminal.connected && a.terminal.logging)
         }
         function test_removedSummaryLeavesNoEmptyPanelButKeepsConfigErrorsAndLogging() {
@@ -1431,8 +1487,9 @@ Item {
             a.terminal.logging = false; wait(20); verify(!panel.visible)
             openSessionMenu(a); wait(20)
             mouseClick(item(scene.Window.window.contentItem, "ssh-session-config-" + a.sessionId)); wait(20)
-            verify(a.connectionConfigExpanded && panel.visible)
-            a.connectionConfigExpanded = false
+            verify(item(page, "ssh-connection-editor").opened)
+            verify(!panel.visible && !item(a, "ssh-connection-scroll").visible)
+            item(page, "ssh-connection-editor").close()
             verify(page.detachSession(a)); wait(30)
             verify(!panel.visible && !item(a, "sshConnectAction").visible)
             verify(page.dockSession(a)); wait(30)
@@ -1508,7 +1565,7 @@ Item {
             compare(view.contentWidth, view.width)
             verify(!item(a, "ssh-log-horizontal-scroll").visible)
             tryVerify(() => row.height > a.terminalFontSize * 3)
-            const editor = item(row, "ssh-selected-text")
+            const editor = item(row, "ssh-log-text")
             compare(editor.selectedText, "AA BB CC DD")
             const start = editor.positionToRectangle(2), end = editor.positionToRectangle(100)
             verify(end.y > start.y)
@@ -1517,9 +1574,36 @@ Item {
             mouseMove(row, 10 + end.x + a.charWidth * 0.05, end.y + end.height / 2, 20, Qt.LeftButton)
             mouseRelease(row, 10 + end.x + a.charWidth * 0.05, end.y + end.height / 2); wait(20)
             a.copyTextSelection(); compare(clipboard(), text.slice(2, 100))
-            const point = item(row, "ssh-selected-text").positionToRectangle(hex + 3)
+            const point = item(row, "ssh-log-text").positionToRectangle(hex + 3)
             mouseDoubleClickSequence(row, 10 + point.x + a.charWidth * 0.55, point.y + point.height / 2); wait(20)
             compare(a.parseableHexText, "AA BB CC DD")
+        }
+        function test_followingLongLinesKeepsHorizontalPosition() {
+            make()
+            const a = page.activeSession
+            a.connectionConfigExpanded = false
+            const view = item(a, "ssh-log-list")
+            const wide = "wide " + "x".repeat(600)
+            a.terminal.appendTestLines([wide, wide, wide], 1000); wait(40)
+            tryVerify(() => view.atYEnd && view.contentWidth > view.width * 2)
+            connected(a)
+            a.focusTerminal()
+            const position = Math.min(view.contentWidth - view.width, 180)
+            view.contentX = position; wait(20); compare(view.contentX, position)
+            for (let i = 0; i < 3; ++i) {
+                a.terminal.appendTestLines(["incoming " + i + " " + "y".repeat(600)], 1000); wait(40)
+                compare(view.contentX, position)
+                verify(view.atYEnd)
+            }
+            a.terminal.liveLine = "prompt$ " + "z".repeat(400)
+            a.terminal.cursorPosition = a.terminal.liveLine.length
+            a.sendTerminalText("z"); wait(40)
+            verify(view.contentX > position)
+            verify(view.footerItem.caretX <= view.contentX + view.width)
+            wait(700)
+            const typedPosition = view.contentX
+            a.terminal.appendTestLines(["after typing " + "y".repeat(600)], 1000); wait(40)
+            verify(Math.abs(view.contentX - typedPosition) < 1)
         }
         function test_wrappingAndCopyOptionsAreOrderedPerSessionAndPersist() {
             make()
@@ -1615,10 +1699,10 @@ Item {
             }
             verify((luminance(a.terminalText) + 0.05) / (luminance(a.terminalBg) + 0.05) > 15)
             mouseDoubleClickSequence(row, 10 + a.charWidth * 4, row.height / 2); wait(20)
-            const editor = item(row, "ssh-selected-text")
+            const editor = item(row, "ssh-log-text")
             compare(editor.color, a.terminalText); compare(editor.selectedTextColor, a.terminalText)
             a.wrapLogLines = true; wait(20)
-            compare(item(a, "ssh-selected-live-text").color, a.terminalText)
+            compare(item(a, "ssh-terminal-live-line").color, a.terminalText)
         }
         function test_wrappedMatchHighlightsSpanMultipleVisualRows() {
             make()
@@ -1734,7 +1818,7 @@ Item {
             const corner = status.mapToItem(b, status.width, status.height)
             verify(corner.x <= b.width && corner.y <= b.height)
             mouseClick(item(b, "ssh-clear")); verify(b.terminal.logging)
-            mouseClick(item(b, "ssh-pause")); verify(b.terminal.logging)
+            b.autoScroll = false; verify(b.terminal.logging)
             select(0); verify(b.terminal.logging)
             verify(page.detachSession(b)); wait(30)
             verify(b.terminal.logging && b.monitorWindow.visible)
@@ -2139,7 +2223,7 @@ Item {
             mouseClick(item(page, "ssh-new-session")); wait(40)
             const b = page.activeSession
             verify(a !== b); verify(!a.visible); verify(b.visible)
-            compare(item(b, "ssh-host").text, ""); verify(b.connectionConfigExpanded)
+            compare(item(b, "ssh-host").text, ""); verify(!b.connectionConfigExpanded)
             verify(!a.terminal.persistSettings && !b.terminal.persistSettings)
             connected(b)
             item(b, "ssh-host").text = "b.example"
@@ -2284,22 +2368,22 @@ Item {
             a.terminal.appendTestLines(["first", "中文 second"], 10)
             a.terminal.liveLine = "test$ tail"
             const b = page.addSession(); b.terminal.appendTestLines(["other"], 10); select(0); wait(20)
-            const row = item(a, "ssh-log-line-0")
-            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            const area = item(a, "ssh-text-selection-area")
+            mouseClick(area, 40, 300, Qt.RightButton); wait(20)
             mouseClick(item(a, "ssh-terminal-select-all")); wait(20)
             verify(a.hasTextSelection); verify(!a.autoScroll)
             a.copyTextSelection(); compare(clipboard(), "first\n中文 second\ntest$ tail")
             verify(!b.hasTextSelection)
-            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            mouseClick(area, 40, 300, Qt.RightButton); wait(20)
             verify(item(a, "ssh-terminal-parse-menu").visible)
             verify(!item(a, "ssh-terminal-actions-menu").visible)
             verify(item(a, "ssh-copy-selection").enabled)
             verify(!item(a, "ssh-parse-auto").enabled)
             keyClick(Qt.Key_Escape); a.clearTextSelection()
-            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            mouseClick(area, 40, 300, Qt.RightButton); wait(20)
             mouseClick(item(a, "ssh-terminal-copy-all")); wait(20)
             compare(a.terminal.copyBufferCalls, 1); compare(b.terminal.copyBufferCalls, 0)
-            mouseClick(row, 30, row.height / 2, Qt.RightButton); wait(20)
+            mouseClick(area, 40, 300, Qt.RightButton); wait(20)
             mouseClick(item(a, "ssh-terminal-clear")); wait(20)
             compare(a.terminal.currentLineCount, 0); compare(b.terminal.currentLineCount, 1)
         }
@@ -2368,14 +2452,14 @@ Item {
             const control = Qt.platform.os === "osx" ? Qt.MetaModifier : Qt.ControlModifier
             const row = item(a, "ssh-log-line-0")
             const oldHeight = row.height; const oldWidth = a.charWidth
-            const selected = item(a, "ssh-selected-text").selectedText
+            const selected = item(a, "ssh-log-text").selectedText
             const caretX = view.footerItem.caretX
             mouseWheel(view, 40, 20, 0, 120, Qt.NoButton, control)
             tryCompare(a, "terminalFontSize", 14)
-            compare(item(a, "ssh-selected-text").font.pixelSize, 14)
+            compare(item(a, "ssh-log-text").font.pixelSize, 14)
             compare(item(a, "ssh-terminal-live-line").font.pixelSize, 14)
             compare(a.terminalInput.font.pixelSize, 14)
-            compare(item(a, "ssh-selected-text").selectedText, selected)
+            compare(item(a, "ssh-log-text").selectedText, selected)
             verify(row.height > oldHeight); verify(a.charWidth > oldWidth)
             verify(view.footerItem.caretX > caretX)
             mouseWheel(view, 40, 20, 0, -120, Qt.NoButton, control)
@@ -2482,6 +2566,84 @@ Item {
             verify(!page.writable); verify(!page.saveWorkspace())
             compare(testBackend.settings["next/sshMonitor/workspace"], "broken-workspace")
             verify(page.workspaceError !== "")
+        }
+        function test_connectionEditorHasNoFollowSwitchAndIgnoresLegacySetting() {
+            make()
+            const a = page.activeSession
+            const config = page.blankConfiguration("设备 A")
+            config.host = "follow.example"; config.port = "2222"
+            config.username = "operator"; config.password = "follow-password"
+            config.autoFollowEnabled = false
+            a.restoreConfiguration(config)
+            connected(a); wait(40)
+            compare(page.savedConnections.length, 1)
+            verify(a.autoScroll)
+            verify(a.connectionConfiguration().autoFollowEnabled === undefined)
+            verify(page.savedConnections[0].autoFollowEnabled === undefined)
+            verify(!item(a, "ssh-connection-panel").visible)
+            verify(!item(a, "ssh-connection-scroll").visible)
+
+            const tab = item(page, "ssh-session-row-" + a.sessionId)
+            mouseClick(tab, 25, 13, Qt.RightButton); wait(30)
+            verify(visualItem(a.group.menu.contentItem, "ssh-pause") === null)
+            const action = visualItem(a.group.menu.contentItem, "ssh-session-config-" + a.sessionId)
+            verify(action !== null); compare(action.text, "连接参数…")
+            mouseClick(action); wait(40)
+            const editor = item(page, "ssh-connection-editor")
+            verify(editor.opened)
+            verify(!item(page, "ssh-editor-host").enabled)
+            verify(findChild(page, "ssh-editor-auto-follow") === null)
+            item(page, "ssh-editor-copy-on-select").checked = true
+            testBackend.failSave = true
+            mouseClick(item(page, "ssh-editor-save")); wait(30)
+            verify(editor.opened && item(page, "ssh-editor-error").visible)
+            verify(!a.copyOnSelect && !page.savedConnections[0].copyOnSelect)
+            testBackend.failSave = false
+            mouseClick(item(page, "ssh-editor-save")); wait(30)
+            verify(!editor.opened && a.copyOnSelect)
+            verify(page.savedConnections[0].copyOnSelect)
+            verify(page.saveWorkspace())
+            const persisted = JSON.parse(testBackend.settings["next/sshMonitor/workspace"])
+            verify(persisted.sessions[0].config.autoFollowEnabled === undefined)
+            verify(persisted.connections[0].autoFollowEnabled === undefined)
+            page.destroy(); page = null; wait(40); make()
+            verify(page.sessions[0].autoScroll)
+            verify(page.sessions[0].autoFollowEnabled === undefined)
+            verify(page.savedConnections[0].autoFollowEnabled === undefined)
+        }
+        function test_savedConnectionContextMenuEditsStoredParameters() {
+            make()
+            const config = page.blankConfiguration("采集网关")
+            config.host = "old.example"; config.username = "old-user"
+            config.password = "old-password"
+            page.savedConnections = [config]
+            verify(page.saveWorkspace())
+
+            const row = item(page, "ssh-saved-row-0")
+            mouseClick(row, 35, 20, Qt.RightButton); wait(30)
+            const edit = item(scene.Window.window.contentItem, "ssh-saved-edit-0")
+            verify(edit !== null); mouseClick(edit); wait(40)
+            const editor = item(page, "ssh-connection-editor")
+            verify(editor.opened)
+            item(page, "ssh-editor-host").text = "new.example"
+            item(page, "ssh-editor-port").text = "2200"
+            item(page, "ssh-editor-username").text = "operator"
+            item(page, "ssh-editor-password").text = "new-password"
+            item(page, "ssh-editor-copy-on-select").checked = true
+            mouseClick(item(page, "ssh-editor-save")); wait(30)
+            verify(!editor.opened)
+            compare(page.savedConnections[0].host, "new.example")
+            compare(page.savedConnections[0].port, "2200")
+            compare(page.savedConnections[0].username, "operator")
+            compare(page.savedConnections[0].password, "new-password")
+            verify(page.savedConnections[0].copyOnSelect)
+
+            const restored = page.connectSaved(page.savedConnections[0]); wait(30)
+            compare(restored.terminal.host, "new.example")
+            compare(restored.terminal.port, 2200)
+            compare(restored.terminal.username, "operator")
+            compare(restored.terminal.password, "new-password")
+            verify(restored.autoScroll && restored.copyOnSelect)
         }
         function test_savedConnectionListKeepsAccountAndPasswordAfterClosingTabs() {
             make()

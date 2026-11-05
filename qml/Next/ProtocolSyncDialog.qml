@@ -211,7 +211,7 @@ GlassPage {
             text: control.text
             font: control.font
 
-            color: control.highlighted ? "white" : (theme ? theme.buttonText : "#333333")
+            color: control.highlighted ? (theme ? theme.highlightedText : "white") : (theme ? theme.buttonText : "#333333")
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
@@ -626,7 +626,8 @@ GlassPage {
         visible: false
         title: "差异比较: " + diffFileName
         modality: Qt.WindowModal
-        flags: Qt.Window | Qt.FramelessWindowHint
+        flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint |
+               Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint | Qt.WindowSystemMenuHint
 
         property int resizeMargin: 6
 

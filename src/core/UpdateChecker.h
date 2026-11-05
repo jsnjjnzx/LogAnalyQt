@@ -44,6 +44,12 @@ class UpdateChecker : public QObject {
   Q_PROPERTY(bool verifying READ isVerifying NOTIFY verifyingChanged)
   Q_PROPERTY(
       bool verifySuccess READ isVerifySuccess NOTIFY verifyFinished)
+  Q_PROPERTY(bool downloadResumeAvailable READ isDownloadResumeAvailable
+                 NOTIFY downloadResumeChanged)
+  Q_PROPERTY(qint64 downloadedBytes READ downloadedBytes
+                 NOTIFY downloadProgressChanged)
+  Q_PROPERTY(qint64 expectedDownloadBytes READ expectedDownloadBytes
+                 NOTIFY downloadProgressChanged)
 
 public:
   explicit UpdateChecker(QObject *parent = nullptr);
@@ -64,6 +70,9 @@ public:
   QString downloadErrorMsg() const;
   bool isVerifying() const;
   bool isVerifySuccess() const;
+  bool isDownloadResumeAvailable() const;
+  qint64 downloadedBytes() const;
+  qint64 expectedDownloadBytes() const;
 
   // --- 原有可调用方法 ---
   Q_INVOKABLE void checkForUpdate();
@@ -87,6 +96,7 @@ signals:
   void downloadErrorOccurred(QString errorMessage);
   void verifyingChanged();
   void verifyFinished(bool success);
+  void downloadResumeChanged();
 
 private slots:
   void onReplyFinished(QNetworkReply *reply);
@@ -112,20 +122,36 @@ private:
   QString m_downloadErrorMsg;
   bool m_verifying;
   bool m_verifySuccess;
+  bool m_downloadResumeAvailable;
+  bool m_cancelRequested;
   QString m_expectedSha256;         // 当前平台更新包的 SHA256 哈希
   QString m_downloadedFilePath;     // 已下载的更新文件路径
   QString m_downloadFileName;       // 下载文件名（如 LogAnalyQt_v1.7.0.exe）
+  QString m_downloadCacheRoot;
+  QString m_downloadEtag;
   QNetworkReply *m_downloadReply;   // 当前下载的 reply（用于取消）
   QFile *m_downloadFile;            // 下载时增量写入的文件句柄
   qint64 m_expectedDownloadSize;    // 预期的下载总大小（用于处理重定向后 Content-Length 丢失的情况）
+  qint64 m_resumeOffset;
+  qint64 m_downloadedBytes;
   qint64 m_lastReceivedBytes;       // 上次进度更新时接收的字节数（用于超时检测）
   QTimer *m_downloadTimeoutTimer;   // 下载超时定时器
+  int m_retryAttempts;
 
   // --- 原有方法 ---
   bool isNewerVersion(const QString &remote, const QString &local);
 
   // --- 新增方法 ---
   QString updateTempDir() const;              // 获取临时下载目录
+  QString downloadCacheDir() const;
+  QString partialDownloadPath() const;
+  QString finalDownloadPath() const;
+  QString downloadMetadataPath() const;
+  bool loadResumeState();
+  bool saveResumeMetadata();
+  void clearResumeFiles();
+  void beginDownloadAttempt();
+  void failDownload(const QString &message, bool retryable);
   void downloadSha256AndVerify();             // 校验已下载文件的 SHA256
   void finishVerification(const QString &expectedHash);
   bool verifySha256(const QString &filePath,

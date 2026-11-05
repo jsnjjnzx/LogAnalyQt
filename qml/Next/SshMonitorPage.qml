@@ -106,6 +106,11 @@ GlassPage {
     property var pendingClose: null
     property bool sidebarCollapsed: false
     property bool shuttingDown: false
+    property var connectionEditorPage: null
+    property int connectionEditorSavedIndex: -1
+    property string connectionEditorOldKey: ""
+    property string connectionEditorNameSuffix: ""
+    property bool applyingConnectionEditor: false
     property bool waitingForLogShutdown: false
     enabled: !waitingForLogShutdown
     property var logShutdownTargets: []
@@ -205,7 +210,8 @@ GlassPage {
     function scheduleSave() { if (ready) saveTimer.restart(); }
     function blankConfiguration(name) {
         return {name: name, host: "", port: "22", username: "root", password: "", encoding: "UTF-8", maxLines: "10000",
-            autoReconnect: true, reconnectCount: "5", reconnectInterval: "2000", expanded: true, commandManagementExpanded: false};
+            autoReconnect: true, reconnectCount: "5", reconnectInterval: "2000", expanded: false,
+            commandManagementExpanded: false};
     }
     function validConfiguration(config) {
         if (!config || typeof config !== "object") return false;
@@ -219,6 +225,15 @@ GlassPage {
             && (config.wrapLogLines === undefined || typeof config.wrapLogLines === "boolean")
             && (config.logFlushIntervalSeconds === undefined || Number.isInteger(config.logFlushIntervalSeconds) && config.logFlushIntervalSeconds >= 1 && config.logFlushIntervalSeconds <= 60)
             && (config.logBufferKiB === undefined || Number.isInteger(config.logBufferKiB) && config.logBufferKiB >= 16 && config.logBufferKiB <= 8192)
+            && (config.logDestination === undefined || config.logDestination === "file" || config.logDestination === "folder")
+            && (config.logFolder === undefined || typeof config.logFolder === "string" && config.logFolder.length <= 4096)
+            && (config.logNameTemplate === undefined || typeof config.logNameTemplate === "string" && config.logNameTemplate.length <= 256)
+            && (config.logRotateBySize === undefined || typeof config.logRotateBySize === "boolean")
+            && (config.logRotateSizeMiB === undefined || Number.isInteger(config.logRotateSizeMiB) && config.logRotateSizeMiB >= 1 && config.logRotateSizeMiB <= 4096)
+            && (config.logRotateByDuration === undefined || typeof config.logRotateByDuration === "boolean")
+            && (config.logRotateMinutes === undefined || Number.isInteger(config.logRotateMinutes) && config.logRotateMinutes >= 1 && config.logRotateMinutes <= 1440)
+            && (config.logDestination !== "folder" || typeof config.logFolder === "string" && config.logFolder.length > 0
+                && typeof config.logNameTemplate === "string" && config.logNameTemplate.length > 0)
             && (config.monitorEnabled === undefined || typeof config.monitorEnabled === "boolean")
             && (config.monitorRuleIds === undefined || Array.isArray(config.monitorRuleIds) && config.monitorRuleIds.length <= 256
                 && config.monitorRuleIds.every(function(id, index, ids) { return Number.isInteger(id) && id > 0 && id < 2147483647 && ids.indexOf(id) === index; }));
@@ -541,6 +556,12 @@ GlassPage {
             nextMonitorRuleId = state.nextMonitorRuleId || monitorRules.reduce(function(next, rule) { return Math.max(next, rule.id + 1); }, 1);
             for (const row of state.sessions) addSession(row.config, row.id);
             if (state.version === 2) restoreLayout(state.layout);
+            for (const page of sessions) {
+                const saved = savedConnections.find(function(config) {
+                    return root.connectionKey(config) === root.connectionKey(page.connectionConfiguration());
+                });
+                if (saved) page.savedConnectionKey = root.connectionKey(saved);
+            }
             currentIndex = state.currentIndex;
             if (sessions[currentIndex]) activateSession(sessions[currentIndex]);
         } else addSession();
@@ -549,6 +570,104 @@ GlassPage {
     function connectionKey(config) {
         return JSON.stringify([config.host.trim().toLowerCase(), Number(config.port), config.username.trim()]);
     }
+    function savedConfiguration(config, page) {
+        const row = Object.assign({}, config);
+        row.host = String(row.host || "").trim();
+        row.username = String(row.username || "").trim();
+        row.password = page && page.secureCredentials ? "" : String(row.password || "");
+        row.expanded = false;
+        delete row.autoFollowEnabled;
+        return row;
+    }
+    function openConnectionEditor(page, savedIndex) {
+        let config = null, index = savedIndex === undefined ? -1 : savedIndex;
+        if (page) {
+            if (sessions.indexOf(page) < 0) return;
+            activateSession(page);
+            config = page.connectionConfiguration();
+            index = savedConnections.findIndex(function(value) { return connectionKey(value) === page.savedConnectionKey; });
+            if (index < 0) index = savedConnections.findIndex(function(value) { return connectionKey(value) === connectionKey(config); });
+            const suffix = page.sessionName.match(/^(.*?) · (\d+)$/);
+            connectionEditorNameSuffix = index >= 0 && suffix ? " · " + suffix[2] : "";
+        } else {
+            if (index < 0 || index >= savedConnections.length) return;
+            config = Object.assign({}, savedConnections[index]);
+            connectionEditorNameSuffix = "";
+        }
+        const draft = Object.assign({}, config);
+        if (index >= 0) draft.name = savedConnections[index].name;
+        connectionEditorPage = page;
+        connectionEditorSavedIndex = index;
+        connectionEditorOldKey = page ? page.savedConnectionKey || connectionKey(config) : connectionKey(config);
+        const matchingPage = page || sessions.find(function(value) {
+            return connectionKey(value.connectionConfiguration()) === connectionKey(config);
+        }) || null;
+        connectionEditor.openFor(draft, {
+            identityLocked: !!page && page.sessionActive,
+            secureCredentials: matchingPage ? matchingPage.secureCredentials : false,
+            hasSavedPassword: matchingPage ? matchingPage.terminal.hasSavedPassword : false,
+            credentialStatus: matchingPage ? matchingPage.passwordNotice || matchingPage.terminal.credentialError : "",
+            canManageCredentials: !!page && page.secureCredentials
+        });
+    }
+    function commitConnectionEditor(config, keepOpen) {
+        const page = connectionEditorPage;
+        let index = connectionEditorSavedIndex;
+        const beforeRows = savedConnections;
+        const beforeConfig = page ? page.connectionConfiguration() : null;
+        applyingConnectionEditor = true;
+        if (page) {
+            if (index < 0) index = savedConnections.findIndex(function(value) { return connectionKey(value) === connectionEditorOldKey; });
+            const pageConfig = Object.assign({}, config, {name: config.name + connectionEditorNameSuffix});
+            if (!page.applyConnectionConfiguration(pageConfig)) {
+                applyingConnectionEditor = false;
+                connectionEditor.showError("当前连接正在使用，主机、端口、用户和密码需断开后修改。");
+                return false;
+            }
+        }
+        const rows = savedConnections.slice();
+        if (page && index >= 0) rows[index] = savedConfiguration(config, page);
+        else if (page && config.host.trim() && config.username.trim()
+                && (page.secureCredentials || config.password) && page.targetMatchesBackend())
+            rows.push(savedConfiguration(config, page));
+        else if (!page && index >= 0) rows[index] = savedConfiguration(config, null);
+        savedConnections = rows;
+        if (!saveWorkspace()) {
+            savedConnections = beforeRows;
+            if (page && beforeConfig) page.applyConnectionConfiguration(beforeConfig);
+            applyingConnectionEditor = false;
+            connectionEditor.showError(workspaceError);
+            return false;
+        }
+        if (page && index >= 0) page.savedConnectionKey = connectionKey(rows[index]);
+        applyingConnectionEditor = false;
+        if (!keepOpen) connectionEditor.close();
+        return true;
+    }
+    function syncSavedConnection(page) {
+        if (!page || sessions.indexOf(page) < 0 || !page.targetMatchesBackend()) return;
+        const config = page.connectionConfiguration(), key = connectionKey(config);
+        let index = savedConnections.findIndex(function(value) { return page.savedConnectionKey && connectionKey(value) === page.savedConnectionKey; });
+        if (index < 0) index = savedConnections.findIndex(function(value) { return connectionKey(value) === key; });
+        if (index < 0) return;
+        const rows = savedConnections.slice();
+        rows[index] = savedConfiguration(Object.assign({}, config, {name: rows[index].name}), page);
+        savedConnections = rows;
+        page.savedConnectionKey = key;
+    }
+    function saveEditorCredential(password) {
+        const message = connectionEditor.validationMessage();
+        if (message) { connectionEditor.showError(message); return; }
+        if (!connectionEditorPage || !commitConnectionEditor(connectionEditor.configuration(), true)) return;
+        if (!connectionEditorPage.saveConnectionCredential(password))
+            connectionEditor.showError("请在断开连接后保存系统密码。");
+        else connectionEditor.credentialStatus = "系统密码保存处理中…";
+    }
+    function clearEditorCredential() {
+        if (!connectionEditorPage) return;
+        if (!connectionEditorPage.clearConnectionCredential())
+            connectionEditor.showError("请在断开连接后清除系统密码。");
+    }
     function rememberConnection(page) {
         const config = page.connectionConfiguration();
         if (!config.host.trim() || !config.username.trim() || (!config.password && !page.secureCredentials) || !page.targetMatchesBackend()) return;
@@ -556,12 +675,14 @@ GlassPage {
         const rows = savedConnections.slice();
         const index = rows.findIndex(function(value) { return root.connectionKey(value) === key; });
         config.name = index < 0 ? config.name.replace(/ · \d+$/, "") : rows[index].name;
-        if (index < 0) rows.push(config); else rows[index] = config;
+        if (index < 0) rows.push(savedConfiguration(config, page)); else rows[index] = savedConfiguration(config, page);
         savedConnections = rows;
+        page.savedConnectionKey = key;
         saveWorkspace();
     }
     function connectSaved(config) {
         const page = newConnectedSession(config, mainContainer.activeGroup);
+        if (page) page.savedConnectionKey = connectionKey(config);
         return page;
     }
     function removeSaved(index) {
@@ -575,6 +696,7 @@ GlassPage {
         Next.LiveLogDialog {
             id: sessionPage
             objectName: "ssh-session-" + sessionId
+            readonly property Item connectionEditorOverlay: Overlay.overlay
             property var group: null
             property var lastMonitorWindow: null
             readonly property var monitorWindow: group && group.container.window ? group.container.window : lastMonitorWindow
@@ -587,7 +709,11 @@ GlassPage {
             ownerWindow: detached ? monitorWindow : root.ownerWindow
             persistConnectionSettings: false; workspaceManaged: true
             sharedCommands: commandLibrary; monitorRuleLibrary: root
-            onConfigurationEdited: root.scheduleSave()
+            onConfigurationEdited: {
+                if (!root.applyingConnectionEditor) root.syncSavedConnection(sessionPage);
+                root.scheduleSave();
+            }
+            onConnectionSettingsRequested: root.openConnectionEditor(sessionPage)
             Connections {
                 target: sessionPage.terminal
                 function onConnectedChanged() { if (target.connected) root.rememberConnection(sessionPage); }
@@ -604,7 +730,9 @@ GlassPage {
             readonly property var activePage: container.activeGroup ? container.activeGroup.active : null
             title: (activePage ? activePage.sessionName + " · " : "") + "实时监控 — 通联工坊"
             width: 1100; height: 760; minimumWidth: 440; minimumHeight: 480
-            flags: Qt.Window; modality: Qt.NonModal; transientParent: null
+            flags: Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
+                   Qt.WindowCloseButtonHint | Qt.WindowSystemMenuHint
+            modality: Qt.NonModal; transientParent: null
             color: root.theme ? root.theme.background : "#1d2025"; palette: root.palette; font: root.font
             onActiveChanged: if (active) container.stackingOrder = ++root.windowStack
             onXChanged: root.scheduleSave()
@@ -680,19 +808,24 @@ GlassPage {
                             width: ListView.view.width; height: matches ? 52 : 0; visible: matches
                             highlighted: !!root.activeSession && root.connectionKey(root.activeSession.connectionConfiguration()) === root.connectionKey(config)
                             Accessible.name: config.name + " " + config.host
-                            Accessible.description: "双击或按 Enter 新建标签并连接"
+                            Accessible.description: "双击或按 Enter 新建标签并连接；按菜单键或右键编辑连接参数"
                             onDoubleClicked: root.connectSaved(config)
                             Keys.onReturnPressed: root.connectSaved(config)
                             Keys.onEnterPressed: root.connectSaved(config)
+                            Keys.onMenuPressed: savedMenu.popup()
                             contentItem: Column {
                                 spacing: 3
                                 Label { text: savedRow.config.name; color: root.theme ? root.theme.text : "white"; width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText }
                                 Label { text: savedRow.config.host + ":" + savedRow.config.port; color: root.theme ? root.theme.subText : "#a7adb7"; font.pixelSize: 11; width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText }
                             }
-                            background: Rectangle { radius: 5; color: savedRow.down || savedRow.highlighted ? (root.theme && root.theme.lightMode ? root.theme.navigationSelected : "#334b6b") : savedRow.hovered ? (root.theme && root.theme.lightMode ? root.theme.surfaceHover : "#303742") : "transparent" }
+                            background: Rectangle { radius: 5; color: savedRow.down || savedRow.highlighted ? (root.theme && (root.theme.lightMode || root.theme.monokaiMode) ? root.theme.navigationSelected : "#334b6b") : savedRow.hovered ? (root.theme && (root.theme.lightMode || root.theme.monokaiMode) ? root.theme.surfaceHover : "#303742") : "transparent" }
                             TapHandler { acceptedButtons: Qt.RightButton; onTapped: savedMenu.popup() }
                             Next.GlassMenu {
                                 id: savedMenu
+                                Next.GlassMenuItem {
+                                    objectName: "ssh-saved-edit-" + savedRow.index; text: "编辑连接参数…"
+                                    onTriggered: root.openConnectionEditor(null, savedRow.index)
+                                }
                                 Next.GlassMenuItem { text: "在新标签中连接"; onTriggered: root.connectSaved(savedRow.config) }
                                 Next.GlassMenuItem { text: "在新窗口中连接"; onTriggered: { const page = root.connectSaved(savedRow.config); if (page) root.detachSession(page); } }
                                 Next.GlassMenuItem { objectName: "ssh-saved-remove-" + savedRow.index; text: "移除配置"; onTriggered: root.removeSaved(savedRow.index) }
@@ -708,6 +841,247 @@ GlassPage {
                 }
             }
             Next.SshMonitorSurface { workspace: root; container: mainContainer; Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumWidth: 0 }
+        }
+    }
+    component ConnectionEditor: Next.GlassDialog {
+        id: editor
+        objectName: "ssh-connection-editor"
+        anchors.centerIn: parent
+        modal: true
+        title: "连接参数"
+        standardButtons: Dialog.NoButton
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(720, parent ? parent.width - 28 : 720)
+        padding: 16
+
+        property var sourceConfig: ({})
+        property bool identityLocked: false
+        property bool secureCredentials: false
+        property bool hasSavedPassword: false
+        property bool canManageCredentials: false
+        property string credentialStatus: ""
+        property string errorText: ""
+
+        signal commitRequested(var config)
+        signal savePasswordRequested(string password)
+        signal clearPasswordRequested()
+
+        function openFor(config, options) {
+            sourceConfig = Object.assign({}, config || {});
+            delete sourceConfig.autoFollowEnabled;
+            identityLocked = !!options.identityLocked;
+            secureCredentials = !!options.secureCredentials;
+            hasSavedPassword = !!options.hasSavedPassword;
+            canManageCredentials = !!options.canManageCredentials;
+            credentialStatus = options.credentialStatus || "";
+            errorText = "";
+            nameInput.text = sourceConfig.name || "";
+            hostInput.text = sourceConfig.host || "";
+            portInput.text = sourceConfig.port || "22";
+            userInput.text = sourceConfig.username || "root";
+            passwordInput.text = secureCredentials ? "" : sourceConfig.password || "";
+            encodingCombo.currentIndex = sourceConfig.encoding === "GB2312" || sourceConfig.encoding === "GBK" ? 1 : 0;
+            maxLinesInput.text = sourceConfig.maxLines || "10000";
+            autoReconnectSwitch.checked = sourceConfig.autoReconnect !== false;
+            reconnectCountInput.text = sourceConfig.reconnectCount || "5";
+            reconnectIntervalInput.text = sourceConfig.reconnectInterval || "2000";
+            copyOnSelectSwitch.checked = sourceConfig.copyOnSelect === true;
+            wrapLinesSwitch.checked = sourceConfig.wrapLogLines === true;
+            open();
+        }
+        function configuration() {
+            return Object.assign({}, sourceConfig, {
+                name: nameInput.text.trim(), host: hostInput.text.trim(), port: portInput.text.trim(),
+                username: userInput.text.trim(),
+                password: secureCredentials ? passwordInput.text || sourceConfig.password || "" : passwordInput.text,
+                encoding: encodingCombo.currentText, maxLines: maxLinesInput.text,
+                autoReconnect: autoReconnectSwitch.checked, reconnectCount: reconnectCountInput.text,
+                reconnectInterval: reconnectIntervalInput.text,
+                copyOnSelect: copyOnSelectSwitch.checked, wrapLogLines: wrapLinesSwitch.checked
+            });
+        }
+        function validationMessage() {
+            if (!nameInput.text.trim() || nameInput.text.length > 100) return "请填写 1～100 字符的连接名称。";
+            if (!hostInput.text.trim() || hostInput.text.length > 1024) return "请填写有效的主机。";
+            if (!userInput.text.trim() || userInput.text.length > 1024) return "请填写用户名。";
+            if (!portInput.acceptableInput || Number(portInput.text) < 1 || Number(portInput.text) > 65535) return "端口须为 1～65535。";
+            if (!maxLinesInput.acceptableInput) return "缓存行须为 100～200000。";
+            if (autoReconnectSwitch.checked && !reconnectCountInput.acceptableInput) return "重连次数须为 0～20。";
+            if (autoReconnectSwitch.checked && !reconnectIntervalInput.acceptableInput) return "重连间隔须为 500～30000 毫秒。";
+            return "";
+        }
+        function submit() {
+            const message = validationMessage();
+            if (message) { errorText = message; return; }
+            errorText = "";
+            commitRequested(configuration());
+        }
+        function showError(text) {
+            errorText = text || "连接参数保存失败。";
+            if (!opened) open();
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: "连接"; color: root.theme ? root.theme.text : "#333333"
+                font.pixelSize: 13; font.weight: Font.DemiBold
+            }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 4; columnSpacing: 8; rowSpacing: 8
+
+                Label { text: "名称"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: nameInput; objectName: "ssh-editor-name"
+                    Layout.fillWidth: true; implicitHeight: 32; maximumLength: 100
+                }
+                Label { text: "主机"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: hostInput; objectName: "ssh-editor-host"
+                    Layout.fillWidth: true; implicitHeight: 32; enabled: !editor.identityLocked
+                    placeholderText: "192.168.1.1"
+                }
+
+                Label { text: "端口"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: portInput; objectName: "ssh-editor-port"
+                    Layout.fillWidth: true; implicitHeight: 32; enabled: !editor.identityLocked
+                    validator: IntValidator { bottom: 1; top: 65535 }
+                }
+                Label { text: "用户"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: userInput; objectName: "ssh-editor-username"
+                    Layout.fillWidth: true; implicitHeight: 32; enabled: !editor.identityLocked
+                    placeholderText: "root"
+                }
+
+                Label { text: "密码"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: passwordInput; objectName: "ssh-editor-password"
+                    Layout.fillWidth: true; implicitHeight: 32; enabled: !editor.identityLocked
+                    echoMode: TextInput.Password
+                    inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+                    placeholderText: editor.secureCredentials
+                        ? (editor.hasSavedPassword ? "已保存；留空沿用" : "系统密码") : "连接密码（随连接保存）"
+                }
+                Label { text: "编码"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassComboBox {
+                    id: encodingCombo; objectName: "ssh-editor-encoding"
+                    Layout.fillWidth: true; implicitHeight: 32; enabled: !editor.identityLocked
+                    leftPadding: 0 // Basic.ComboBox 的内容项已自带 12px 左缩进
+                    model: ["UTF-8", "GB2312"]
+                }
+
+                Label { text: "缓存行"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: maxLinesInput; objectName: "ssh-editor-buffer"
+                    Layout.fillWidth: true; implicitHeight: 32; readOnly: editor.identityLocked
+                    validator: IntValidator { bottom: 100; top: 200000 }
+                }
+                Label { text: "自动重连"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassSwitch {
+                    id: autoReconnectSwitch; objectName: "ssh-editor-auto-reconnect"
+                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                    implicitHeight: 28
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
+                Label { text: "重连次数"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: reconnectCountInput; objectName: "ssh-editor-reconnect-count"
+                    Layout.preferredWidth: 70; implicitHeight: 32
+                    enabled: autoReconnectSwitch.checked
+                    validator: IntValidator { bottom: 0; top: 20 }
+                }
+                Label { text: "间隔(ms)"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: reconnectIntervalInput; objectName: "ssh-editor-reconnect-interval"
+                    Layout.preferredWidth: 90; implicitHeight: 32
+                    enabled: autoReconnectSwitch.checked
+                    validator: IntValidator { bottom: 500; top: 30000 }
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            Label {
+                text: "显示"; color: root.theme ? root.theme.text : "#333333"
+                font.pixelSize: 13; font.weight: Font.DemiBold
+            }
+            GridLayout {
+                Layout.fillWidth: true; columns: 4; columnSpacing: 8
+                Label { text: "选中即复制"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassSwitch {
+                    id: copyOnSelectSwitch; objectName: "ssh-editor-copy-on-select"
+                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter; implicitHeight: 28
+                }
+                Label { text: "自动换行"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassSwitch {
+                    id: wrapLinesSwitch; objectName: "ssh-editor-wrap-lines"
+                    Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter; implicitHeight: 28
+                }
+            }
+            Label {
+                Layout.fillWidth: true; wrapMode: Text.Wrap
+                text: editor.identityLocked
+                    ? "连接期间仅可修改复制、换行和重连参数；主机、端口、用户与密码需断开后修改。"
+                    : "复制、换行及连接参数会随此连接保存，下次重连或再次打开时沿用。"
+                color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 11
+            }
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 6
+                visible: editor.secureCredentials || editor.credentialStatus !== ""
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                    text: editor.credentialStatus || (editor.hasSavedPassword ? "当前连接已在系统安全凭据中保存密码。" : "当前连接尚未保存系统密码。")
+                    color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 11
+                }
+                RowLayout {
+                    visible: editor.canManageCredentials; spacing: 8
+                    Next.GlassButton {
+                        objectName: "ssh-editor-save-password"; text: "保存密码"
+                        enabled: !editor.identityLocked && passwordInput.text.length > 0
+                        onClicked: editor.savePasswordRequested(passwordInput.text)
+                    }
+                    Next.GlassButton {
+                        objectName: "ssh-editor-clear-password"; text: "清除已存密码"
+                        enabled: !editor.identityLocked && editor.hasSavedPassword
+                        onClicked: editor.clearPasswordRequested()
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+            Label {
+                objectName: "ssh-editor-error"
+                Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                visible: text !== ""; text: editor.errorText
+                color: root.theme ? root.theme.error : "#d44a3a"; font.pixelSize: 12
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight; spacing: 8
+                Next.GlassButton { objectName: "ssh-editor-cancel"; text: "取消"; onClicked: editor.close() }
+                Next.GlassButton {
+                    objectName: "ssh-editor-save"; text: "保存"; highlighted: true
+                    onClicked: editor.submit()
+                }
+            }
+        }
+    }
+    ConnectionEditor {
+        id: connectionEditor
+        parent: root.connectionEditorPage ? root.connectionEditorPage.connectionEditorOverlay : Overlay.overlay
+        onCommitRequested: function(config) { root.commitConnectionEditor(config, false) }
+        onSavePasswordRequested: function(password) { root.saveEditorCredential(password) }
+        onClearPasswordRequested: root.clearEditorCredential()
+    }
+    Connections {
+        target: root.connectionEditorPage
+        function onPasswordNoticeChanged() {
+            if (!connectionEditor.opened) return;
+            connectionEditor.credentialStatus = target.passwordNotice;
+            connectionEditor.hasSavedPassword = target.terminal.hasSavedPassword;
         }
     }
     Next.GlassDialog {

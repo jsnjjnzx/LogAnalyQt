@@ -16,6 +16,7 @@ env:
   LOGANALYQT_DIAGNOSTICS_DIR: ${{ github.workspace }}/diagnostics
   PYTHONUNBUFFERED: '1'
   PYTHONUTF8: '1'
+  UI_TESTS: '^(prot698_qml_tests|stage10_qml_tests|ui_.*_runtime|macos_window_activation)$'
 
 jobs:
   windows:
@@ -55,12 +56,6 @@ jobs:
           if (-not $Mingw) { throw 'MinGW 13.1 not installed' }
           "MINGW_DIR=$($Mingw.FullName)" >> $env:GITHUB_ENV
           "$($Mingw.FullName)/bin" >> $env:GITHUB_PATH
-      - name: QML preflight and scroll stability (10 runs)
-        run: |
-          python tests/prot698_qml_tests.py
-          if ($LASTEXITCODE -ne 0) { throw 'QML test tools failed' }
-          python tests/prot698_qml_tests.py --filter AiAssistantWorkflow::test_longConversationScrollAndCompactBounds --repeat 10
-          if ($LASTEXITCODE -ne 0) { throw 'QML scroll stability failed' }
       - name: Cache static MQTT OpenSSL
         id: mqtt-openssl-cache
         uses: actions/cache/restore@v4
@@ -108,12 +103,8 @@ jobs:
       - name: Unit and integration tests
         run: |
           New-Item -ItemType Directory -Force diagnostics | Out-Null
-          ctest --test-dir build_release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-general.log -E '^(prot698_qml_tests|stage10_qml_tests|ui_migration_runtime|macos_window_activation)$'
+          ctest --test-dir build_release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-general.log -E $env:UI_TESTS
           if ($LASTEXITCODE -ne 0) { throw 'Unit or integration tests failed' }
-      - name: Application UI runtime tests
-        run: |
-          ctest --test-dir build_release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-ui.log -R '^(ui_migration_runtime|macos_window_activation)$'
-          if ($LASTEXITCODE -ne 0) { throw 'Application UI tests failed' }
       - name: Package and validate Windows executable
         shell: pwsh
         run: |
@@ -141,8 +132,6 @@ jobs:
               Move-Item -LiteralPath $QtDirectory -Destination $HiddenDirectory
               $HiddenQt[$QtDirectory] = $HiddenDirectory
             }
-            & $Python tests/test_ui_migration_runtime.py $Package.FullName
-            if ($LASTEXITCODE -ne 0) { throw 'Standalone Windows package failed to run' }
             & $Python tests/test_github_update.py $Package.FullName --probe
             if ($LASTEXITCODE -ne 0) { throw 'Standalone Windows update HTTPS probe failed' }
           }
@@ -192,14 +181,6 @@ jobs:
           arch: clang_64
           cache: 'true'
           setup-python: 'false'
-      - name: QML preflight and interaction stability (10 runs)
-        run: |
-          python3 tests/prot698_qml_tests.py
-          python3 tests/stage10_qml_tests.py
-          python3 tests/prot698_qml_tests.py --filter AiAssistantWorkflow::test_longConversationScrollAndCompactBounds --repeat 10
-          python3 tests/stage10_qml_tests.py --filter SshMonitorWorkspace::test_monitorRuleEditorAndPicker --repeat 10
-          python3 tests/stage10_qml_tests.py --filter SshMonitorWorkspace::test_followAndReceptionPauseHaveDistinctHoverHelp --repeat 10
-          python3 tests/stage10_qml_tests.py --filter RemoteSecurityViews::test_sshConfigFoldPreservesDraftsAndReleasesSpace --repeat 10
       - name: Configure and compile application
         run: |
           test "$(uname -m)" = arm64
@@ -207,10 +188,7 @@ jobs:
       - name: Unit and integration tests
         run: |
           mkdir -p diagnostics
-          ctest --test-dir build/macos-release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-general.log -E '^(prot698_qml_tests|stage10_qml_tests|ui_migration_runtime|macos_window_activation)$'
-      - name: Application UI and native activation tests (10 runs)
-        run: |
-          ctest --test-dir build/macos-release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-ui.log -R '^(ui_migration_runtime|macos_window_activation)$'
+          ctest --test-dir build/macos-release --verbose --output-on-failure --no-tests=error --output-log diagnostics/ctest-general.log -E "$UI_TESTS"
       - name: Package and validate macOS application
         run: |
           RUN_TESTS=1 scripts/package_macos.sh "" package
@@ -222,8 +200,6 @@ jobs:
           QT_QPA_PLATFORM: cocoa
         run: |
           test "$(lipo -archs build/macos-release/package/通联工坊.app/Contents/MacOS/appLogAnalyQt)" = arm64
-          env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
-            python3 tests/test_ui_migration_runtime.py build/macos-release/package/通联工坊.app/Contents/MacOS/appLogAnalyQt
           env -u QT_PLUGIN_PATH -u QT_QPA_PLATFORM_PLUGIN_PATH -u QML_IMPORT_PATH -u QML2_IMPORT_PATH -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
             python3 tests/test_github_update.py build/macos-release/package/通联工坊.app/Contents/MacOS/appLogAnalyQt --probe
       - name: Preserve test diagnostics

@@ -30,7 +30,7 @@ MacWindowBackdrop::MacWindowBackdrop(QQuickWindow *window, QObject *theme)
   m_effect = effect;
   theme->setProperty("nativeBackdropAvailable", true);
   connect(theme, SIGNAL(reducedTransparencyChanged()), this, SLOT(refresh()));
-  connect(theme, SIGNAL(lightModeChanged()), this, SLOT(refresh()));
+  connect(theme, SIGNAL(colorModeChanged()), this, SLOT(refresh()));
   connect(window, &QWindow::widthChanged, this, &MacWindowBackdrop::refresh);
   connect(window, &QWindow::heightChanged, this, &MacWindowBackdrop::refresh);
   connect(window, &QWindow::visibilityChanged, this, &MacWindowBackdrop::refresh);

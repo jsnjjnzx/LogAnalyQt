@@ -59,14 +59,6 @@ Next.GlassMenu {
     }
 
     SessionOption {
-        objectName: "ssh-pause"; menu: root; text: "自动跟随"
-        checked: root.page.autoFollowEnabled
-        onToggled: root.page.toggleFollowing()
-        onKeyboardToggleRequested: root.page.toggleFollowing()
-        ToolTip.visible: hovered
-        ToolTip.text: "只控制自动滚动；取消后仍接收日志。回车临时回到最新输出，上翻暂停，不改变勾选状态。重新勾选恢复持续跟随。"
-    }
-    SessionOption {
         objectName: "ssh-stop-reception"; menu: root; text: "停止刷屏"
         checked: root.page.terminal.receptionPaused
         onToggled: root.page.terminal.receptionPaused = checked
@@ -143,11 +135,11 @@ Next.GlassMenu {
     }
     Next.GlassMenuItem {
         objectName: "ssh-session-config-" + root.page.sessionId
-        text: "连接配置"
+        text: "连接参数…"
         onTriggered: {
-            root.workspace.activateSession(root.page);
-            root.page.connectionConfigExpanded = true;
-            if (root.page.detached) root.workspace.locateSession(root.page);
+            const page = root.page;
+            root.close();
+            Qt.callLater(function() { root.workspace.openConnectionEditor(page); });
         }
     }
     Next.GlassMenuSeparator {}
@@ -187,16 +179,16 @@ Next.GlassMenu {
         id: logMenu; objectName: "ssh-log-menu"; title: "日志"
         Next.GlassMenuItem {
             objectName: "ssh-session-log-settings-" + root.page.sessionId
-            text: "日志写入设置…"
+            text: "日志记录设置…"
             onTriggered: root.page.openLogSettings()
         }
         Next.GlassMenuItem {
             objectName: "ssh-session-log-start-" + root.page.sessionId
-            text: "开始记录日志…"
+            text: root.page.logDestination === "folder" ? "开始记录到文件夹" : "开始记录日志…"
             enabled: !root.page.terminal.logging && !root.page.terminal.logBusy
             ToolTip.visible: hovered
-            ToolTip.text: "选择文件后记录该会话的新输出，保存为 UTF-8 文本；清屏和暂停跟随不影响记录。"
-            onTriggered: root.page.requestLogFile(false)
+            ToolTip.text: "记录该会话的新输出，保存为 UTF-8 文本；清屏和暂停跟随不影响记录。"
+            onTriggered: root.page.startSessionLog()
         }
         Next.GlassMenuItem {
             objectName: "ssh-session-log-stop-" + root.page.sessionId

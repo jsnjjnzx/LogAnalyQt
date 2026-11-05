@@ -18,7 +18,7 @@ Item {
         when: windowShown
         function init() {
             failOnWarning(/Binding loop|TypeError|ReferenceError|Unable to assign/)
-            theme.lightMode = false; theme.nativeBackdropAvailable = false
+            theme.colorMode = "dark"; theme.nativeBackdropAvailable = false
             theme.reducedTransparency = false; theme.systemReducedTransparency = false
         }
         function test_darkPaletteUnchanged_data() { return Baseline.snapshots }
@@ -26,7 +26,7 @@ Item {
             theme.nativeBackdropAvailable = data.native
             theme.reducedTransparency = data.opaque
             for (let cycle = 0; cycle < 2; ++cycle) {
-                theme.lightMode = true; theme.lightMode = false
+                theme.colorMode = "light"; theme.colorMode = "dark"
                 for (const key of Object.keys(data.palette))
                     verify(Qt.colorEqual(theme[key],data.palette[key]),key + " differs from the original dark palette")
             }
@@ -37,18 +37,18 @@ Item {
         }
         function contrast(a,b) { const x = luminance(a), y = luminance(b); return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05) }
         function test_lightReadabilityAndSharedControls() {
-            theme.lightMode = true
+            theme.colorMode = "light"
             for (const key of ["text","subText","accent","success","warning","error"])
                 verify(contrast(theme[key],theme.background) >= 4.5,key + " needs readable contrast")
             verify(contrast(theme.terminalText,theme.terminalBackground) >= 4.5)
             for (const color of ["#ffffff","#60a5fa","#34d399","#fbbf24","#000000"])
                 verify(contrast(theme.markerTextColor(color),theme.background) >= 4.5,"light marker text " + color)
             verify(Qt.colorEqual(field.color,theme.text))
-            theme.lightMode = false
+            theme.colorMode = "dark"
             verify(Qt.colorEqual(field.color,theme.text))
         }
         function test_lightGlassAndBothOpaqueFallbacks() {
-            theme.lightMode = true; theme.nativeBackdropAvailable = true
+            theme.colorMode = "light"; theme.nativeBackdropAvailable = true
             verify(theme.nativeGlass); verify(theme.surface.a >= 0.95); verify(theme.surface.a < 1)
             verify(theme.sidebar.a > 0 && theme.sidebar.a < 0.8)
             verify(Qt.colorEqual(theme.controlBackground,"white"))
@@ -58,6 +58,23 @@ Item {
             verify(!theme.nativeGlass); compare(theme.surface.a,1); compare(theme.sidebar.a,1); compare(theme.controlBackground.a,1)
             theme.reducedTransparency = false; theme.systemReducedTransparency = true
             verify(!theme.nativeGlass); compare(theme.surface.a,1); compare(theme.sidebar.a,1)
+        }
+        function test_monokaiReadabilityAndOpaqueSurfaces() {
+            theme.colorMode = "monokai"; theme.nativeBackdropAvailable = true
+            verify(theme.monokaiMode); verify(!theme.lightMode); verify(!theme.nativeGlass)
+            verify(Qt.colorEqual(theme.background,"#44463e"))
+            verify(Qt.colorEqual(theme.sidebar,"#393b34"))
+            verify(Qt.colorEqual(theme.terminalBackground,"#30322b"))
+            verify(Qt.colorEqual(theme.accent,"#66d9ef"))
+            compare(theme.surface.a,1); compare(theme.sidebar.a,1)
+            for (const key of ["text","subText","accent","success","warning","error"])
+                verify(contrast(theme[key],theme.background) >= 4.5,key + " needs readable Monokai contrast")
+            verify(contrast(theme.highlightedText,theme.accentMuted) >= 4.5,"Monokai highlighted text needs readable contrast")
+            verify(contrast(theme.terminalText,theme.terminalBackground) >= 4.5)
+            for (const color of ["#ffffff","#60a5fa","#34d399","#fbbf24","#000000"])
+                verify(Qt.colorEqual(theme.markerTextColor(color),color))
+            theme.colorMode = "dark"
+            verify(!theme.monokaiMode)
         }
     }
 }

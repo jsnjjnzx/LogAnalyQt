@@ -120,20 +120,46 @@ public slots:
   void startLog(const QString &path, const QString &encoding, bool append, int intervalMs, int bufferKiB) {
     const bool success = m_sessionLog.start(path, encoding, append, bufferKiB);
     m_logPath = path;
+    m_logRotationRevision = 0;
+    m_logWarning.clear();
     if (success) {
       if (!m_logFlushTimer) {
         m_logFlushTimer = new QTimer(this);
         connect(m_logFlushTimer, &QTimer::timeout, this, [this] {
           if (!m_sessionLog.flush()) logWriteFailed();
+          else syncLogStatus();
         });
       }
       m_logFlushTimer->start(intervalMs);
     }
     emit logStateChanged(m_sessionLog.active(), path, success ? QString{} : m_sessionLog.errorString());
   }
+  void startFolderLog(const QString &folder, const QString &nameTemplate, const QString &encoding,
+                      int intervalMs, int bufferKiB, const QString &sessionName,
+                      const QString &host, int rotateSizeMiB, int rotateMinutes) {
+    const bool success = m_sessionLog.startFolder(
+        folder, nameTemplate, encoding, bufferKiB, sessionName, host,
+        qint64(rotateSizeMiB) * 1024 * 1024, qint64(rotateMinutes) * 60 * 1000);
+    m_logPath = success ? m_sessionLog.currentPath() : folder;
+    m_logRotationRevision = m_sessionLog.rotationRevision();
+    m_logWarning = m_sessionLog.warningString();
+    if (success) {
+      if (!m_logFlushTimer) {
+        m_logFlushTimer = new QTimer(this);
+        connect(m_logFlushTimer, &QTimer::timeout, this, [this] {
+          if (!m_sessionLog.flush()) logWriteFailed();
+          else syncLogStatus();
+        });
+      }
+      m_logFlushTimer->start(intervalMs);
+    }
+    emit logStateChanged(m_sessionLog.active(), m_logPath, success ? QString{} : m_sessionLog.errorString());
+    if (success && !m_logWarning.isEmpty()) emit logWarningChanged(m_logWarning);
+  }
   void stopLog() {
     if (m_logFlushTimer) m_logFlushTimer->stop();
     const bool success = m_sessionLog.stop();
+    m_logWarning.clear();
     emit logStateChanged(false, m_logPath, success ? QString{} : m_sessionLog.errorString());
   }
   void exportLog(const QString &path, const QByteArray &data) {
@@ -266,6 +292,8 @@ public slots:
 
 signals:
   void logStateChanged(bool active, const QString &path, const QString &error);
+  void logRotated(const QString &path);
+  void logWarningChanged(const QString &warning);
   void logExportFinished(const QString &path, const QString &error);
   void connected(quint64 generation);
   void errorOccurred(quint64 generation, const QString &error, bool securityFailure);
@@ -385,6 +413,7 @@ private:
   }
   void appendData(const char *data, int size) {
     if (!m_sessionLog.feed(QByteArrayView(data, size))) logWriteFailed();
+    else syncLogStatus();
     prepareMonitor();
     QByteArray replay;
     bool capturing = false;
@@ -600,8 +629,20 @@ private:
     if (m_logFlushTimer) m_logFlushTimer->stop();
     emit logStateChanged(false, m_logPath, m_sessionLog.errorString());
   }
+  void syncLogStatus() {
+    if (m_sessionLog.rotationRevision() != m_logRotationRevision) {
+      m_logRotationRevision = m_sessionLog.rotationRevision();
+      m_logPath = m_sessionLog.currentPath();
+      emit logRotated(m_logPath);
+    }
+    if (m_sessionLog.warningString() != m_logWarning) {
+      m_logWarning = m_sessionLog.warningString();
+      emit logWarningChanged(m_logWarning);
+    }
+  }
   void logBoundary(const QString &encoding) {
     if (!m_sessionLog.boundary(encoding)) logWriteFailed();
+    else syncLogStatus();
   }
   void cleanup() {
     logBoundary(m_encoding);
@@ -656,6 +697,8 @@ private:
   SshSessionLog m_sessionLog;
   QTimer *m_logFlushTimer = nullptr;
   QString m_logPath;
+  QString m_logWarning;
+  int m_logRotationRevision = 0;
   SshMonitorMatcher m_monitor;
   quint64 m_monitorRevision = ~quint64(0);
   quint64 m_streamRevision = 0;
@@ -1014,11 +1057,22 @@ SshTerminal::SshTerminal(std::shared_ptr<SecureCredentialStore> credentials,
   connect(m_worker, &SshWorker::logStateChanged, this,
       [this](bool active, const QString &path, const QString &error) {
         m_logging = active; m_logBusy = false; m_logFilePath = path; m_logError = error;
+        if (!active) m_logWarning.clear();
         emit loggingChanged();
         emit logOperationFinished(error.isEmpty(), error.isEmpty()
             ? (active ? QStringLiteral("已开始记录日志：") : QStringLiteral("已停止记录日志：")) + path
             : QStringLiteral("日志记录失败：") + error);
       });
+  connect(m_worker, &SshWorker::logRotated, this, [this](const QString &path) {
+    m_logFilePath = path;
+    m_logWarning.clear();
+    emit loggingChanged();
+  });
+  connect(m_worker, &SshWorker::logWarningChanged, this, [this](const QString &warning) {
+    m_logWarning = warning;
+    emit loggingChanged();
+    emit logWarningChanged(warning);
+  });
   connect(m_worker, &SshWorker::logExportFinished, this,
       [this](const QString &path, const QString &error) {
         m_logBusy = false; m_logError = error;
@@ -1437,6 +1491,21 @@ QUrl SshTerminal::suggestedLogFile(const QString &sessionName) const {
   return QUrl::fromLocalFile(QDir(documents.isEmpty() ? QDir::homePath() : documents).filePath(name));
 }
 
+QString SshTerminal::defaultLogFolder() const {
+  const auto documents = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+  return QDir(documents.isEmpty() ? QDir::homePath() : documents).filePath(QStringLiteral("SSH Logs"));
+}
+
+QString SshTerminal::localPath(const QUrl &url) const {
+  return url.isLocalFile() ? url.toLocalFile() : url.toString();
+}
+
+QString SshTerminal::previewLogFolderPath(const QString &folder, const QString &nameTemplate,
+                                          const QString &sessionName, const QString &host) const {
+  if (!QFileInfo(folder).isAbsolute()) return {};
+  return SshSessionLog::previewFolderPath(folder, nameTemplate, sessionName, host);
+}
+
 bool SshTerminal::logFileExists(const QUrl &file) const {
   return file.isLocalFile() && QFileInfo::exists(file.toLocalFile());
 }
@@ -1461,9 +1530,46 @@ bool SshTerminal::startLogging(const QUrl &file, bool append, int intervalMs, in
     emit loggingChanged(); emit logOperationFinished(false, m_logError);
     return false;
   }
+  m_logWarning.clear();
   if (!beginLogOperation(file)) return false;
   QMetaObject::invokeMethod(m_worker, [worker = m_worker, path = file.toLocalFile(), encoding = m_encoding, append, intervalMs, bufferKiB] {
     worker->startLog(path, encoding, append, intervalMs, bufferKiB);
+  });
+  return true;
+}
+
+bool SshTerminal::startLoggingToFolder(const QString &folder, const QString &nameTemplate,
+                                      const QString &sessionName, const QString &host,
+                                      int intervalMs, int bufferKiB,
+                                      int rotateSizeMiB, int rotateMinutes) {
+  if (m_logging || m_logBusy) return false;
+  if (folder.trimmed().isEmpty() || !QFileInfo(folder).isAbsolute()) {
+    m_logError = QStringLiteral("请选择有效的本地日志文件夹");
+    emit loggingChanged(); emit logOperationFinished(false, m_logError);
+    return false;
+  }
+  if (nameTemplate.trimmed().isEmpty() || nameTemplate.size() > 256) {
+    m_logError = QStringLiteral("请填写有效的日志文件名模板");
+    emit loggingChanged(); emit logOperationFinished(false, m_logError);
+    return false;
+  }
+  if (intervalMs < 1000 || intervalMs > 60000 || bufferKiB < 16 || bufferKiB > 8192) {
+    m_logError = QStringLiteral("日志写入间隔须为 1～60 秒，缓存大小须为 16～8192 KiB");
+    emit loggingChanged(); emit logOperationFinished(false, m_logError);
+    return false;
+  }
+  if (rotateSizeMiB < 0 || rotateSizeMiB > 4096 || rotateMinutes < 0 || rotateMinutes > 1440) {
+    m_logError = QStringLiteral("日志分卷大小须为 0～4096 MiB，时长须为 0～1440 分钟");
+    emit loggingChanged(); emit logOperationFinished(false, m_logError);
+    return false;
+  }
+  m_logWarning.clear();
+  if (!beginLogOperation(QUrl::fromLocalFile(folder))) return false;
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, folder = QDir(folder).absolutePath(),
+      templateText = nameTemplate, encoding = m_encoding, intervalMs, bufferKiB,
+      sessionName, host, rotateSizeMiB, rotateMinutes] {
+    worker->startFolderLog(folder, templateText, encoding, intervalMs, bufferKiB,
+                           sessionName, host, rotateSizeMiB, rotateMinutes);
   });
   return true;
 }

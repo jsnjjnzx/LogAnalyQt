@@ -13,6 +13,7 @@ Rectangle {
     property color buttonHoverColor: "#40536d"
     property color closeButtonHoverColor: "#ab4650"
     property color closeButtonIconHoverColor: "white"
+    readonly property real controlsWidth: buttons.width + 16
     readonly property bool embedded: targetWindow && targetWindow.embedded === true
     height: embedded ? 0 : 60
     visible: !embedded
@@ -24,9 +25,15 @@ Rectangle {
     MouseArea {
         anchors.fill: parent; anchors.rightMargin: buttons.width + 20
         onPressed: if (bar.targetWindow) bar.targetWindow.startSystemMove()
-        onDoubleClicked: if (bar.targetWindow) { if (bar.targetWindow.visibility === Window.Maximized) bar.targetWindow.showNormal(); else bar.targetWindow.showMaximized(); }
+        onDoubleClicked: bar.toggleMaximized()
     }
     Label { anchors.left: parent.left; anchors.leftMargin: 22; anchors.verticalCenter: parent.verticalCenter; width: parent.width - buttons.width - 55; elide: Text.ElideRight; text: bar.title; color: bar.titleTextColor; font.pixelSize: bar.titlePixelSize; font.weight: Font.DemiBold }
+    function toggleMaximized() {
+        if (!targetWindow) return;
+        if (typeof targetWindow.toggleWindowMaximized === "function") targetWindow.toggleWindowMaximized();
+        else if (targetWindow.visibility === Window.Maximized) targetWindow.showNormal();
+        else targetWindow.showMaximized();
+    }
     Row {
         id: buttons; anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter; spacing: 2
         Repeater {
@@ -59,8 +66,7 @@ Rectangle {
                     if (!bar.targetWindow) return;
                     if (index === 0) bar.targetWindow.showMinimized();
                     else if (index === 2) bar.targetWindow.close();
-                    else if (bar.targetWindow.visibility === Window.Maximized) bar.targetWindow.showNormal();
-                    else bar.targetWindow.showMaximized();
+                    else bar.toggleMaximized();
                 }
             }
         }

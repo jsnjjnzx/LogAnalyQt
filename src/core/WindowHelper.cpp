@@ -24,6 +24,10 @@
 #ifndef DWMWA_TEXT_COLOR
 #define DWMWA_TEXT_COLOR 36
 #endif
+
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
 #endif
 
 WindowHelper::WindowHelper(QObject *parent) : QObject(parent) {}
@@ -102,6 +106,27 @@ bool WindowHelper::setDarkTitleBar(QQuickWindow *window, bool dark) {
 #else
   Q_UNUSED(window)
   Q_UNUSED(dark)
+  return false;
+#endif
+}
+
+bool WindowHelper::setWindowCornerPreference(QQuickWindow *window, int preference) {
+#ifdef Q_OS_WIN
+  if (!window) {
+    return false;
+  }
+
+  HWND hwnd = reinterpret_cast<HWND>(window->winId());
+  if (!hwnd) {
+    return false;
+  }
+
+  const DWORD value = static_cast<DWORD>(preference);
+  return SUCCEEDED(DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                                        &value, sizeof(value)));
+#else
+  Q_UNUSED(window)
+  Q_UNUSED(preference)
   return false;
 #endif
 }

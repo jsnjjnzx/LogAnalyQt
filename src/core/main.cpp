@@ -393,8 +393,8 @@ Button { text: "关闭"; onClicked: Qt.quit() }
         const QString expected = args.value(appearanceArg + 1);
         const bool light = expected == QStringLiteral("light");
         const bool nativeScheme = app.platformName() != "offscreen" && app.platformName() != "minimal";
-        if ((expected != "light" && expected != "dark") || !theme ||
-            theme->property("lightMode").toBool() != light ||
+        if ((expected != "light" && expected != "monokai" && expected != "dark") || !theme ||
+            theme->property("colorMode").toString() != expected ||
             (nativeScheme && QGuiApplication::styleHints()->colorScheme() != (light ? Qt::ColorScheme::Light : Qt::ColorScheme::Dark))) {
           fprintf(stderr, "APPEARANCE STARTUP CHECK FAILED\n");
           app.exit(4);

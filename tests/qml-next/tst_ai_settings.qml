@@ -20,7 +20,7 @@ Item {
         property var page
         function init() {
             failOnWarning(/Binding loop|TypeError|ReferenceError|Unable to assign/)
-            control.reset(); fakeBackend.writes = ({}); fakeBackend.failSave = false; testTheme.reducedTransparency = false; testTheme.lightMode = false
+            control.reset(); fakeBackend.writes = ({}); fakeBackend.failSave = false; testTheme.reducedTransparency = false; testTheme.colorMode = "dark"
             page = createTemporaryObject(settingsComponent,scene,{width:1144,height:752}); verify(page); wait(30)
         }
         function item(name) { const found = findChild(page,name); verify(found !== null,name); return found }
@@ -36,16 +36,20 @@ Item {
         function test_preserveAppearanceSettings() {
             verify(item("settings-dark").selected)
             verify(!item("settings-light").selected)
+            verify(!item("settings-monokai").selected)
             compare(findChild(page,"settings-follow-system"),null)
             mouseClick(item("settings-reduced-transparency")); compare(fakeBackend.writes["next/appearance/reducedTransparency"],true)
             compare(Object.keys(fakeBackend.writes).length,1)
         }
         function test_globalAppearanceSelectionAndKeyboard() {
-            mouseClick(item("settings-light")); verify(testTheme.lightMode)
-            verify(item("settings-light").selected); verify(!item("settings-dark").selected)
+            mouseClick(item("settings-light")); compare(testTheme.colorMode,"light")
+            verify(item("settings-light").selected); verify(!item("settings-monokai").selected); verify(!item("settings-dark").selected)
             compare(fakeBackend.writes["next/appearance/colorMode"],"light")
+            item("settings-monokai").forceActiveFocus(); keyClick(Qt.Key_Space)
+            compare(testTheme.colorMode,"monokai"); verify(item("settings-monokai").selected)
+            compare(fakeBackend.writes["next/appearance/colorMode"],"monokai")
             item("settings-dark").forceActiveFocus(); keyClick(Qt.Key_Space)
-            verify(!testTheme.lightMode); verify(item("settings-dark").selected)
+            compare(testTheme.colorMode,"dark"); verify(item("settings-dark").selected)
             compare(fakeBackend.writes["next/appearance/colorMode"],"dark")
             page.destroy(); page = createTemporaryObject(settingsComponent,scene,{width:1144,height:752}); wait(20)
             verify(item("settings-dark").selected)
@@ -53,17 +57,19 @@ Item {
         function test_failedAppearanceSaveKeepsThemeAndSelection() {
             fakeBackend.failSave = true
             mouseClick(item("settings-light"))
-            verify(!testTheme.lightMode); verify(item("settings-dark").selected)
+            compare(testTheme.colorMode,"dark"); verify(item("settings-dark").selected)
             verify(item("settings-appearance-error").visible)
             compare(Object.keys(fakeBackend.writes).length,0)
             fakeBackend.failSave = false; mouseClick(item("settings-light"))
-            verify(testTheme.lightMode); compare(page.appearanceError,"")
+            compare(testTheme.colorMode,"light"); compare(page.appearanceError,"")
         }
         function test_accessibleAppearanceActions() {
             item("settings-light").Accessible.pressAction()
-            verify(testTheme.lightMode); compare(fakeBackend.writes["next/appearance/colorMode"],"light")
+            compare(testTheme.colorMode,"light"); compare(fakeBackend.writes["next/appearance/colorMode"],"light")
+            item("settings-monokai").Accessible.pressAction()
+            compare(testTheme.colorMode,"monokai"); compare(fakeBackend.writes["next/appearance/colorMode"],"monokai")
             item("settings-dark").Accessible.toggleAction()
-            verify(!testTheme.lightMode); compare(fakeBackend.writes["next/appearance/colorMode"],"dark")
+            compare(testTheme.colorMode,"dark"); compare(fakeBackend.writes["next/appearance/colorMode"],"dark")
         }
         function test_appearanceRowsKeepSwitchesClearOfLabels() {
             for (const width of [1144, 850]) {

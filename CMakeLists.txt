@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 5.3.1 LANGUAGES CXX)
+project(LogAnalyQt VERSION 5.4.0 LANGUAGES CXX)
 if(NOT WIN32)
     find_package(Iconv REQUIRED)
 endif()
@@ -239,6 +239,8 @@ qt_add_executable(appLogAnalyQt
     src/core/SshTerminal.cpp
     src/core/SshLogStream.h
     src/core/SshLogStream.cpp
+    src/core/SshSessionLog.h
+    src/core/SshSessionLog.cpp
     src/core/SshHostKeyStore.h
     src/core/SmbShare.h
     src/core/SmbShare.cpp
@@ -308,6 +310,20 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     add_test(NAME ui_parse_table_runtime
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ui_migration_runtime.py
                 $<TARGET_FILE:appLogAnalyQt> --parse-table-only)
+    add_executable(app_msg_loader_tests
+        tests/app_msg_loader_tests.cpp
+        src/protocols/app_msg/AppMsgDef.h
+        src/protocols/app_msg/AppMsgLoader.h
+        src/protocols/app_msg/AppMsgLoader.cpp
+        src/protocols/app_msg/AppMsgParser.h
+        src/protocols/app_msg/AppMsgParser.cpp
+        src/common/DataParser.cpp)
+    target_include_directories(app_msg_loader_tests PRIVATE
+        src src/core src/protocols)
+    target_compile_definitions(app_msg_loader_tests PRIVATE
+        APP_MSG_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(app_msg_loader_tests PRIVATE Qt6::Core Qt6::Xml)
+    add_test(NAME app_msg_loader_tests COMMAND app_msg_loader_tests)
     if(APPLE)
         add_test(NAME macos_window_activation
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_macos_window_activation.py
@@ -392,6 +408,7 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
         add_executable(ssh_security_tests tests/ssh_security_tests.cpp
             src/core/SshTerminal.h src/core/SshTerminal.cpp
             src/core/SshLogStream.h src/core/SshLogStream.cpp
+            src/core/SshSessionLog.h src/core/SshSessionLog.cpp
             src/core/SshHostKeyStore.h src/core/SecureCredentialStore.cpp)
         target_include_directories(ssh_security_tests PRIVATE src src/core)
         target_link_libraries(ssh_security_tests PRIVATE Qt6::Core Qt6::Gui
@@ -411,7 +428,8 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     find_package(Qt6 REQUIRED COMPONENTS Test)
     add_executable(ssh_stream_tests tests/ssh_stream_tests.cpp
         src/core/SshTerminal.h src/core/SshTerminal.cpp
-        src/core/SshLogStream.h src/core/SshLogStream.cpp src/core/SecureCredentialStore.cpp)
+        src/core/SshLogStream.h src/core/SshLogStream.cpp
+        src/core/SshSessionLog.h src/core/SshSessionLog.cpp src/core/SecureCredentialStore.cpp)
     target_include_directories(ssh_stream_tests PRIVATE src src/core)
     target_link_libraries(ssh_stream_tests PRIVATE Qt6::Gui Qt6::Network Qt6::Test libssh2_static)
     if(APPLE)

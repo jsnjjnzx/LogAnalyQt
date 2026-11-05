@@ -1,5 +1,6 @@
 #include "UpdateChecker.h"
 #include <QDebug>
+#include <QSaveFile>
 #include <QSysInfo>
 #include <QVersionNumber>
 #include "../common/AppPaths.h"
@@ -74,10 +75,13 @@ UpdateChecker::UpdateChecker(QObject *parent)
     : QObject(parent), m_checking(false), m_updateAvailable(false),
       m_downloading(false), m_downloadProgress(0.0),
       m_downloadComplete(false), m_verifying(false),
-      m_verifySuccess(false), m_downloadReply(nullptr),
+      m_verifySuccess(false), m_downloadResumeAvailable(false),
+      m_cancelRequested(false), m_downloadReply(nullptr),
       m_downloadFile(nullptr), m_expectedDownloadSize(0),
-      m_lastReceivedBytes(0), m_downloadTimeoutTimer(nullptr) {
+      m_resumeOffset(0), m_downloadedBytes(0), m_lastReceivedBytes(0),
+      m_downloadTimeoutTimer(nullptr), m_retryAttempts(0) {
   m_networkManager = new QNetworkAccessManager(this);
+  m_downloadCacheRoot = QDir(AppPaths::writableDataRoot()).filePath(QStringLiteral("updates"));
 
 #ifdef APP_VERSION
   m_currentVersion = QStringLiteral(APP_VERSION);
@@ -104,6 +108,13 @@ bool UpdateChecker::isDownloadComplete() const { return m_downloadComplete; }
 QString UpdateChecker::downloadErrorMsg() const { return m_downloadErrorMsg; }
 bool UpdateChecker::isVerifying() const { return m_verifying; }
 bool UpdateChecker::isVerifySuccess() const { return m_verifySuccess; }
+bool UpdateChecker::isDownloadResumeAvailable() const {
+  return m_downloadResumeAvailable;
+}
+qint64 UpdateChecker::downloadedBytes() const { return m_downloadedBytes; }
+qint64 UpdateChecker::expectedDownloadBytes() const {
+  return m_expectedDownloadSize;
+}
 
 // ============================================================
 // 检查更新（原有逻辑，扩展：同时解析 .sha256 资产）
@@ -121,13 +132,20 @@ void UpdateChecker::checkForUpdate() {
   m_downloadErrorMsg.clear();
   m_verifying = false;
   m_verifySuccess = false;
+  m_downloadResumeAvailable = false;
+  m_cancelRequested = false;
   m_updateAvailable = false;
   m_downloadUrl.clear();
   m_latestVersion.clear();
   m_expectedSha256.clear();
   m_downloadedFilePath.clear();
   m_downloadFileName.clear();
+  m_downloadEtag.clear();
+  m_downloadedBytes = 0;
+  m_expectedDownloadSize = 0;
   emit checkingChanged();
+  emit downloadResumeChanged();
+  emit downloadProgressChanged(0.0);
 
   QNetworkRequest request(m_manifestUrl);
   request.setTransferTimeout(15000);
@@ -214,6 +232,8 @@ void UpdateChecker::onReplyFinished(QNetworkReply *reply) {
   }
 
   m_updateAvailable = isNewerVersion(m_latestVersion, m_currentVersion);
+  if (m_updateAvailable) loadResumeState();
+  else clearResumeFiles();
   emit updateResultReady();
 }
 
@@ -225,185 +245,305 @@ QString UpdateChecker::updateTempDir() const {
   return m_tempDirectory.path();
 }
 
+QString UpdateChecker::downloadCacheDir() const {
+  return m_downloadCacheRoot;
+}
+
+QString UpdateChecker::partialDownloadPath() const {
+  return QDir(downloadCacheDir()).filePath(m_downloadFileName + ".part");
+}
+
+QString UpdateChecker::finalDownloadPath() const {
+  return QDir(downloadCacheDir()).filePath(m_downloadFileName);
+}
+
+QString UpdateChecker::downloadMetadataPath() const {
+  return QDir(downloadCacheDir()).filePath(m_downloadFileName + ".meta.json");
+}
+
+bool UpdateChecker::saveResumeMetadata() {
+  if (m_downloadFileName.isEmpty() || downloadCacheDir().isEmpty()) return false;
+  if (!QDir().mkpath(downloadCacheDir())) return false;
+  QSaveFile file(downloadMetadataPath());
+  if (!file.open(QIODevice::WriteOnly)) return false;
+  const QJsonObject metadata{
+      {"name", m_downloadFileName},
+      {"url", m_downloadUrl},
+      {"sha256", m_expectedSha256},
+      {"size", m_expectedDownloadSize},
+      {"etag", m_downloadEtag},
+  };
+  if (file.write(QJsonDocument(metadata).toJson(QJsonDocument::Compact)) < 0 ||
+      !file.commit())
+    return false;
+  return true;
+}
+
+bool UpdateChecker::loadResumeState() {
+  const bool previous = m_downloadResumeAvailable;
+  m_downloadResumeAvailable = false;
+  m_downloadComplete = false;
+  m_verifySuccess = false;
+  m_downloadedBytes = 0;
+  m_downloadProgress = 0.0;
+  m_expectedDownloadSize = 0;
+  m_resumeOffset = 0;
+  m_downloadEtag.clear();
+  if (!m_updateAvailable || m_downloadFileName.isEmpty() ||
+      downloadCacheDir().isEmpty() || m_expectedSha256.isEmpty()) {
+    if (previous) emit downloadResumeChanged();
+    return false;
+  }
+
+  const QFileInfo finalInfo(finalDownloadPath());
+  if (finalInfo.isFile() && finalInfo.size() > 0 &&
+      verifySha256(finalInfo.absoluteFilePath(), m_expectedSha256)) {
+    m_downloadedFilePath = finalInfo.absoluteFilePath();
+    m_downloadedBytes = m_expectedDownloadSize = finalInfo.size();
+    m_downloadProgress = 1.0;
+    m_downloadComplete = true;
+    m_verifySuccess = true;
+    if (previous) emit downloadResumeChanged();
+    emit downloadProgressChanged(1.0);
+    emit verifyFinished(true);
+    emit downloadFinished();
+    return false;
+  }
+  if (finalInfo.exists() && !QFile::remove(finalInfo.absoluteFilePath()))
+    return false;
+
+  bool metadataValid = false;
+  QFile metadataFile(downloadMetadataPath());
+  if (metadataFile.open(QIODevice::ReadOnly)) {
+    const auto metadata =
+        QJsonDocument::fromJson(metadataFile.read(64 * 1024)).object();
+    if (metadata.value("name").toString() == m_downloadFileName &&
+        metadata.value("url").toString() == m_downloadUrl &&
+        metadata.value("sha256").toString() == m_expectedSha256) {
+      m_expectedDownloadSize =
+          qMax<qint64>(0, metadata.value("size").toVariant().toLongLong());
+      m_downloadEtag = metadata.value("etag").toString();
+      metadataValid = true;
+    } else {
+      metadataFile.close();
+      clearResumeFiles();
+      return false;
+    }
+  }
+  if (!metadataValid) {
+    QFile::remove(partialDownloadPath());
+    if (previous) emit downloadResumeChanged();
+    return false;
+  }
+
+  const QFileInfo partialInfo(partialDownloadPath());
+  if (!partialInfo.isFile() || partialInfo.size() <= 0) {
+    QFile::remove(downloadMetadataPath());
+    if (previous) emit downloadResumeChanged();
+    return false;
+  }
+  m_resumeOffset = partialInfo.size();
+  m_downloadedBytes = m_resumeOffset;
+  if (m_expectedDownloadSize > 0 &&
+      m_downloadedBytes > m_expectedDownloadSize) {
+    QFile::remove(partialInfo.absoluteFilePath());
+    QFile::remove(downloadMetadataPath());
+    m_resumeOffset = m_downloadedBytes = 0;
+    if (previous) emit downloadResumeChanged();
+    return false;
+  }
+  m_downloadResumeAvailable = true;
+  if (m_expectedDownloadSize > 0)
+    m_downloadProgress =
+        qMin(0.999, static_cast<double>(m_downloadedBytes) /
+                        static_cast<double>(m_expectedDownloadSize));
+  emit downloadProgressChanged(m_downloadProgress);
+  emit downloadResumeChanged();
+  return true;
+}
+
+void UpdateChecker::clearResumeFiles() {
+  if (m_downloadFileName.isEmpty()) return;
+  QFile::remove(partialDownloadPath());
+  QFile::remove(downloadMetadataPath());
+  QFile::remove(finalDownloadPath());
+  m_downloadResumeAvailable = false;
+  m_resumeOffset = 0;
+  m_downloadedBytes = 0;
+  m_downloadProgress = 0.0;
+  m_downloadEtag.clear();
+  emit downloadResumeChanged();
+  emit downloadProgressChanged(0.0);
+}
+
 void UpdateChecker::downloadUpdate() {
-  if (m_downloading || !m_updateAvailable || m_downloadUrl.isEmpty())
+  if (m_downloading || !m_updateAvailable || m_downloadUrl.isEmpty() ||
+      m_downloadComplete)
     return;
 
-  // 当前平台没有可自动安装的资产时，降级为浏览器打开 Release 页面。
   if (platformPackageScore(m_downloadFileName) < 0) {
     openDownloadUrl();
     return;
   }
+  if (!QDir().mkpath(downloadCacheDir())) {
+    m_downloadErrorMsg = QStringLiteral("无法创建更新下载目录");
+    emit downloadErrorOccurred(m_downloadErrorMsg);
+    return;
+  }
 
+  m_cancelRequested = false;
+  m_retryAttempts = 0;
+  loadResumeState();
+  if (m_downloadComplete) return;
   m_downloading = true;
-  m_downloadProgress = 0.0;
   m_downloadComplete = false;
   m_downloadErrorMsg.clear();
   m_verifying = false;
   m_verifySuccess = false;
   m_lastReceivedBytes = 0;
   emit downloadingChanged();
-  emit downloadProgressChanged(0.0);
+  emit downloadProgressChanged(m_downloadProgress);
+  beginDownloadAttempt();
+}
 
-  // 确定下载保存路径
-  QString downloadDir = updateTempDir();
-  if (downloadDir.isEmpty()) {
-    m_downloading = false;
-    emit downloadingChanged();
-    emit downloadErrorOccurred(QStringLiteral("无法创建安全的更新临时目录"));
-    return;
+void UpdateChecker::beginDownloadAttempt() {
+  if (!m_downloading || m_cancelRequested || m_downloadUrl.isEmpty()) return;
+
+  if (m_downloadReply) {
+    QNetworkReply *reply = m_downloadReply;
+    m_downloadReply = nullptr;
+    reply->abort();
+    reply->deleteLater();
   }
-  QString savePath = downloadDir + "/" + m_downloadFileName;
-
-  // 检查 download 目录中是否有无法删除的旧文件
-  QDir dir(downloadDir);
-  if (dir.exists()) {
-    QStringList oldFiles = dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
-    for (const QString &oldFile : oldFiles) {
-      QString oldFilePath = downloadDir + "/" + oldFile;
-      // 尝试检查文件是否可删除（通过检查写权限）
-      QFile testFile(oldFilePath);
-      if (!testFile.open(QIODevice::ReadWrite)) {
-        qWarning() << "[UpdateChecker] 警告：发现无法覆盖的文件:" << oldFilePath
-                   << "错误:" << testFile.errorString();
-        m_downloadErrorMsg = QString("download 目录中存在被占用的文件，可能被杀毒软件锁定。\n"
-                                      "请检查并手动删除: %1\n\n"
-                                      "提示：如果刚下载失败，请等待几秒后重试。").arg(oldFilePath);
-        emit downloadErrorOccurred(m_downloadErrorMsg);
-        m_downloading = false;
-        emit downloadingChanged();
-        return;
-      }
-      testFile.close();
-    }
-  }
-
-  // 如果已存在旧的临时文件，先删除
-  if (QFile::exists(savePath)) {
-    qDebug() << "[UpdateChecker] 删除旧的临时文件:" << savePath;
-    if (!QFile::remove(savePath)) {
-      m_downloadErrorMsg = QString("无法删除旧的临时文件，请手动删除后重试: %1").arg(savePath);
-      emit downloadErrorOccurred(m_downloadErrorMsg);
-      m_downloading = false;
-      emit downloadingChanged();
-      return;
-    }
-  }
-
-  qDebug() << "[UpdateChecker] 开始下载:" << m_downloadUrl;
-  qDebug() << "[UpdateChecker] 保存路径:" << savePath;
-
-  QNetworkRequest request{QUrl(m_downloadUrl)};
-  // GitHub 附件会重定向到下载服务器。
-  request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                       QNetworkRequest::NoLessSafeRedirectPolicy);
-  // 设置 User-Agent，部分 CDN 会拒绝无 UA 的请求或限速
-  request.setHeader(QNetworkRequest::UserAgentHeader,
-                    "LogAnalyQt/" + m_currentVersion);
-  // 明确请求二进制流，避免服务端返回网页内容
-  request.setRawHeader("Accept", "application/octet-stream");
-
-  // 提前打开文件，后续通过 readyRead 增量写入，避免大文件内存缓冲导致卡死
-  m_downloadFile = new QFile(savePath, this);
-  if (!m_downloadFile->open(QIODevice::WriteOnly)) {
-    m_downloadErrorMsg = QString("无法写入临时文件: %1").arg(savePath);
-    emit downloadErrorOccurred(m_downloadErrorMsg);
-    m_downloading = false;
-    emit downloadingChanged();
+  if (m_downloadFile) {
+    m_downloadFile->close();
     delete m_downloadFile;
     m_downloadFile = nullptr;
-    return;
   }
 
-  m_downloadReply = m_networkManager->get(request);
-  // 不限制内部读缓冲区大小，确保数据不会因缓冲区满而停滞
-  m_downloadReply->setReadBufferSize(0);
-  qDebug() << "[UpdateChecker] QNetworkReply 已创建";
-
-  // 重要：在连接任何信号之前重置状态，避免竞态条件
-  m_expectedDownloadSize = 0;
+  const QString partialPath = partialDownloadPath();
+  qint64 offset = QFileInfo(partialPath).size();
+  if (offset < 0) offset = 0;
+  if (m_expectedDownloadSize > 0 && offset > m_expectedDownloadSize) {
+    QFile::remove(partialPath);
+    offset = 0;
+  }
+  m_resumeOffset = offset;
+  m_downloadedBytes = offset;
   m_lastReceivedBytes = 0;
+  m_downloadFile = new QFile(partialPath, this);
+  const auto mode = offset > 0 ? QIODevice::WriteOnly | QIODevice::Append
+                               : QIODevice::WriteOnly | QIODevice::Truncate;
+  if (!m_downloadFile->open(mode)) {
+    delete m_downloadFile;
+    m_downloadFile = nullptr;
+    failDownload(QStringLiteral("无法写入更新临时文件，请检查磁盘空间和权限"), false);
+    return;
+  }
+  saveResumeMetadata();
 
-  // 创建下载超时定时器（30秒无数据则超时）
+  QNetworkRequest request{QUrl(m_downloadUrl)};
+  request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                       QNetworkRequest::NoLessSafeRedirectPolicy);
+  request.setHeader(QNetworkRequest::UserAgentHeader,
+                    "LogAnalyQt/" + m_currentVersion);
+  request.setRawHeader("Accept", "application/octet-stream");
+  if (offset > 0) {
+    request.setRawHeader("Range", "bytes=" + QByteArray::number(offset) + "-");
+    if (!m_downloadEtag.isEmpty())
+      request.setRawHeader("If-Range", m_downloadEtag.toUtf8());
+  }
+  m_downloadReply = m_networkManager->get(request);
+  m_downloadReply->setReadBufferSize(0);
+
+  // A hidden page must not turn a temporary network stall into a full restart.
   if (!m_downloadTimeoutTimer) {
     m_downloadTimeoutTimer = new QTimer(this);
     m_downloadTimeoutTimer->setSingleShot(true);
     connect(m_downloadTimeoutTimer, &QTimer::timeout, this, [this]() {
-      if (m_downloading && m_downloadReply) {
-        qDebug() << "[UpdateChecker] 下载超时：30秒内无数据传输";
-        m_downloadErrorMsg = "下载超时，服务器响应过慢，请稍后重试";
-        emit downloadErrorOccurred(m_downloadErrorMsg);
-        cancelDownload();
-      }
+      if (!m_downloading || m_cancelRequested) return;
+      if (m_downloadReply)
+        failDownload(QStringLiteral("下载连接长时间无响应，正在尝试续传"), true);
+      else
+        beginDownloadAttempt();
     });
   }
-  m_downloadTimeoutTimer->start(30000);  // 30秒超时
+  m_downloadTimeoutTimer->start(30000);
 
-  // 监控重定向
-  connect(m_downloadReply, &QNetworkReply::redirected, this,
-          [this](const QUrl &url) {
-            qDebug() << "[UpdateChecker] 重定向到:" << url.toString();
-            // 重定向时重置超时计时器
-            if (m_downloadTimeoutTimer) {
-              m_downloadTimeoutTimer->start(30000);
-            }
-          });
+  connect(m_downloadReply, &QNetworkReply::redirected, this, [this]() {
+    if (m_downloadTimeoutTimer) m_downloadTimeoutTimer->start(30000);
+  });
 
   // 监控元数据（收到 HTTP 响应头）
   connect(m_downloadReply, &QNetworkReply::metaDataChanged, this, [this]() {
-    if (m_downloadReply) {
-      int statusCode = m_downloadReply->attribute(
-          QNetworkRequest::HttpStatusCodeAttribute).toInt();
-      qint64 contentLength = m_downloadReply->header(
-          QNetworkRequest::ContentLengthHeader).toLongLong();
-      QString contentType = m_downloadReply->header(
-          QNetworkRequest::ContentTypeHeader).toString();
-      qDebug() << "[UpdateChecker] HTTP状态码:" << statusCode
-               << "Content-Length:" << contentLength
-               << "Content-Type:" << contentType;
-
-      // 记录 Content-Length，用于处理后续重定向可能丢失该头的情况
-      if (contentLength > 0) {
-        m_expectedDownloadSize = contentLength;
-        qDebug() << "[UpdateChecker] 记录文件总大小:" << contentLength << "字节";
+    if (!m_downloadReply || !m_downloadFile) return;
+    const int status = m_downloadReply
+                           ->attribute(QNetworkRequest::HttpStatusCodeAttribute)
+                           .toInt();
+    if (status >= 200 && status < 300 && status != 206 && m_resumeOffset > 0) {
+      m_downloadFile->close();
+      if (!m_downloadFile->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        failDownload(QStringLiteral("无法重置更新临时文件"), false);
+        return;
       }
-
-      // 列出所有响应头
-      for (const auto &header : m_downloadReply->rawHeaderList()) {
-        qDebug() << "[UpdateChecker]   Header:" << header << "="
-                 << m_downloadReply->rawHeader(header);
-      }
+      m_resumeOffset = 0;
+      m_downloadedBytes = 0;
+      m_downloadProgress = 0.0;
+      emit downloadProgressChanged(0.0);
     }
+    const QByteArray contentRange =
+        m_downloadReply->rawHeader("content-range");
+    qint64 rangeStart = -1, total = 0;
+    if (status == 206) {
+      const QRegularExpressionMatch match =
+          QRegularExpression(QStringLiteral("^bytes\\s+(\\d+)-\\d+/(\\d+)$"),
+                             QRegularExpression::CaseInsensitiveOption)
+              .match(QString::fromLatin1(contentRange));
+      if (match.hasMatch()) {
+        rangeStart = match.captured(1).toLongLong();
+        total = match.captured(2).toLongLong();
+      }
+      if (rangeStart != m_resumeOffset || total <= 0) {
+        failDownload(QStringLiteral("服务器返回的续传位置不一致"), false);
+        return;
+      }
+      m_expectedDownloadSize = total;
+    } else if (status >= 200 && status < 300) {
+      const qint64 length =
+          m_downloadReply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
+      m_expectedDownloadSize = qMax<qint64>(0, length);
+    } else if (status == 416) {
+      m_downloadFile->close();
+      if (!QFile::remove(partialDownloadPath())) {
+        failDownload(QStringLiteral("无法重置更新临时文件"), false);
+        return;
+      }
+      m_expectedDownloadSize = 0;
+      m_downloadEtag.clear();
+      m_resumeOffset = m_downloadedBytes = 0;
+      m_downloadProgress = 0.0;
+      failDownload(QStringLiteral("服务器拒绝了续传范围，正在重新下载"), true);
+      return;
+    }
+    m_downloadEtag =
+        QString::fromLatin1(m_downloadReply->rawHeader("etag")).trimmed();
+    saveResumeMetadata();
   });
 
   // 连接下载进度信号
   // 重定向后可能不返回 Content-Length。
   connect(m_downloadReply, &QNetworkReply::downloadProgress, this,
-          [this](qint64 received, qint64 total) {
-            // 只要有数据传输，就重置超时计时器
+          [this](qint64 received, qint64) {
             if (received > m_lastReceivedBytes && m_downloadTimeoutTimer) {
               m_downloadTimeoutTimer->start(30000);
               m_lastReceivedBytes = received;
             }
-
-            qDebug() << "[UpdateChecker] 进度:" << received << "/" << total
-                     << (total > 0 ? QString("%1%").arg(received * 100 / total) : "unknown");
-
-            if (total > 0) {
-              // 正常情况：有 Content-Length
-              m_expectedDownloadSize = total;
+            m_downloadedBytes = m_resumeOffset + received;
+            if (m_expectedDownloadSize > 0) {
               m_downloadProgress =
-                  static_cast<double>(received) / static_cast<double>(total);
+                  qMin(1.0, static_cast<double>(m_downloadedBytes) /
+                                static_cast<double>(m_expectedDownloadSize));
               emit downloadProgressChanged(m_downloadProgress);
-            } else if (m_expectedDownloadSize > 0) {
-              // 重定向后 Content-Length 丢失，使用之前记录的大小估算进度
-              // 但进度最多显示到 95%，避免误导用户
-              double estimatedProgress = qMin(0.95, static_cast<double>(received) / static_cast<double>(m_expectedDownloadSize));
-              m_downloadProgress = estimatedProgress;
-              emit downloadProgressChanged(m_downloadProgress);
-            } else {
-              // 完全不知道总大小时，显示已下载的 MB 数（但不更新进度条，避免跳跃）
-              qDebug() << "[UpdateChecker] 已下载:" << (received / 1024.0 / 1024.0) << "MB (总大小未知)";
             }
           });
 
@@ -415,93 +555,117 @@ void UpdateChecker::downloadUpdate() {
 
   // 收到数据时增量写入文件，避免内部缓冲区堆积导致下载停滞
   connect(m_downloadReply, &QIODevice::readyRead, this, [this]() {
-    if (m_downloadFile && m_downloadReply) {
-      QByteArray chunk = m_downloadReply->readAll();
-      qDebug() << "[UpdateChecker] readyRead: 收到" << chunk.size() << "字节,"
-               << "已写入文件:" << m_downloadFile->size();
-      if (m_downloadFile->write(chunk) != chunk.size() || !m_downloadFile->flush()) {
-        m_downloadReply->abort();
-        emit downloadErrorOccurred(QStringLiteral("写入更新包失败，请检查磁盘空间和权限"));
-      }
-    }
+    if (!m_downloadFile || !m_downloadReply) return;
+    const int status = m_downloadReply->attribute(
+        QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (status != 200 && status != 206) return;
+    const QByteArray chunk = m_downloadReply->readAll();
+    if (!chunk.isEmpty() && m_retryAttempts != 0) m_retryAttempts = 0;
+    if (m_downloadFile->write(chunk) != chunk.size() ||
+        !m_downloadFile->flush())
+      failDownload(QStringLiteral("写入更新包失败，请检查磁盘空间和权限"), false);
   });
 
   // 连接下载完成信号
-  connect(m_downloadReply, &QNetworkReply::finished, this, [this, savePath]() {
-    qDebug() << "[UpdateChecker] finished 信号触发";
-
-    // 停止超时定时器
-    if (m_downloadTimeoutTimer) {
-      m_downloadTimeoutTimer->stop();
-    }
-
-    if (!m_downloadReply) {
-      qDebug() << "[UpdateChecker] m_downloadReply 为空（已被取消）";
-      return; // 已被取消
-    }
-
-    qDebug() << "[UpdateChecker] 完成状态: error=" << m_downloadReply->error()
-             << "errorString=" << m_downloadReply->errorString()
-             << "HTTP状态码=" << m_downloadReply->attribute(
-                    QNetworkRequest::HttpStatusCodeAttribute).toInt()
-             << "最终URL=" << m_downloadReply->url().toString();
-
-    if (m_downloadReply->error() != QNetworkReply::NoError) {
-      // 若是用户主动取消（OperationCanceledError），不报错
-      if (m_downloadReply->error() !=
-          QNetworkReply::OperationCanceledError) {
-        m_downloadErrorMsg =
-            QString("下载失败: %1").arg(m_downloadReply->errorString());
-        emit downloadErrorOccurred(m_downloadErrorMsg);
-      }
-      m_downloading = false;
-      emit downloadingChanged();
-      if (m_downloadFile) {
-        m_downloadFile->close();
-        m_downloadFile->remove();
-        delete m_downloadFile;
-        m_downloadFile = nullptr;
-      }
-      m_downloadReply->deleteLater();
-      m_downloadReply = nullptr;
+  connect(m_downloadReply, &QNetworkReply::finished, this, [this]() {
+    if (!m_downloadReply) return;
+    if (m_downloadTimeoutTimer) m_downloadTimeoutTimer->stop();
+    const auto error = m_downloadReply->error();
+    const int status =
+        m_downloadReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (error != QNetworkReply::NoError || (status != 200 && status != 206)) {
+      const QString message =
+          error == QNetworkReply::OperationCanceledError
+              ? QStringLiteral("下载连接被中断，正在尝试续传")
+              : QStringLiteral("下载失败：%1").arg(m_downloadReply->errorString());
+      failDownload(message, true);
       return;
     }
 
-    // 写入剩余数据并关闭文件
     if (m_downloadFile) {
       const QByteArray remaining = m_downloadReply->readAll();
-      const bool written = m_downloadFile->write(remaining) == remaining.size() && m_downloadFile->flush();
+      const bool written =
+          m_downloadFile->write(remaining) == remaining.size() &&
+          m_downloadFile->flush();
+      const qint64 actualSize = m_downloadFile->size();
       m_downloadFile->close();
       delete m_downloadFile;
       m_downloadFile = nullptr;
       if (!written) {
-        m_downloading = false;
-        m_downloadReply->deleteLater();
-        m_downloadReply = nullptr;
-        QFile::remove(savePath);
-        emit downloadingChanged();
-        emit downloadErrorOccurred(QStringLiteral("写入更新包失败，请检查磁盘空间和权限"));
+        failDownload(QStringLiteral("写入更新包失败，请检查磁盘空间和权限"), false);
+        return;
+      }
+      if (m_expectedDownloadSize > 0 &&
+          actualSize != m_expectedDownloadSize) {
+        failDownload(QStringLiteral("更新包下载不完整，正在继续下载"), true);
         return;
       }
     }
 
-    m_downloadedFilePath = savePath;
-    m_downloading = false;
-    emit downloadingChanged();
     m_downloadReply->deleteLater();
     m_downloadReply = nullptr;
-
-    // 下载完成后自动进行 SHA256 校验
+    const QString partialPath = partialDownloadPath();
+    const QString finalPath = finalDownloadPath();
+    QFile::remove(finalPath);
+    if (!QFile::rename(partialPath, finalPath)) {
+      failDownload(QStringLiteral("无法保存完整更新包"), false);
+      return;
+    }
+    QFile::remove(downloadMetadataPath());
+    m_downloadedFilePath = finalPath;
+    m_downloadedBytes = m_expectedDownloadSize = QFileInfo(finalPath).size();
+    m_downloadProgress = 1.0;
+    m_downloading = false;
+    m_downloadResumeAvailable = false;
+    emit downloadingChanged();
+    emit downloadResumeChanged();
+    emit downloadProgressChanged(1.0);
     downloadSha256AndVerify();
   });
 }
 
-void UpdateChecker::cancelDownload() {
-  // 停止超时定时器
-  if (m_downloadTimeoutTimer) {
-    m_downloadTimeoutTimer->stop();
+void UpdateChecker::failDownload(const QString &message, bool retryable) {
+  if (m_downloadTimeoutTimer) m_downloadTimeoutTimer->stop();
+  if (m_downloadReply) {
+    QNetworkReply *reply = m_downloadReply;
+    m_downloadReply = nullptr;
+    reply->abort();
+    reply->deleteLater();
+  }
+  if (m_downloadFile) {
+    m_downloadFile->flush();
+    m_downloadFile->close();
+    delete m_downloadFile;
+    m_downloadFile = nullptr;
+  }
+  m_downloadedBytes = qMax<qint64>(0, QFileInfo(partialDownloadPath()).size());
+  m_downloadResumeAvailable = m_downloadedBytes > 0 && !m_cancelRequested;
+  if (m_expectedDownloadSize > 0)
+    m_downloadProgress =
+        qMin(0.999, static_cast<double>(m_downloadedBytes) /
+                        static_cast<double>(m_expectedDownloadSize));
+  saveResumeMetadata();
+  emit downloadResumeChanged();
+  emit downloadProgressChanged(m_downloadProgress);
+
+  if (retryable && !m_cancelRequested && m_retryAttempts < 3) {
+    ++m_retryAttempts;
+    m_downloadTimeoutTimer->start(1000);
+    return;
   }
 
+  m_downloading = false;
+  m_downloadErrorMsg =
+      m_downloadResumeAvailable
+          ? message + QStringLiteral("；已保留已下载内容，可稍后继续")
+          : message;
+  emit downloadingChanged();
+  emit downloadErrorOccurred(m_downloadErrorMsg);
+}
+
+void UpdateChecker::cancelDownload() {
+  m_cancelRequested = true;
+  if (m_downloadTimeoutTimer) m_downloadTimeoutTimer->stop();
   if (m_downloadReply) {
     QNetworkReply *reply = m_downloadReply;
     m_downloadReply = nullptr;
@@ -510,21 +674,18 @@ void UpdateChecker::cancelDownload() {
   }
   if (m_downloadFile) {
     m_downloadFile->close();
-    m_downloadFile->remove();
     delete m_downloadFile;
     m_downloadFile = nullptr;
   }
-  m_downloading = false;
-  m_downloadProgress = 0.0;
-  m_downloadComplete = false;
-  emit downloadingChanged();
-  emit downloadProgressChanged(0.0);
-
-  // 清理已下载的临时文件
+  clearResumeFiles();
   if (!m_downloadedFilePath.isEmpty()) {
     QFile::remove(m_downloadedFilePath);
     m_downloadedFilePath.clear();
   }
+  m_downloading = false;
+  m_downloadComplete = false;
+  m_downloadErrorMsg.clear();
+  emit downloadingChanged();
 }
 
 // ============================================================

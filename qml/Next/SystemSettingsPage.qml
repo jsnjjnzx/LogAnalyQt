@@ -68,15 +68,16 @@ Item {
     function persistAppearance(key, value) {
         if (backend && typeof backend.setUiSetting === "function") backend.setUiSetting(key, value)
     }
-    function selectAppearance(light) {
-        if (root.theme.lightMode === light) return
+    function selectAppearance(mode) {
+        if (mode !== "light" && mode !== "monokai" && mode !== "dark") return
+        if (root.theme.colorMode === mode) return
         if (backend && typeof backend.setUiSetting === "function"
-                && !backend.setUiSetting("next/appearance/colorMode", light ? "light" : "dark")) {
+                && !backend.setUiSetting("next/appearance/colorMode", mode)) {
             appearanceError = "外观设置保存失败，已保留原外观。请检查配置目录是否可写。"
             return
         }
         appearanceError = ""
-        root.theme.lightMode = light
+        root.theme.colorMode = mode
     }
     Component.onCompleted: loadConfiguration()
     onControllerChanged: {
@@ -119,18 +120,28 @@ Item {
     }
     component AppearanceOption: Next.GlassButton {
         id: option
-        required property bool lightPreview
-        readonly property bool selected: root.theme.lightMode === lightPreview
+        required property string mode
+        readonly property bool lightPreview: mode === "light"
+        readonly property bool monokaiPreview: mode === "monokai"
+        readonly property string label: lightPreview ? "浅色" : monokaiPreview ? "Monokai" : "深色"
+        readonly property color previewBackground: lightPreview ? "#ffffff" : monokaiPreview ? "#44463e" : "#1d2025"
+        readonly property color previewSidebar: lightPreview ? "#f5f8f6" : monokaiPreview ? "#393b34" : "#202329"
+        readonly property color previewControl: lightPreview ? "#e5edf2" : monokaiPreview ? "#55584e" : "#45566d"
+        readonly property color previewPanel: lightPreview ? "#ffffff" : monokaiPreview ? "#4b4e45" : "#282c33"
+        readonly property color previewBorder: lightPreview ? "#e8edf0" : monokaiPreview ? "#5f6354" : "#3c424b"
+        readonly property color previewMuted: lightPreview ? "#c6d3d6" : monokaiPreview ? "#a5a899" : "#566171"
+        readonly property color previewAccent: lightPreview ? "#81a6c4" : monokaiPreview ? "#66d9ef" : "#75a9e6"
+        readonly property bool selected: root.theme.colorMode === mode
         Layout.fillWidth: true
         Layout.preferredHeight: 166
         padding: 12
-        Accessible.name: lightPreview ? "浅色" : "深色"
+        Accessible.name: label
         Accessible.role: Accessible.RadioButton
         Accessible.checkable: true
         Accessible.checked: selected
-        Accessible.onPressAction: root.selectAppearance(lightPreview)
-        Accessible.onToggleAction: root.selectAppearance(lightPreview)
-        onClicked: root.selectAppearance(lightPreview)
+        Accessible.onPressAction: root.selectAppearance(mode)
+        Accessible.onToggleAction: root.selectAppearance(mode)
+        onClicked: root.selectAppearance(mode)
         background: Rectangle {
             radius: root.theme.lightMode ? 11 : 12
             color: root.theme.lightMode ? "#ffffff" : option.selected ? root.theme.navigationSelected : root.theme.surface
@@ -142,40 +153,40 @@ Item {
             Rectangle {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 radius: 6; clip: true
-                color: option.lightPreview ? "#ffffff" : "#1d2025"
-                border.color: option.lightPreview ? "#e5e9ec" : "#3c424b"
+                color: option.previewBackground
+                border.color: option.previewBorder
                 Rectangle {
                     width: parent.width * 0.23; height: parent.height; radius: 5
-                    color: option.lightPreview ? "#f5f8f6" : "#202329"
+                    color: option.previewSidebar
                     Column {
                         anchors.fill: parent; anchors.margins: 9; spacing: 8
                         Repeater {
                             model: 4
-                            Rectangle { required property int index; width: parent.width; height: 5; radius: 2; color: index === 0 ? (option.lightPreview ? "#81a6c4" : "#75a9e6") : option.lightPreview ? "#c6d3d6" : "#566171" }
+                            Rectangle { required property int index; width: parent.width; height: 5; radius: 2; color: index === 0 ? option.previewAccent : option.previewMuted }
                         }
                     }
                 }
                 ColumnLayout {
                     x: parent.width * 0.23 + 8; y: 10
                     width: parent.width * 0.77 - 16; height: parent.height - 20; spacing: 8
-                    Rectangle { Layout.preferredWidth: parent.width * 0.6; height: 6; radius: 2; color: option.lightPreview ? "#e5edf2" : "#45566d" }
+                    Rectangle { Layout.preferredWidth: parent.width * 0.6; height: 6; radius: 2; color: option.previewControl }
                     RowLayout {
                         Layout.fillWidth: true; Layout.fillHeight: true; spacing: 6
                         Repeater {
                             model: 2
-                            Rectangle { Layout.fillWidth: true; Layout.fillHeight: true; radius: 3; color: option.lightPreview ? "#ffffff" : "#282c33"; border.color: option.lightPreview ? "#e8edf0" : "#3c424b" }
+                            Rectangle { Layout.fillWidth: true; Layout.fillHeight: true; radius: 3; color: option.previewPanel; border.color: option.previewBorder }
                         }
                     }
                 }
             }
             RowLayout {
                 Layout.fillWidth: true
-                Label { text: option.lightPreview ? "浅色" : "深色"; font.pixelSize: 14; color: root.theme.text; Layout.fillWidth: true }
+                Label { text: option.label; font.pixelSize: 14; color: root.theme.text; Layout.fillWidth: true }
                 Rectangle {
                     width: 18; height: 18; radius: 9
                     color: option.selected ? root.theme.accentMuted : "transparent"
                     border.color: option.selected ? root.theme.accentMuted : root.theme.controlBorder
-                    Label { anchors.centerIn: parent; text: option.selected ? "✓" : ""; color: "white"; font.pixelSize: 12 }
+                    Label { anchors.centerIn: parent; text: option.selected ? "✓" : ""; color: root.theme.highlightedText; font.pixelSize: 12 }
                 }
             }
         }
@@ -228,9 +239,10 @@ Item {
                         Label { text: "界面外观"; color: root.theme.text; font.pixelSize: 23; font.bold: true }
                         Label { text: "选择适合当前环境的外观，即时应用于所有窗口。"; color: root.theme.subText; Layout.fillWidth: true; wrapMode: Text.Wrap }
                         RowLayout {
-                            Layout.fillWidth: true; Layout.maximumWidth: 480; spacing: 16
-                            AppearanceOption { objectName: "settings-light"; lightPreview: true }
-                            AppearanceOption { objectName: "settings-dark"; lightPreview: false }
+                            Layout.fillWidth: true; Layout.maximumWidth: 840; spacing: 16
+                            AppearanceOption { objectName: "settings-light"; mode: "light" }
+                            AppearanceOption { objectName: "settings-monokai"; mode: "monokai" }
+                            AppearanceOption { objectName: "settings-dark"; mode: "dark" }
                         }
                         Label { objectName: "settings-appearance-error"; visible: root.appearanceError.length > 0; text: root.appearanceError; color: root.theme.error; Layout.fillWidth: true; wrapMode: Text.Wrap }
                         Rectangle {

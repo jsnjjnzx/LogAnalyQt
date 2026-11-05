@@ -50,7 +50,7 @@ Rectangle {
                     color: root.group && root.group.active === modelData ? (root.theme ? root.theme.monitorTabSelected : "#2b3c53") : tabMouse.containsMouse ? (root.theme ? root.theme.monitorTabHover : "#29313c") : (root.theme ? root.theme.monitorTab : "#20262f")
                     Accessible.role: Accessible.PageTab
                     Accessible.name: modelData.sessionName
-                    Accessible.description: "双击新建同配置标签并连接；右键更多操作"
+                    Accessible.description: "双击新建同配置标签并连接；右键设置连接参数或更多操作"
                     Accessible.onPressAction: root.workspace.activateSession(modelData)
                     activeFocusOnTab: true
                     function connectFromKeyboard(event) {
@@ -110,7 +110,7 @@ Rectangle {
                         anchors.right: parent.right; anchors.rightMargin: 3; anchors.verticalCenter: parent.verticalCenter
                         text: "×"; implicitWidth: 20; implicitHeight: 20; padding: 0; horizontalPadding: 0
                         font.pixelSize: 12
-                        background: Rectangle { radius: 3; color: close.hovered || close.visualFocus ? (root.theme && root.theme.lightMode ? root.theme.buttonHover : "#394451") : "transparent" }
+                        background: Rectangle { radius: 3; color: close.hovered || close.visualFocus ? (root.theme && (root.theme.lightMode || root.theme.monokaiMode) ? root.theme.buttonHover : "#394451") : "transparent" }
                         Accessible.name: "关闭 " + tab.modelData.sessionName
                         onClicked: root.workspace.requestCloseSession(tab.modelData)
                     }
@@ -119,7 +119,7 @@ Rectangle {
                         objectName: "ssh-tab-drag-preview-" + tab.modelData.sessionId
                         parent: root
                         visible: tabMouse.drag.active
-                        width: tab.width; height: 26; radius: 5; color: root.theme && root.theme.lightMode ? root.theme.navigationSelected : "#34465e"; opacity: 0.9; z: 1000
+                        width: tab.width; height: 26; radius: 5; color: root.theme && (root.theme.lightMode || root.theme.monokaiMode) ? root.theme.navigationSelected : "#34465e"; opacity: 0.9; z: 1000
                         Label { anchors.centerIn: parent; text: tab.modelData.sessionName; color: root.theme ? root.theme.text : "#eceef2"; font.pixelSize: 12 }
                     }
                     Rectangle {
@@ -151,7 +151,7 @@ Rectangle {
                 height: root.page ? Math.min(parent.height, root.page.monitorPreviewBottom) : parent.height
                 x: root.workspace.dragTarget && root.workspace.dragTarget.side === "left" ? 0 : parent.width - width
                 width: root.workspace.dragTarget && root.workspace.dragTarget.split ? parent.width / 2 : parent.width
-                color: root.theme && root.theme.lightMode ? "#303478c5" : "#304c80b9"; border.color: root.theme ? root.theme.accent : "#80b9ff"; border.width: 1
+                color: root.theme && root.theme.lightMode ? "#303478c5" : root.theme && root.theme.monokaiMode ? "#3066d9ef" : "#304c80b9"; border.color: root.theme ? root.theme.accent : "#80b9ff"; border.width: 1
                 Label {
                     anchors.centerIn: parent
                     visible: root.workspace.dragTarget !== null && root.workspace.dragTarget.split

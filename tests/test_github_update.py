@@ -15,6 +15,7 @@ def main():
     binary = Path(sys.argv[1]).resolve()
     version = sys.argv[2].removeprefix("v")
     probe = sys.argv[2] == "--probe"
+    package_only = "--package-only" in sys.argv[3:]
     with tempfile.TemporaryDirectory(prefix="loganalyqt-github-update-") as directory:
         root = Path(directory)
         if sys.platform == "darwin":
@@ -48,13 +49,15 @@ def main():
             data_prompt.write_bytes(prompt.read_bytes())
         workspace_environment = dict(environment)
         workspace_environment.pop("LOGANALYQT_UPDATE_TEST_RESULT")
-        if not probe:
+        if not probe and not package_only:
             subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "write"],
                            cwd=root, env=workspace_environment, check=True, timeout=90)
         stderr_path = root / "update-stderr.txt"
         with stderr_path.open("wb") as errors:
-            process = subprocess.Popen([str(executable), "--ui-smoke", "--update-probe" if probe else "--update-test"],
-                                       cwd=root, env=environment, stdout=subprocess.DEVNULL, stderr=errors)
+            command = [str(executable), "--ui-smoke", "--update-probe" if probe else "--update-test"]
+            if package_only:
+                command.append("--update-package-only")
+            process = subprocess.Popen(command, cwd=root, env=environment, stdout=subprocess.DEVNULL, stderr=errors)
         try:
             returncode = process.wait(timeout=900)
             assert returncode == 0, f"update client failed: {returncode}; {stderr_path.read_text(encoding='utf-8')}"
@@ -81,12 +84,14 @@ def main():
             else:
                 assert hashlib.sha256(executable.read_bytes()).digest() == hashlib.sha256(binary.read_bytes()).digest()
             time.sleep(3)
-            subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "read", "--page", "3"],
-                           cwd=root, env=workspace_environment, check=True, timeout=90)
+            if not package_only:
+                subprocess.run([str(executable), "--ui-smoke", "--workspace-phase", "read", "--page", "3"],
+                               cwd=root, env=workspace_environment, check=True, timeout=90)
             if standard_mac:
                 assert not any((root / name).exists() for name in ("settings.json", "device-state.ini", "mqtt", "LogAnalyQt.ini", "protocol_xml", "preset", "log")), "Mac update generated data beside its bundle"
                 assert (data_root / ".legacy-data-imported-v1").is_file()
-            print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, saved, replaced, restarted {version} and preserved the workspace drafts and portable data")
+            checked_data = "data files" if package_only else "workspace drafts and portable data"
+            print(f"PASS: simulated older client checked GitHub Release, downloaded, verified SHA256, replaced, restarted {version} and preserved {checked_data}")
         finally:
             if process.poll() is None:
                 process.terminate()

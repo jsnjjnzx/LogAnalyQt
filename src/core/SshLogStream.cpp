@@ -43,6 +43,20 @@ SshLogStream::SshLogStream(const QString &encoding) { reset(encoding); }
 int SshLogStream::cursorPosition() const { return int(cellPosition(m_partial, m_column).index); }
 int SshLogStream::cursorPadding() const { return qMax(0, m_column - cellPosition(m_partial, m_column).column); }
 
+void SshLogStream::syncCursorRow() {
+  while (m_column < m_rowStart) m_rowStart -= TerminalColumns;
+  while (m_column >= m_rowStart + TerminalColumns) m_rowStart += TerminalColumns;
+}
+
+void SshLogStream::moveCursor(int column) {
+  m_column = qBound(0, column, int(SegmentCharacters));
+  syncCursorRow();
+}
+
+void SshLogStream::moveCursorRows(int rows) {
+  moveCursor(m_column + rows * TerminalColumns);
+}
+
 SshLogStream::~SshLogStream() {
 #ifndef Q_OS_WIN
   if (m_converter) iconv_close(m_converter);
@@ -208,9 +222,11 @@ void SshLogStream::applyCsi(QChar final) {
   bool valid = false;
   const int value = m_csi.section(';', 0, 0).toInt(&valid);
   const int count = valid && value > 0 ? qMin(value, int(SegmentCharacters)) : 1;
-  if (final == 'C' || final == 'a') m_column = qMin(int(SegmentCharacters), m_column + count);
-  else if (final == 'D') m_column = qMax(0, m_column - count);
-  else if (final == 'G' || final == '`') m_column = count - 1;
+  if (final == 'C' || final == 'a') moveCursor(m_column + count);
+  else if (final == 'D') moveCursor(m_column - count);
+  else if (final == 'A') moveCursorRows(-count);
+  else if (final == 'B') moveCursorRows(count);
+  else if (final == 'G' || final == '`') moveCursor(m_rowStart + count - 1);
   else if (final == 'K') {
     const int mode = valid ? value : 0;
     if (mode == 0) m_partial.truncate(cellPosition(m_partial, m_column).index);
@@ -234,9 +250,9 @@ void SshLogStream::consume(QStringView text, std::vector<SshLogLine> &lines) {
       if (c == '\n') {
         emitLine(lines, false);
       } else if (c == '\r') {
-        m_column = qMax(0, m_rowStart);
+        moveCursor(qMax(0, m_rowStart));
       } else if (c == '\b') {
-        m_column = qMax(0, m_column - 1);
+        moveCursor(m_column - 1);
       } else if (c == '\t') {
         append(QString(8 - m_column % 8, ' '), lines);
       } else if (c == QChar(0x1b)) {

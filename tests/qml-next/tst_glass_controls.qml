@@ -39,7 +39,7 @@ Pane {
         function init() {
             failOnWarning(/Binding loop|TypeError|ReferenceError|Unable to assign/)
             theme.reducedTransparency = false
-            theme.lightMode = false
+            theme.colorMode = "dark"
             theme.nativeBackdropAvailable = false; theme.systemReducedTransparency = false
             view = createTemporaryObject(controls, scene)
             verify(view); wait(20)
@@ -55,7 +55,7 @@ Pane {
         }
         function test_crystalWhiteControlsKeepFocusAndDarkBevel() {
             verify(!view.button.background.flat); verify(view.button.background.gradient !== null)
-            theme.lightMode = true
+            theme.colorMode = "light"
             verify(view.button.background.flat); compare(view.button.background.gradient,null)
             verify(view.field.background.flat); compare(view.field.background.gradient,null)
             verify(Qt.colorEqual(view.field.background.color,"white"))
@@ -64,7 +64,7 @@ Pane {
             view.button.forceActiveFocus(Qt.TabFocusReason); verify(view.button.background.focused)
             compare(view.button.background.border.width,2)
             view.check.checked = true; verify(view.check.indicator.flat)
-            theme.lightMode = false
+            theme.colorMode = "dark"
             verify(!view.button.background.flat); verify(view.button.background.gradient !== null)
             verify(!view.check.indicator.flat)
         }

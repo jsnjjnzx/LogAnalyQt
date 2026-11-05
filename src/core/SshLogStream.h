@@ -130,6 +130,9 @@ private:
   void append(QStringView text, std::vector<SshLogLine> &lines);
   void emitLine(std::vector<SshLogLine> &lines, bool continues);
   void applyCsi(QChar final);
+  void syncCursorRow();
+  void moveCursor(int column);
+  void moveCursorRows(int rows);
 
   QStringDecoder m_utf8{QStringConverter::Utf8};
   bool m_gb = false;

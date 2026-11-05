@@ -38,6 +38,14 @@ public:
   Q_INVOKABLE bool setDarkTitleBar(QQuickWindow *window, bool dark);
 
   /**
+   * @brief 设置 Windows 11 原生窗口圆角偏好（2 为圆角）
+   * @param window 目标窗口
+   * @param preference DWMWCP 值
+   * @return 成功返回 true，失败或非 Windows 返回 false
+   */
+  Q_INVOKABLE bool setWindowCornerPreference(QQuickWindow *window, int preference);
+
+  /**
    * @brief 设置窗口为无边框模式并启用原生边缘缩放
    * @param window 目标窗口
    * @return 成功返回 true，失败返回 false

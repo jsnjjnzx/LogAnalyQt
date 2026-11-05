@@ -23,15 +23,31 @@ QtObject {
     onLogBusyChanged: loggingChanged()
     property string logFilePath: ""
     property string logError: ""
+    property string logWarning: ""
     property bool existingLogFile: false
     property var logCalls: []
     signal logOperationFinished(bool success, string message)
+    signal logWarningChanged(string warning)
     function suggestedLogFile(name) { return "file:///tmp/ssh-" + name + ".log" }
+    function defaultLogFolder() { return "/tmp/ssh-logs" }
+    function localPath(url) { return String(url).replace("file://", "") }
+    function previewLogFolderPath(folder, template, sessionName, host) {
+        return String(folder) + "/" + String(template)
+            .replace("{session}", sessionName).replace("{host}", host)
+            .replace("{date}", "20261105").replace("{time}", "120000")
+    }
     function logFileExists(file) { return existingLogFile }
     function startLogging(file, append, intervalMs, bufferKiB) {
         logCalls = logCalls.concat([{kind:"start",file:String(file),append:append,intervalMs:intervalMs,bufferKiB:bufferKiB}])
         logging = true; logFilePath = String(file); logOperationFinished(true, "已开始记录")
         return true
+    }
+    function startLoggingToFolder(folder, template, sessionName, host, intervalMs, bufferKiB, rotateSizeMiB, rotateMinutes) {
+        logCalls = logCalls.concat([{kind:"folder",folder:String(folder),template:template,
+            sessionName:sessionName,host:host,intervalMs:intervalMs,bufferKiB:bufferKiB,
+            rotateSizeMiB:rotateSizeMiB,rotateMinutes:rotateMinutes}])
+        logging = true; logFilePath = previewLogFolderPath(folder, template, sessionName, host)
+        logOperationFinished(true, "已开始记录"); return true
     }
     function stopLogging() {
         if (!logging) return false

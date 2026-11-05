@@ -30,6 +30,13 @@
 #include <functional>
 #include <memory>
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 struct SshTerminalTestAccess {
   struct MonitorInput {
     QByteArray waitingAtPeer;
@@ -171,6 +178,9 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(!appIcon.pixmap(size, size).isNull(), "embedded application icon cannot be decoded");
 #ifdef Q_OS_WIN
     require(window->icon().pixmap(32, 32).toImage() == appIcon.pixmap(32, 32).toImage(), "Windows taskbar icon does not match logo.ico");
+    const auto windowStyle = GetWindowLongPtr(reinterpret_cast<HWND>(window->winId()), GWL_STYLE);
+    require(windowStyle & WS_MINIMIZEBOX,
+            "Windows frameless window dropped WS_MINIMIZEBOX; taskbar click cannot minimize the active window");
 #endif
     require(!QFile::exists(":/qt/qml/LogAnalyQt/qml/Main.qml"), "legacy UI is still embedded in the app");
     for (auto *model : QList<QAbstractItemModel *>{new ParseResultModel, new GlobalPreviewModel}) {
@@ -208,6 +218,14 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       return nullptr;
     };
     auto uiItem = [&](const QString &name) { return findItem(window->contentItem(), name); };
+#ifdef Q_OS_WIN
+    for (const char *name : {"window-resize-top", "window-resize-left", "window-resize-right",
+                             "window-resize-bottom", "window-resize-top-left", "window-resize-top-right",
+                             "window-resize-bottom-left", "window-resize-bottom-right"}) {
+      auto *edge = uiItem(QString::fromLatin1(name));
+      require(edge && edge->property("enabled").toBool(), "Windows frameless window is missing a resize edge or corner");
+    }
+#endif
     auto click = [&](QQuickItem *item) {
       require(item && item->isVisible(), "click target is missing or hidden");
       auto *targetWindow = item->window();
@@ -320,8 +338,9 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(theme->property("background").value<QColor>().lightnessF() < 0.2 &&
             theme->property("text").value<QColor>().lightnessF() > 0.8,
             "old appearance flags must retain the default dark palette");
-    require(uiItem("settings-dark") && uiItem("settings-light") && !uiItem("settings-follow-system"),
-            "appearance must offer exactly light and dark modes");
+    require(uiItem("settings-light") && uiItem("settings-monokai") && uiItem("settings-dark") &&
+                !uiItem("settings-follow-system"),
+            "appearance must offer light, Monokai and dark modes");
     const bool nativeGlassBefore = theme->property("nativeGlass").toBool();
     navigate(9);
     click(uiItem("settings-light"));
@@ -345,8 +364,21 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       require(window->grabWindow().save(appearanceCapture + ".main-light.png"), "light main capture failed");
       navigate(9);
     }
+    click(uiItem("settings-monokai"));
+    require(theme->property("colorMode").toString() == "monokai" &&
+                backend->getUiSetting("next/appearance/colorMode").toString() == "monokai" &&
+                theme->property("background").value<QColor>() == QColor("#44463e") &&
+                paletteText.evaluate().value<QColor>() == QColor("#f8f8f2") &&
+                appearanceApduWindow && appearanceApduWindow->color() == QColor("#44463e"),
+            "Monokai appearance was not applied and shared with existing windows");
+    if (!appearanceCapture.isEmpty()) {
+      require(window->grabWindow().save(appearanceCapture + ".settings-monokai.png"), "Monokai settings capture failed");
+      navigate(0);
+      require(window->grabWindow().save(appearanceCapture + ".main-monokai.png"), "Monokai main capture failed");
+      navigate(9);
+    }
     click(uiItem("settings-dark"));
-    require(!theme->property("lightMode").toBool() &&
+    require(theme->property("colorMode").toString() == "dark" &&
                 backend->getUiSetting("next/appearance/colorMode").toString() == "dark" &&
                 paletteText.evaluate().value<QColor>() == QColor("#eceef2"),
             "dark appearance was not restored and saved");
@@ -907,19 +939,18 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       const auto ruleScreenshot = qEnvironmentVariable("LOGANALYQT_SSH_RULE_SCREENSHOT");
       if (!ruleScreenshot.isEmpty()) require(ruleEditor->grabWindow().save(ruleScreenshot + ".library.png"), "rule library capture failed");
       ruleEditor->close(); settle();
-      auto *followControl = monitorAction(livePage, "ssh-pause");
-      require(followControl, "follow control is missing");
-      QQmlExpression tooltipExpression(qmlContext(followControl), followControl, "ToolTip.toolTip");
+      auto *receptionControl = monitorAction(livePage, "ssh-stop-reception");
+      require(receptionControl, "reception control is missing");
+      require(!findItem(monitorMenu(livePage), "ssh-pause"), "automatic follow still has a toggle");
+      QQmlExpression tooltipExpression(qmlContext(receptionControl), receptionControl, "ToolTip.toolTip");
       auto *sharedTooltip = tooltipExpression.evaluate().value<QObject *>();
       require(!tooltipExpression.hasError() && sharedTooltip
                   && sharedTooltip->objectName() == "workshop-tooltip"
                   && sharedTooltip->property("appTheme").value<QObject *>() == window->property("uiTheme").value<QObject *>(),
               "packaged application did not load its global tooltip style and theme");
-      require(livePage->property("autoFollowEnabled").toBool(), "rule pause changed the configured follow switch");
-      click(followControl);
-      require(!livePage->property("autoFollowEnabled").toBool() && !livePage->property("autoScroll").toBool(),
-              "disabling the configured switch resumed a paused rule");
-      click(followControl); closeMonitorMenu(livePage);
+      require(!livePage->property("autoScroll").toBool(), "rule pause did not pause automatic following");
+      require(QMetaObject::invokeMethod(livePage, "resumeFollowing"), "cannot resume automatic following");
+      closeMonitorMenu(livePage);
       firstInput.feed(*ssh, "normal after resume\n"); settle();
       require(livePage->property("autoScroll").toBool(), "resuming rematched historical output");
       firstInput.feed(*ssh, "ERROR new after resume\n"); settle();
@@ -953,22 +984,20 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       clickMonitorControl(findItem(rules->property("contentItem").value<QQuickItem *>(), "ssh-menu-rule-manage"));
       require(ruleEditor->isVisible() && ruleEditor->transientParent() == firstMonitorWindow,
               "independent monitor cannot select rules or open the shared rule manager");
-      theme->setProperty("lightMode", true); settle(firstMonitorWindow); settle(ruleEditor);
+      theme->setProperty("colorMode", "light"); settle(firstMonitorWindow); settle(ruleEditor);
       require(firstMonitorWindow->color() == QColor("#fbfcfc") && ruleEditor->color() == QColor("#fbfcfc") &&
                   livePage->property("terminalBg").value<QColor>() == QColor("#ffffff") &&
                   livePage->property("terminalText").value<QColor>() == QColor("#252b31"),
               "already-open monitor and rule windows did not update to light appearance");
       if (!appearanceCapture.isEmpty())
         require(firstMonitorWindow->grabWindow().save(appearanceCapture + ".monitor-light.png"), "light monitor capture failed");
-      theme->setProperty("lightMode", false); settle(firstMonitorWindow); settle(ruleEditor);
+      theme->setProperty("colorMode", "dark"); settle(firstMonitorWindow); settle(ruleEditor);
       require(firstMonitorWindow->color() == QColor("#1d2025") &&
                   livePage->property("terminalBg").value<QColor>() == QColor("#1a1d21") &&
                   livePage->property("terminalText").value<QColor>() == QColor("#f2f4f8"),
               "existing dark monitor appearance was not restored");
       settle(ruleEditor); ruleEditor->close(); settle(firstMonitorWindow);
-      auto *resume = monitorAction(livePage, "ssh-pause");
-      clickMonitorControl(resume);
-      clickMonitorControl(resume); closeMonitorMenu(livePage);
+      require(QMetaObject::invokeMethod(livePage, "resumeFollowing"), "cannot resume detached automatic following");
       firstInput.feed(*ssh, "normal detached output\n"); settle(firstMonitorWindow);
       require(livePage->property("autoScroll").toBool(), "detached continue-follow did not rearm new output monitoring");
       firstInput.feed(*ssh, "ERROR new detached match\n"); settle(firstMonitorWindow);
@@ -978,9 +1007,8 @@ inline QString checkMigratedUi(QQuickWindow *window) {
       firstInput.feed(*ssh, "RX 680407000000\n"); settle();
       const int receivedFrame = ssh->currentLineCount() - 1;
       const int stoppedRows = ssh->currentLineCount();
-      auto *pauseButton = monitorAction(livePage, "ssh-pause");
       auto *stopButton = monitorAction(livePage, "ssh-stop-reception");
-      require(stopButton && pauseButton && stopButton->y() > pauseButton->y(), "reception action must follow follow-scroll in the menu");
+      require(stopButton && !findItem(monitorMenu(livePage), "ssh-pause"), "automatic follow control is still present");
       click(stopButton); closeMonitorMenu(livePage);
       require(ssh->receptionPaused(), "stop-screen button did not stop reception");
       firstInput.feed(*ssh, "output waits until reception resumes\n"); settle();
@@ -1612,6 +1640,21 @@ inline QString checkMigratedUi(QQuickWindow *window) {
     require(uiItem("personal-config-export-full") && uiItem("personal-config-export-full")->isEnabled(), "backup entry disabled");
     QVariant saved;
     require(QMetaObject::invokeMethod(window, "flushPersonalConfig", Q_RETURN_ARG(QVariant, saved)) && saved.toBool(), "pending edits must flush before backup");
+    trace("maximize and restore");
+    const QSize normalSize = window->size();
+    auto waitForVisibility = [&](QWindow::Visibility expected) {
+      for (int attempt = 0; attempt < 100; ++attempt) {
+        if (window->visibility() == expected) return true;
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+      }
+      return window->visibility() == expected;
+    };
+    require(QMetaObject::invokeMethod(window, "toggleWindowMaximized"), "maximize action missing");
+    require(waitForVisibility(QWindow::Maximized), "maximize did not take effect");
+    require(QMetaObject::invokeMethod(window, "toggleWindowMaximized"), "restore action missing");
+    require(waitForVisibility(QWindow::Windowed), "restore did not return to a normal window");
+    require(qAbs(window->width() - normalSize.width()) <= 2 && qAbs(window->height() - normalSize.height()) <= 2,
+            "restore did not return to the previous window size");
     trace("finish");
     navigate(0);
     return {};

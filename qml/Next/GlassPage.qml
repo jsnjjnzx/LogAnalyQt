@@ -28,7 +28,7 @@ Pane {
     palette.placeholderText: theme ? theme.placeholderText : "#9199a5"
     palette.highlight: theme ? theme.accentMuted : "#1978ee"
     palette.brightText: "white"
-    palette.highlightedText: "white"
+    palette.highlightedText: theme ? theme.highlightedText : "white"
     background: Rectangle {
         radius: page.theme && page.theme.lightMode ? 11 : 14; color: page.color
         border.color: page.theme ? page.theme.groupBorder : "#3c424b"

@@ -137,6 +137,7 @@ class SshTerminal : public QObject {
   Q_PROPERTY(bool logBusy READ logBusy NOTIFY loggingChanged)
   Q_PROPERTY(QString logFilePath READ logFilePath NOTIFY loggingChanged)
   Q_PROPERTY(QString logError READ logError NOTIFY loggingChanged)
+  Q_PROPERTY(QString logWarning READ logWarning NOTIFY loggingChanged)
 
 public:
   enum ConnectionState {
@@ -228,10 +229,19 @@ public:
   bool logBusy() const { return m_logBusy; }
   QString logFilePath() const { return m_logFilePath; }
   QString logError() const { return m_logError; }
+  QString logWarning() const { return m_logWarning; }
   Q_INVOKABLE QUrl suggestedLogFile(const QString &sessionName) const;
+  Q_INVOKABLE QString defaultLogFolder() const;
+  Q_INVOKABLE QString localPath(const QUrl &url) const;
+  Q_INVOKABLE QString previewLogFolderPath(const QString &folder, const QString &nameTemplate,
+                                           const QString &sessionName, const QString &host) const;
   Q_INVOKABLE bool logFileExists(const QUrl &file) const;
   Q_INVOKABLE bool startLogging(const QUrl &file, bool append = false,
                                int flushIntervalMs = 1000, int bufferKiB = 256);
+  Q_INVOKABLE bool startLoggingToFolder(const QString &folder, const QString &nameTemplate,
+                                       const QString &sessionName, const QString &host,
+                                       int flushIntervalMs = 1000, int bufferKiB = 256,
+                                       int rotateSizeMiB = 0, int rotateMinutes = 0);
   Q_INVOKABLE bool stopLogging();
   Q_INVOKABLE bool exportLog(const QUrl &file);
   Q_INVOKABLE QString selectedText(qint64 firstId, int firstOffset, qint64 lastId, int lastOffset) const {
@@ -258,6 +268,8 @@ public:
 signals:
   void loggingChanged();
   void logOperationFinished(bool success, const QString &message);
+  void logRotated(const QString &path);
+  void logWarningChanged(const QString &warning);
   void credentialStateChanged();
   void passwordOperationFinished(const QString &operationId, bool success, const QString &error);
   void hostKeyPendingChanged();
@@ -335,6 +347,7 @@ private:
   bool m_logBusy = false;
   QString m_logFilePath;
   QString m_logError;
+  QString m_logWarning;
   bool m_persistSettings = true;
   bool m_useSystemCredentials = false;
   bool m_hasSavedPassword = false;

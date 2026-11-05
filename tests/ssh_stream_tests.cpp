@@ -8,6 +8,7 @@
 #include <QTemporaryDir>
 #include <QSignalSpy>
 #include <QTcpServer>
+#include <QThread>
 
 struct SshTerminalTestAccess {
   static void inputSchedulingChecks();
@@ -103,6 +104,22 @@ static void streamChecks() {
     check(wrapped.partialLine() == expected && wrapped.cursorColumn() == start + 1,
           "CR stays on its physical row, including delayed wrap and repeated CR");
   }
+  // Captured from bash readline on an 80-column PTY: crossing a wrapped row uses CR, CUU and CUF.
+  SshLogStream readlineLeft;
+  const QString readlineLine = QStringLiteral("$ ") + QString(180, QChar('x'));
+  readlineLeft.feed(readlineLine.toUtf8());
+  QByteArray readlineMove(21, '\b');
+  readlineMove += "\r\x1b[A";
+  for (int i = 0; i < 79; ++i) readlineMove += "\x1b[C";
+  readlineMove += QByteArray(22, '\b');
+  readlineLeft.feed(readlineMove);
+  check(readlineLeft.partialLine() == readlineLine && readlineLeft.cursorColumn() == 137,
+        "readline cursor movement across wrapped rows keeps the full line and logical column");
+  readlineLeft.feed("Z");
+  QString editedReadline = readlineLine;
+  editedReadline[137] = QChar('Z');
+  check(readlineLeft.partialLine() == editedReadline && readlineLeft.cursorColumn() == 138,
+        "typing after wrapped-row left movement overwrites one cell instead of appending spaces");
   SshLogStream wideWrapped;
   wideWrapped.feed((QString(40, QChar(0x4e2d)) + " \rZ").toUtf8());
   check(wideWrapped.partialLine() == QString(40, QChar(0x4e2d)) + 'Z' && wideWrapped.cursorColumn() == 81,
@@ -486,6 +503,128 @@ static QByteArray readLog(const QString &path) {
   return file.readAll();
 }
 
+static QStringList logFiles(const QString &folder) {
+  return QDir(folder).entryList({QStringLiteral("*.log")}, QDir::Files, QDir::Name);
+}
+
+static QByteArray readLogs(const QString &folder) {
+  QByteArray result;
+  for (const auto &name : logFiles(folder)) result += readLog(QDir(folder).filePath(name));
+  return result;
+}
+
+static void folderLogChecks() {
+  QTemporaryDir previewDirectory;
+  check(previewDirectory.isValid(), "preview directory exists");
+  const auto preview = SshSessionLog::previewFolderPath(
+      previewDirectory.path(), QStringLiteral("{session}-{host}_{date}_{time}.log"),
+      QStringLiteral("设备/主"), QStringLiteral("10.0.0.1"),
+      QDateTime(QDate(2026, 11, 5), QTime(12, 34, 56)));
+  check(preview.endsWith(QStringLiteral("设备_主-10.0.0.1_20261105_123456.log")),
+        "folder preview sanitizes session and host and expands date/time");
+  const auto sequencePreview = SshSessionLog::previewFolderPath(
+      previewDirectory.path(), QStringLiteral("part-{seq}.log"), QStringLiteral("s"),
+      QStringLiteral("h"), QDateTime(QDate(2026, 11, 5), QTime(12, 34, 56)));
+  check(sequencePreview.endsWith(QStringLiteral("part-001.log")), "sequence token starts at 001");
+
+  QTemporaryDir rotationDirectory;
+  SshSessionLog rotated;
+  check(rotated.startFolder(rotationDirectory.path(), QStringLiteral("part-{seq}.log"),
+                            QStringLiteral("UTF-8"), 16, QStringLiteral("session"),
+                            QStringLiteral("host"), 6, 0),
+        "folder logging starts with a size policy");
+  check(rotated.currentPath().endsWith(QStringLiteral("part-001.log")),
+        "first folder chunk uses its template sequence");
+  check(rotated.feed("line1\npartial") && rotated.flush(),
+        "complete content and a live tail are flushed to the first chunk");
+  check(rotated.feed(" continues\n") && rotated.flush(), "next output rotates before writing");
+  check(rotated.rotationRevision() == 1 && rotated.currentPath().endsWith(QStringLiteral("part-002.log")),
+        "size rotation advances to the next unique chunk");
+  check(rotated.stop(), "rotated folder log stops");
+  check(readLogs(rotationDirectory.path()) == "line1\npartial continues\n",
+        "concatenated chunks preserve content across a live-tail migration");
+
+  QTemporaryDir timedDirectory;
+  SshSessionLog timed;
+  check(timed.startFolder(timedDirectory.path(), QStringLiteral("timed-{seq}.log"),
+                          QStringLiteral("UTF-8"), 16, QStringLiteral("session"),
+                          QStringLiteral("host"), 100000, 20),
+        "folder logging starts with combined size and duration policies");
+  check(timed.feed("first\n") && timed.flush(), "duration starts with the first output");
+  QThread::msleep(30);
+  check(timed.feed("second\n") && timed.flush(), "duration rotation happens on the next output");
+  check(timed.rotationRevision() == 1, "duration rotation advances exactly once");
+  check(timed.stop(), "duration-rotated folder log stops");
+  check(readLogs(timedDirectory.path()) == "first\nsecond\n",
+        "duration chunks preserve output order without empty files");
+
+  QTemporaryDir collisionDirectory;
+  for (int i = 0; i < 2; ++i) {
+    SshSessionLog collision;
+    check(collision.startFolder(collisionDirectory.path(), QStringLiteral("same.log"),
+                                QStringLiteral("UTF-8"), 16, QStringLiteral("session"),
+                                QStringLiteral("host")),
+          "same template starts a separate folder log");
+    check(collision.feed("entry\n") && collision.stop(), "collision test log is written");
+  }
+  check(logFiles(collisionDirectory.path()) == QStringList{QStringLiteral("same-001.log"), QStringLiteral("same.log")},
+        "existing folder log names are never overwritten");
+
+  QTemporaryDir sharedDirectory;
+  SshSessionLog sharedA;
+  SshSessionLog sharedB;
+  check(sharedA.startFolder(sharedDirectory.path(), QStringLiteral("{session}.log"),
+                            QStringLiteral("UTF-8"), 16, QStringLiteral("A"), QStringLiteral("host")),
+        "first session can log into a shared folder");
+  check(sharedB.startFolder(sharedDirectory.path(), QStringLiteral("{session}.log"),
+                            QStringLiteral("UTF-8"), 16, QStringLiteral("B"), QStringLiteral("host")),
+        "second session can log into the same shared folder");
+  check(sharedA.feed("A\n") && sharedA.stop() && sharedB.feed("B\n") && sharedB.stop(),
+        "shared-folder sessions write independently");
+  check(logFiles(sharedDirectory.path()) == QStringList{QStringLiteral("A.log"), QStringLiteral("B.log")},
+        "shared-folder sessions select distinct filenames");
+
+#ifndef Q_OS_WIN
+  QTemporaryDir failureDirectory;
+  const auto liveFolder = failureDirectory.filePath(QStringLiteral("live"));
+  check(QDir().mkpath(liveFolder), "rotation failure fixture folder exists");
+  SshSessionLog failing;
+  check(failing.startFolder(liveFolder, QStringLiteral("failing-{seq}.log"),
+                            QStringLiteral("UTF-8"), 16, QStringLiteral("session"),
+                            QStringLiteral("host"), 6, 0),
+        "rotation failure fixture starts");
+  check(failing.feed("line1\n") && failing.flush(), "rotation failure fixture has first content");
+  const auto movedFolder = failureDirectory.filePath(QStringLiteral("moved"));
+  check(QDir().rename(liveFolder, movedFolder), "rotation failure fixture moves its folder");
+  check(failing.feed("line2\n") && failing.flush() && failing.active(),
+        "next-chunk failure keeps recording in the current file");
+  check(!failing.warningString().isEmpty() && failing.rotationRevision() == 0,
+        "next-chunk failure is reported instead of silently rotating");
+  check(QDir().rename(movedFolder, liveFolder), "rotation failure fixture restores its folder");
+  check(failing.stop(), "rotation failure fixture stops");
+  check(readLog(QDir(liveFolder).filePath(QStringLiteral("failing-001.log"))) == "line1\nline2\n",
+        "rotation failure preserves all content in the current file");
+#endif
+
+  QTemporaryDir terminalDirectory;
+  SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), terminalDirectory.path());
+  terminal.setUseSystemCredentials(false);
+  QSignalSpy finished(&terminal, &SshTerminal::logOperationFinished);
+  const auto previewPath = terminal.previewLogFolderPath(
+      terminalDirectory.path(), QStringLiteral("{session}-{host}.log"),
+      QStringLiteral("S"), QStringLiteral("H"));
+  check(previewPath.endsWith(QStringLiteral("S-H.log")), "terminal exposes the same folder preview");
+  check(terminal.startLoggingToFolder(terminalDirectory.path(), QStringLiteral("{session}-{host}.log"),
+                                      QStringLiteral("S"), QStringLiteral("H"), 1000, 16, 0, 0),
+        "terminal starts folder logging asynchronously");
+  check(finished.wait(2000) && terminal.logging() && !terminal.logBusy(),
+        "worker acknowledges folder logging");
+  check(terminal.logFilePath().endsWith(QStringLiteral("S-H.log")) && terminal.logWarning().isEmpty(),
+        "terminal reports the created folder chunk without a warning");
+  check(terminal.stopLogging() && finished.wait(2000) && !terminal.logging(),
+        "terminal stops folder logging");
+}
+
 static void sessionLogChecks() {
   QTemporaryDir temporary;
   check(temporary.isValid(), "isolated log directory exists");
@@ -634,7 +773,7 @@ void SshTerminalTestAccess::connectionStateChecks() {
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); currentConnectionErrorChecks(); SshTerminalTestAccess::connectionStateChecks();
+    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); folderLogChecks(); currentConnectionErrorChecks(); SshTerminalTestAccess::connectionStateChecks();
     QTextStream(stdout) << "PASS: " << checks << " SSH stream/model/session-log assertions; files used isolated temporary directories\n";
     return 0;
   } catch (const std::exception &error) {

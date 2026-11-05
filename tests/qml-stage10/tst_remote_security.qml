@@ -153,7 +153,7 @@ Item {
             const connect = item("sshConnectAction")
             verify(connect.mapToItem(page, connect.width, 0).x <= page.width)
             verify(findChild(page, "ssh-copy-on-select") === null)
-            for (const name of ["ssh-config-toggle", "ssh-pause", "ssh-clear"])
+            for (const name of ["ssh-config-toggle", "ssh-clear"])
                 verify(!item(name).contentItem.truncated, name + " text must fit")
         }
         function test_sshFoldedControlsKeepWorking() {
@@ -175,8 +175,6 @@ Item {
             compare(page.selectedHexText.replace(/ /g, ""), "680407000000")
             compare(page.searchMatches.length, 1)
             verify(page.parseWindowVisible)
-            mouseClick(item("ssh-pause")); verify(!page.autoScroll)
-            mouseClick(item("ssh-pause")); verify(page.autoScroll)
             verify(findChild(page, "ssh-copy-on-select") === null)
             page.copyOnSelect = true; verify(page.copyOnSelect)
             verify(findChild(page, "ssh-copy-all") === null)
@@ -255,7 +253,8 @@ Item {
             wait(20)
             const identity = page.selectedLineId
             compare(page.selectedHexText.replace(/ /g, ""), "680407000000")
-            compare(item("ssh-selected-text").selectedText.replace(/ /g, ""), "680407000000")
+            const selectedRow = item("ssh-log-line-" + identity)
+            compare(findChild(selectedRow, "ssh-log-text").selectedText.replace(/ /g, ""), "680407000000")
             ssh.appendTestLines(["new"], 3); wait(30)
             compare(page.selectedLineId, identity)
             compare(page.selectedLineIndex, 0)
@@ -327,8 +326,9 @@ Item {
             page.searchKeyword = "RX"; page.refreshSearchResult()
             compare(page.searchMatches.length, 1)
             page.selectLineAndExtractHex(0); wait(30)
-            compare(item("ssh-selected-text").text, text)
-            compare(item("ssh-selected-text").selectedText.replace(/ /g, ""), "680407000000")
+            const selectedRow = item("ssh-log-line-0")
+            compare(findChild(selectedRow, "ssh-log-text").text, text)
+            compare(findChild(selectedRow, "ssh-log-text").selectedText.replace(/ /g, ""), "680407000000")
         }
         function test_sshConnectionOptionsHaveFourCompactParameterGroups() {
             make(nextSsh)

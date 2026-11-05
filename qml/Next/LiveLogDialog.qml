@@ -26,6 +26,7 @@ GlassPage {
     property var monitorRuleLibrary: null
     property bool monitorEnabled: false
     property var monitorRuleIds: []
+    property string savedConnectionKey: ""
     property var monitorHit: null
     property var monitorNotice: null
     readonly property var monitorEvent: monitorHit || monitorNotice
@@ -49,7 +50,6 @@ GlassPage {
         monitorRuleIds = checked ? monitorRuleIds.indexOf(id) >= 0 ? monitorRuleIds : monitorRuleIds.concat([id])
             : monitorRuleIds.filter(function(value) { return value !== id; });
     }
-    function toggleFollowing() { autoFollowEnabled = !autoFollowEnabled; }
     function clearTerminal() { monitorHit = null; monitorNotice = null; sshTerminal.clearBuffer(); }
     function showMatchDetails() { if (monitorEvent) matchDetails.open(); }
     function openRulePicker() {
@@ -62,6 +62,9 @@ GlassPage {
         monitorHit = null; monitorNotice = null; monitorError = ""; autoScroll = true;
         configureMonitorRules();
         logListView.positionViewAtEnd();
+    }
+    function finishAutoFollowScroll() {
+        if (logListView && logListView.atYEnd) resumeFollowing();
     }
     function positionMonitorHit() {
         if (!monitorHit || autoScroll) return;
@@ -76,16 +79,21 @@ GlassPage {
     readonly property alias terminal: sshTerminal
     readonly property string configurationSnapshot: JSON.stringify(connectionConfiguration())
     signal configurationEdited()
+    signal connectionSettingsRequested()
     onConfigurationSnapshotChanged: configurationEdited()
     function connectionConfiguration() {
         return {name: sessionName, host: hostInput.text, port: portInput.text, username: userInput.text,
             password: secureCredentials ? "" : pwdInput.text,
             encoding: encodingCombo.currentText, maxLines: maxLinesInput.text,
             autoReconnect: sshTerminal.autoReconnectEnabled, reconnectCount: reconnectCountInput.text,
-            reconnectInterval: reconnectIntervalInput.text, expanded: connectionConfigExpanded,
+            reconnectInterval: reconnectIntervalInput.text,
+            expanded: workspaceManaged ? false : connectionConfigExpanded,
             commandManagementExpanded: commandManagementExpanded, copyOnSelect: copyOnSelect,
             wrapLogLines: wrapLogLines,
             logFlushIntervalSeconds: logFlushIntervalSeconds, logBufferKiB: logBufferKiB,
+            logDestination: logDestination, logFolder: logFolder, logNameTemplate: logNameTemplate,
+            logRotateBySize: logRotateBySize, logRotateSizeMiB: logRotateSizeMiB,
+            logRotateByDuration: logRotateByDuration, logRotateMinutes: logRotateMinutes,
             monitorEnabled: monitorEnabled, monitorRuleIds: monitorRuleIds};
     }
     function restoreConfiguration(config) {
@@ -101,12 +109,61 @@ GlassPage {
         wrapLogLines = config.wrapLogLines === true;
         logFlushIntervalSeconds = config.logFlushIntervalSeconds === undefined ? 1 : config.logFlushIntervalSeconds;
         logBufferKiB = config.logBufferKiB === undefined ? 256 : config.logBufferKiB;
+        logDestination = config.logDestination === "folder" ? "folder" : "file";
+        logFolder = typeof config.logFolder === "string" ? config.logFolder : "";
+        logNameTemplate = typeof config.logNameTemplate === "string" && config.logNameTemplate.length > 0
+            ? config.logNameTemplate : defaultLogNameTemplate;
+        logRotateBySize = config.logRotateBySize === true;
+        logRotateSizeMiB = Number.isInteger(config.logRotateSizeMiB) ? config.logRotateSizeMiB : 100;
+        logRotateByDuration = config.logRotateByDuration === true;
+        logRotateMinutes = Number.isInteger(config.logRotateMinutes) ? config.logRotateMinutes : 60;
         monitorRuleIds = config.monitorRuleIds || [];
         monitorEnabled = config.monitorEnabled === true;
         sshTerminal.host = config.host; sshTerminal.username = config.username;
         if (portInput.acceptableInput) sshTerminal.port = Number(config.port);
         pwdInput.text = config.password || "";
         sshTerminal.password = pwdInput.text;
+    }
+    function applyConnectionConfiguration(config) {
+        if (!config) return false;
+        if (sessionActive) {
+            if (!sameTarget({host: config.host, port: Number(config.port), username: config.username}, currentTarget()))
+                return false;
+            sessionName = config.name;
+            copyOnSelect = config.copyOnSelect === true;
+            wrapLogLines = config.wrapLogLines === true;
+            logFlushIntervalSeconds = config.logFlushIntervalSeconds === undefined ? 1 : config.logFlushIntervalSeconds;
+            logBufferKiB = config.logBufferKiB === undefined ? 256 : config.logBufferKiB;
+            logDestination = config.logDestination === "folder" ? "folder" : "file";
+            logFolder = typeof config.logFolder === "string" ? config.logFolder : "";
+            logNameTemplate = typeof config.logNameTemplate === "string" && config.logNameTemplate.length > 0
+                ? config.logNameTemplate : defaultLogNameTemplate;
+            logRotateBySize = config.logRotateBySize === true;
+            logRotateSizeMiB = Number.isInteger(config.logRotateSizeMiB) ? config.logRotateSizeMiB : 100;
+            logRotateByDuration = config.logRotateByDuration === true;
+            logRotateMinutes = Number.isInteger(config.logRotateMinutes) ? config.logRotateMinutes : 60;
+            monitorRuleIds = config.monitorRuleIds || [];
+            monitorEnabled = config.monitorEnabled === true;
+            sshTerminal.autoReconnectEnabled = config.autoReconnect !== false;
+            reconnectCountInput.text = config.reconnectCount;
+            reconnectIntervalInput.text = config.reconnectInterval;
+            sshTerminal.reconnectMaxAttempts = parseInt(config.reconnectCount) || 0;
+            sshTerminal.reconnectIntervalMs = parseInt(config.reconnectInterval) || 2000;
+            return true;
+        }
+        restoreConfiguration(config);
+        return true;
+    }
+    function saveConnectionCredential(password) {
+        if (!secureCredentials || sessionActive || pendingSshAction || passwordOperationId || !password) return false;
+        pwdInput.text = password;
+        beginSshAction("save");
+        return true;
+    }
+    function clearConnectionCredential() {
+        if (!secureCredentials || sessionActive || pendingSshAction || passwordOperationId) return false;
+        beginSshAction("clear");
+        return true;
     }
     readonly property alias terminalInput: terminalCapture
     property bool connectionConfigExpanded: true
@@ -123,6 +180,8 @@ GlassPage {
         && (sshTerminal.connectionState === SshTerminal.Connecting || sshTerminal.connectionState === SshTerminal.Reconnecting)
     readonly property string currentConnectionError: !sshTerminal.connected && sshTerminal.connectionState === SshTerminal.Failed
         ? sshTerminal.lastError : ""
+    readonly property bool connectionStatusVisible: currentConnectionError !== "" || connectionInProgress
+        || sshTerminal.logging || sshTerminal.logBusy || sshTerminal.logError !== "" || sshTerminal.logWarning !== ""
     function currentTarget() { return {host: hostInput.text.trim(), port: Number(portInput.text), username: userInput.text.trim()} }
     function sameTarget(a, b) { return !!a && !!b && a.host === b.host && a.port === b.port && a.username === b.username }
     function targetMatchesBackend() { return sameTarget(currentTarget(), {host: sshTerminal.host, port: sshTerminal.port, username: sshTerminal.username}) }
@@ -135,6 +194,7 @@ GlassPage {
         if (!secureCredentials || pendingSshAction || passwordOperationId || sessionActive) return
         const target = currentTarget()
         if (!target.host || !target.username || !portInput.acceptableInput || target.port < 1 || target.port > 65535) {
+            if (workspaceManaged) { connectionSettingsRequested(); return; }
             passwordNotice = "请填写有效的主机、端口和用户名。"; passwordNoticeError = true; return
         }
         if (kind === "save" && !pwdInput.text) { passwordNotice = "请输入要保存的新密码。"; passwordNoticeError = true; return }
@@ -171,7 +231,7 @@ GlassPage {
     function connectIfIdle() {
         if (!workspaceManaged || !visible || sessionActive || pendingSshAction || passwordOperationId) return false;
         connectAction();
-        if (!sessionActive && !pendingSshAction) connectionConfigExpanded = true;
+        if (!workspaceManaged && !sessionActive && !pendingSshAction) connectionConfigExpanded = true;
         return true;
     }
     function connectAction() {
@@ -183,6 +243,7 @@ GlassPage {
         }
         if (!secureCredentials) {
             if (!hostInput.text.trim() || !userInput.text.trim() || !portInput.acceptableInput || !pwdInput.text) {
+                if (workspaceManaged) { connectionSettingsRequested(); return; }
                 passwordNotice = "请填写有效的主机、端口、账号和密码。"; passwordNoticeError = true; return;
             }
             passwordNotice = "";
@@ -204,7 +265,7 @@ GlassPage {
         if (key) sshTerminal.confirmHostKey(key.requestId, key.fingerprint, accept)
     }
     function closeSshSession() {
-        logFileDialog.close(); existingLogDialog.close(); logSettingsDialog.close();
+        logFileDialog.close(); existingLogDialog.close(); logSettingsDialog.close(); logFolderDialog.close();
         sshTerminal.stopLogging();
         pendingSshAction = null; passwordOperationId = ""; passwordOperationTarget = null
         if (pendingHostKey) respondHostKey(false)
@@ -217,12 +278,12 @@ GlassPage {
     }
 
 
-    property bool autoFollowEnabled: true
-    onAutoFollowEnabledChanged: { if (autoFollowEnabled) resumeFollowing(); else autoScroll = false; }
     property bool autoScroll: true
     property bool copyOnSelect: false
     property bool wrapLogLines: false
     property real widestLogText: 0
+    readonly property real logContentWidth: wrapLogLines ? logListView.width : Math.max(logListView.width,
+        widestLogText + 16, logListView.footerItem ? logListView.footerItem.naturalTextWidth : 0)
     onWrapLogLinesChanged: {
         if (!logListView) return;
         captureLogViewport();
@@ -280,54 +341,178 @@ GlassPage {
     readonly property alias folderPopup: commandFolderPopup
     property bool exportCurrentLog: false
     property url pendingLogFile: ""
+    readonly property string defaultLogNameTemplate: "{session}-{host}_{date}_{time}.log"
     property int logFlushIntervalSeconds: 1
     property int logBufferKiB: 256
+    property string logDestination: "file"
+    property string logDestinationDraft: "file"
+    property string logFolder: ""
+    property string logNameTemplate: defaultLogNameTemplate
+    property bool logRotateBySize: false
+    property int logRotateSizeMiB: 100
+    property bool logRotateByDuration: false
+    property int logRotateMinutes: 60
 
     function openLogSettings() {
+        logDestinationDraft = logDestination;
+        logFolderInput.text = logFolder !== "" ? logFolder : sshTerminal.defaultLogFolder();
+        logNameTemplateInput.text = logNameTemplate;
         logIntervalInput.text = String(logFlushIntervalSeconds);
         logBufferInput.text = String(logBufferKiB);
+        logRotateSizeCheck.checked = logRotateBySize;
+        logRotateSizeInput.text = String(logRotateSizeMiB);
+        logRotateDurationCheck.checked = logRotateByDuration;
+        logRotateMinutesInput.text = String(logRotateMinutes);
         logSettingsDialog.open();
     }
+    function logSettingsValid() {
+        const folderText = logFolderInput.text.trim();
+        const templateText = logNameTemplateInput.text.trim();
+        const preview = folderText !== "" && templateText !== ""
+            ? sshTerminal.previewLogFolderPath(folderText, templateText, sessionName, hostInput.text) : "";
+        const folderReady = folderText.length <= 4096 && templateText.length <= 256
+            && (logDestinationDraft !== "folder" || preview !== "");
+        return folderReady && logIntervalInput.acceptableInput && logBufferInput.acceptableInput
+            && logRotateSizeInput.acceptableInput && logRotateMinutesInput.acceptableInput;
+    }
     function saveLogSettings() {
-        if (!logIntervalInput.acceptableInput || !logBufferInput.acceptableInput) return;
+        if (!logSettingsValid()) return;
         logFlushIntervalSeconds = Number(logIntervalInput.text);
         logBufferKiB = Number(logBufferInput.text);
+        logDestination = logDestinationDraft;
+        logFolder = logFolderInput.text.trim();
+        logNameTemplate = logNameTemplateInput.text.trim();
+        logRotateBySize = logRotateSizeCheck.checked;
+        logRotateSizeMiB = Number(logRotateSizeInput.text);
+        logRotateByDuration = logRotateDurationCheck.checked;
+        logRotateMinutes = Number(logRotateMinutesInput.text);
         logSettingsDialog.close();
     }
     Next.GlassDialog {
         id: logSettingsDialog
         objectName: "ssh-log-settings"
         parent: Overlay.overlay; anchors.centerIn: parent
-        modal: true; title: "日志写入设置"; width: Math.min(460, liveLogDialog.width - 24)
+        modal: true; title: "日志记录设置"; width: Math.min(560, liveLogDialog.width - 24)
         standardButtons: Dialog.NoButton
         contentItem: ColumnLayout {
-            spacing: 12
-            Label { text: "写入间隔（1～60 秒）"; color: liveLogDialog.labelColor }
-            StyledTextField {
-                id: logIntervalInput; objectName: "ssh-log-interval"; Layout.fillWidth: true
-                validator: IntValidator { bottom: 1; top: 60 }
-                onAccepted: logBufferInput.forceActiveFocus()
+            spacing: 10
+            RowLayout {
+                spacing: 8
+                Label { text: "保存位置"; color: liveLogDialog.labelColor; Layout.preferredWidth: 72 }
+                Next.GlassButton {
+                    objectName: "ssh-log-destination-file"
+                    text: "单文件"; highlighted: liveLogDialog.logDestinationDraft !== "folder"
+                    onClicked: liveLogDialog.logDestinationDraft = "file"
+                }
+                Next.GlassButton {
+                    objectName: "ssh-log-destination-folder"
+                    text: "文件夹"; highlighted: liveLogDialog.logDestinationDraft === "folder"
+                    onClicked: liveLogDialog.logDestinationDraft = "folder"
+                }
             }
-            Label { text: "缓存大小（16～8192 KiB）"; color: liveLogDialog.labelColor }
-            StyledTextField {
-                id: logBufferInput; objectName: "ssh-log-buffer-size"; Layout.fillWidth: true
-                validator: IntValidator { bottom: 16; top: 8192 }
-                onAccepted: liveLogDialog.saveLogSettings()
+            RowLayout {
+                visible: liveLogDialog.logDestinationDraft === "folder"
+                spacing: 8
+                Label { text: "文件夹"; color: liveLogDialog.labelColor; Layout.preferredWidth: 72 }
+                StyledTextField {
+                    id: logFolderInput; objectName: "ssh-log-folder"
+                    Layout.fillWidth: true
+                    placeholderText: "选择保存目录"
+                }
+                Next.GlassButton {
+                    objectName: "ssh-log-folder-choose"; text: "选择…"
+                    onClicked: logFolderDialog.open()
+                }
+            }
+            RowLayout {
+                visible: liveLogDialog.logDestinationDraft === "folder"
+                spacing: 8
+                Label { text: "命名"; color: liveLogDialog.labelColor; Layout.preferredWidth: 72 }
+                StyledTextField {
+                    id: logNameTemplateInput; objectName: "ssh-log-name-template"
+                    Layout.fillWidth: true
+                    placeholderText: liveLogDialog.defaultLogNameTemplate
+                }
+            }
+            Label {
+                visible: liveLogDialog.logDestinationDraft === "folder"
+                Layout.fillWidth: true; Layout.leftMargin: 80
+                text: logFolderInput.text !== "" && logNameTemplateInput.text !== ""
+                    ? sshTerminal.previewLogFolderPath(logFolderInput.text, logNameTemplateInput.text,
+                                                       liveLogDialog.sessionName, hostInput.text)
+                    : ""
+                color: liveLogDialog.labelColor
+                font.pixelSize: 11
+                elide: Text.ElideMiddle
+            }
+            RowLayout {
+                enabled: liveLogDialog.logDestinationDraft === "folder"
+                spacing: 8
+                Label { text: "分卷"; color: liveLogDialog.labelColor; Layout.preferredWidth: 72 }
+                Next.GlassCheckBox {
+                    id: logRotateSizeCheck; objectName: "ssh-log-rotate-size-enabled"
+                    enabled: liveLogDialog.logDestinationDraft === "folder"
+                    text: "按大小"; palette.windowText: liveLogDialog.labelColor
+                }
+                StyledTextField {
+                    id: logRotateSizeInput; objectName: "ssh-log-rotate-size"
+                    Layout.fillWidth: false; Layout.preferredWidth: 92
+                    validator: IntValidator { bottom: 1; top: 4096 }
+                    enabled: liveLogDialog.logDestinationDraft === "folder" && logRotateSizeCheck.checked
+                }
+                Label { text: "MiB"; color: liveLogDialog.labelColor }
+                Item { Layout.fillWidth: true }
+                Next.GlassCheckBox {
+                    id: logRotateDurationCheck; objectName: "ssh-log-rotate-duration-enabled"
+                    enabled: liveLogDialog.logDestinationDraft === "folder"
+                    text: "按时长"; palette.windowText: liveLogDialog.labelColor
+                }
+                StyledTextField {
+                    id: logRotateMinutesInput; objectName: "ssh-log-rotate-minutes"
+                    Layout.fillWidth: false; Layout.preferredWidth: 92
+                    validator: IntValidator { bottom: 1; top: 1440 }
+                    enabled: liveLogDialog.logDestinationDraft === "folder" && logRotateDurationCheck.checked
+                }
+                Label { text: "分钟"; color: liveLogDialog.labelColor }
+            }
+            RowLayout {
+                spacing: 8
+                Label { text: "写入"; color: liveLogDialog.labelColor; Layout.preferredWidth: 72 }
+                StyledTextField {
+                    id: logIntervalInput; objectName: "ssh-log-interval"
+                    Layout.fillWidth: false; Layout.preferredWidth: 92
+                    validator: IntValidator { bottom: 1; top: 60 }
+                    onAccepted: logBufferInput.forceActiveFocus()
+                }
+                Label { text: "秒"; color: liveLogDialog.labelColor }
+                StyledTextField {
+                    id: logBufferInput; objectName: "ssh-log-buffer-size"
+                    Layout.fillWidth: false; Layout.preferredWidth: 92
+                    validator: IntValidator { bottom: 16; top: 8192 }
+                    onAccepted: liveLogDialog.saveLogSettings()
+                }
+                Label { text: "KiB"; color: liveLogDialog.labelColor }
             }
             Label {
                 Layout.fillWidth: true; wrapMode: Text.Wrap; color: liveLogDialog.labelColor
-                text: "任一条件先达到即写入；停止记录或关闭会话时写出剩余缓存。\n设置在下次开始记录时生效。异常退出可能丢失尚未写入的缓存。"
+                text: "设置在下次开始记录时生效；分卷失败会继续写入当前卷。"
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
                 Next.GlassButton { objectName: "ssh-log-settings-cancel"; text: "取消"; onClicked: logSettingsDialog.close() }
                 Next.GlassButton {
                     objectName: "ssh-log-settings-save"; text: "保存"; highlighted: true
-                    enabled: logIntervalInput.acceptableInput && logBufferInput.acceptableInput
+                    enabled: liveLogDialog.logSettingsValid()
                     onClicked: liveLogDialog.saveLogSettings()
                 }
             }
         }
+    }
+
+    Dialogs.FolderDialog {
+        id: logFolderDialog
+        title: "选择日志文件夹"
+        onAccepted: logFolderInput.text = sshTerminal.localPath(folder)
     }
 
     function requestLogFile(exportCurrent) {
@@ -348,6 +533,21 @@ GlassPage {
         if (String(file) === "") return;
         if (exportCurrentLog) sshTerminal.exportLog(file);
         else sshTerminal.startLogging(file, append, logFlushIntervalSeconds * 1000, logBufferKiB);
+    }
+    function startSessionLog() {
+        if (sshTerminal.logBusy || sshTerminal.logging) return;
+        if (logDestination !== "folder") {
+            requestLogFile(false);
+            return;
+        }
+        if (logFolder === "" || logNameTemplate === "") {
+            openLogSettings();
+            return;
+        }
+        sshTerminal.startLoggingToFolder(logFolder, logNameTemplate, sessionName, hostInput.text,
+            logFlushIntervalSeconds * 1000, logBufferKiB,
+            logRotateBySize ? logRotateSizeMiB : 0,
+            logRotateByDuration ? logRotateMinutes : 0);
     }
 
     Dialogs.FileDialog {
@@ -401,6 +601,7 @@ GlassPage {
     property real viewAnchorId: -1
     property real viewAnchorOffset: 0
     property bool viewUpdatePending: false
+    property bool followingCursor: false
     onAutoScrollChanged: if (autoScroll) { viewAnchorId = -1; monitorHit = null; monitorNotice = null; }
     property int selectedHexStart: -1
     property int selectedHexEnd: -1
@@ -626,7 +827,7 @@ GlassPage {
         if (autoScroll) {
             logListView.positionViewAtEnd();
             const footer = logListView.footerItem;
-            if (!wrapLogLines && footer && sshTerminal.connected && terminalCapture.activeFocus && !hasTextSelection) {
+            if (followingCursor && !wrapLogLines && footer && sshTerminal.connected && !hasTextSelection) {
                 const cursor = footer.caretX;
                 if (cursor > logListView.contentX + logListView.width - 24)
                     logListView.contentX = Math.max(0, Math.min(logListView.contentWidth - logListView.width, cursor - logListView.width + 24));
@@ -851,7 +1052,9 @@ GlassPage {
 
     function sendTerminalText(text) {
         if (!sshTerminal.connected || sshTerminal.receptionPaused || text === "") return;
-        if (!monitorHit) { autoScroll = true; Qt.callLater(applyLogViewport); }
+        if (!monitorHit || text === "\r") {
+            autoScroll = true; followCursorTimer.restart(); Qt.callLater(applyLogViewport);
+        }
         sshTerminal.sendRawBytes(text);
     }
     function pasteTerminal() {
@@ -911,7 +1114,7 @@ GlassPage {
         if (!monitorHit) autoScroll = true;
         sshTerminal.sendCommand(command);
         terminalCapture.forceActiveFocus();
-        if (autoScroll) Qt.callLater(applyLogViewport);
+        if (autoScroll) { followCursorTimer.restart(); Qt.callLater(applyLogViewport); }
     }
 
     function editCustomCommand(name) {
@@ -1848,7 +2051,8 @@ GlassPage {
             text: styledBtnCtrl.text
             font: styledBtnCtrl.font
 
-            color: liveLogDialog.theme && liveLogDialog.theme.lightMode && styledBtnCtrl.highlighted ? "white" : liveLogDialog.theme ? liveLogDialog.theme.buttonText : "#ffffff"
+            color: styledBtnCtrl.highlighted ? (liveLogDialog.theme ? liveLogDialog.theme.highlightedText : "white")
+                                            : liveLogDialog.theme ? liveLogDialog.theme.buttonText : "#ffffff"
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
@@ -1929,18 +2133,16 @@ GlassPage {
 
         Rectangle {
             objectName: "ssh-connection-panel"
-            visible: !liveLogDialog.workspaceManaged || liveLogDialog.connectionConfigExpanded
-                || liveLogDialog.currentConnectionError !== "" || liveLogDialog.connectionInProgress
-                || sshTerminal.logging || sshTerminal.logBusy || sshTerminal.logError !== ""
+            visible: !liveLogDialog.workspaceManaged || liveLogDialog.connectionStatusVisible
             Layout.fillWidth: true
-            Layout.preferredHeight: connectionRows.implicitHeight + 20
+            Layout.preferredHeight: visible ? connectionRows.implicitHeight + 20 : 0
             color: cardBg; border.color: cardBorder; radius: 10
             ColumnLayout {
                 id: connectionRows
                 anchors.fill: parent; anchors.margins: 10; spacing: 6
                 RowLayout {
                     objectName: "ssh-config-heading"
-                    visible: liveLogDialog.connectionConfigExpanded
+                    visible: !liveLogDialog.workspaceManaged && liveLogDialog.connectionConfigExpanded
                     Layout.fillWidth: true
                     Label {
                         text: "连接配置"
@@ -1996,24 +2198,6 @@ GlassPage {
                     }
 
                     StyledButton {
-                        objectName: liveLogDialog.workspaceManaged ? "" : "ssh-pause"
-                        implicitHeight: 36
-                        horizontalPadding: 14
-                        padding: 8
-                        font.pixelSize: 13
-                        text: autoFollowEnabled ? "暂停跟随" : "继续跟随"
-                        implicitWidth: 96
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 500
-                        ToolTip.text: autoFollowEnabled ? "只停止自动滚动到底部，后台仍持续接收和更新日志。\n如需停止后台接收，请点击“停止刷屏”。"
-                            : "回到最新日志，恢复自动跟随和新日志规则监测。\n如已停止刷屏，需点击“恢复接收”才能收到新日志。"
-                        Accessible.description: ToolTip.text
-                        onClicked: {
-                            toggleFollowing();
-                        }
-                    }
-
-                    StyledButton {
                         objectName: liveLogDialog.workspaceManaged ? "" : "ssh-stop-reception"
                         implicitHeight: 36
                         horizontalPadding: 14
@@ -2061,11 +2245,13 @@ GlassPage {
                 Label {
                     objectName: "ssh-log-status"
                     visible: sshTerminal.logging || sshTerminal.logBusy || sshTerminal.logError !== ""
+                        || sshTerminal.logWarning !== ""
                     Layout.fillWidth: true
                     textFormat: Text.PlainText
                     text: sshTerminal.logBusy ? "正在处理日志文件…" : sshTerminal.logError !== "" ? "日志保存失败：" + sshTerminal.logError
+                        : sshTerminal.logWarning !== "" ? "● 正在记录：" + sshTerminal.logFilePath + " · " + sshTerminal.logWarning
                         : "● 正在记录：" + sshTerminal.logFilePath
-                    color: sshTerminal.logError !== "" ? errorColor : successColor
+                    color: sshTerminal.logError !== "" ? errorColor : sshTerminal.logWarning !== "" ? warningColor : successColor
                     elide: Text.ElideMiddle
                     font.pixelSize: 12
                     ToolTip.visible: statusLogHover.hovered
@@ -2075,7 +2261,7 @@ GlassPage {
                 Flickable {
                     id: connectionScroll
                     objectName: "ssh-connection-scroll"
-                    visible: liveLogDialog.connectionConfigExpanded
+                    visible: !liveLogDialog.workspaceManaged && liveLogDialog.connectionConfigExpanded
                     Layout.fillWidth: true
                     Layout.preferredHeight: liveLogDialog.workspaceManaged
                         ? Math.min(connectionFields.implicitHeight + (connectionScrollBar.visible ? connectionScrollBar.height : 0), liveLogDialog.height * 0.6)
@@ -2288,7 +2474,7 @@ GlassPage {
                 }
                 }
                 RowLayout {
-                    visible: liveLogDialog.connectionConfigExpanded && liveLogDialog.secureCredentials
+                    visible: !liveLogDialog.workspaceManaged && liveLogDialog.connectionConfigExpanded && liveLogDialog.secureCredentials
                     Layout.fillWidth: true
                     spacing: 8
                     StyledButton {
@@ -2469,10 +2655,18 @@ GlassPage {
                         reuseItems: true
                         cacheBuffer: 80
                         flickableDirection: Flickable.AutoFlickDirection
-                        contentWidth: liveLogDialog.wrapLogLines ? width : Math.max(width,
-                            liveLogDialog.widestLogText + 16, footerItem ? footerItem.naturalTextWidth : 0)
+                        contentWidth: liveLogDialog.logContentWidth
                         spacing: 0
                         bottomMargin: 0
+                        property real previousContentY: 0
+                        onContentYChanged: {
+                            const movedUp = contentY < previousContentY;
+                            previousContentY = contentY;
+                            if (movedUp && !atYEnd && liveLogDialog.autoScroll) liveLogDialog.autoScroll = false;
+                            else if (!movedUp && atYEnd && !liveLogDialog.autoScroll
+                                    && !liveLogDialog.monitorHit && !liveLogDialog.hasTextSelection)
+                                Qt.callLater(liveLogDialog.resumeFollowing);
+                        }
 
                         WheelHandler {
                             target: null
@@ -2486,7 +2680,6 @@ GlassPage {
                                 Qt.callLater(liveLogDialog.applyLogViewport);
                             }
                         }
-
                         delegate: Rectangle {
                             id: lineItem
                             objectName: "ssh-log-line-" + stableId
@@ -2512,8 +2705,10 @@ GlassPage {
                             property int rowIndex: index
                             onStableIdChanged: applyHexSelection()
                             onRowIndexChanged: applyHexSelection()
-                            width: liveLogDialog.wrapLogLines ? logListView.width : logListView.contentWidth
-                            height: Math.max(charMeasurer.implicitHeight, lineText.implicitHeight, selectionLoader.item ? selectionLoader.item.implicitHeight : 0) + 4
+                            onDisplayTextChanged: applyHexSelection()
+                            width: liveLogDialog.wrapLogLines ? logListView.width
+                                : Math.max(logListView.width, lineMetrics.advanceWidth + 16)
+                            height: Math.max(charMeasurer.implicitHeight, lineText.implicitHeight) + 4
                             color: wholeLineColor.a > 0
                                 ? Qt.rgba(wholeLineColor.r, wholeLineColor.g, wholeLineColor.b, 0.25)
                                 : (searchKeyword !== "" && displayText.toLowerCase().indexOf(searchKeyword.toLowerCase()) >= 0) ? terminalMatchBg : "transparent"
@@ -2531,61 +2726,54 @@ GlassPage {
                                 markColor: lineItem.pausedHit ? monitorHitColor : lineItem.ruleColor
                             }
 
-                            Text {
-                                id: lineText
-                                objectName: "ssh-log-text"
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 6
-                                verticalAlignment: Text.AlignVCenter
-                                text: lineItem.displayText
-                                visible: !selectionLoader.active
-                                textFormat: Text.PlainText
-                                wrapMode: liveLogDialog.wrapLogLines ? Text.WrapAnywhere : Text.NoWrap
-                                onContentWidthChanged: function(width) { liveLogDialog.measureLogWidth(width); }
+                            TextMetrics {
+                                id: lineMetrics
                                 font: charMeasurer.font
-                                clip: true
-                                color: terminalText
+                                text: lineItem.displayText
+                                onMetricsChanged: liveLogDialog.measureLogWidth(advanceWidth)
                             }
 
-                            Loader {
-                                id: selectionLoader
-                                anchors.fill: parent
-                                anchors.leftMargin: 10; anchors.rightMargin: 6
-                                active: liveLogDialog.selectionContains(lineItem.stableId)
-                                    || lineItem.stableId === selectedLineId && selectedHexStart >= 0 && selectedHexEnd > selectedHexStart
-                                onLoaded: lineItem.applyHexSelection()
-                                sourceComponent: TextEdit {
-                                    objectName: "ssh-selected-text"
-                                    text: lineItem.displayText
-                                    textFormat: TextEdit.PlainText
-                                    readOnly: true; selectByMouse: false; persistentSelection: true
-                                    verticalAlignment: Text.AlignVCenter
-                                    wrapMode: liveLogDialog.wrapLogLines ? TextEdit.WrapAnywhere : TextEdit.NoWrap
-                                    font: charMeasurer.font
-                                    color: terminalText; selectedTextColor: terminalText; selectionColor: theme ? theme.terminalSelection : "#446688"
-                                }
+                            TextEdit {
+                                id: lineText
+                                objectName: "ssh-log-text"
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 6
+                                verticalAlignment: TextEdit.AlignVCenter
+                                text: lineItem.displayText
+                                textFormat: TextEdit.PlainText
+                                readOnly: true
+                                selectByMouse: false
+                                persistentSelection: true
+                                activeFocusOnPress: false
+                                activeFocusOnTab: false
+                                cursorVisible: false
+                                wrapMode: liveLogDialog.wrapLogLines ? TextEdit.WrapAnywhere : TextEdit.NoWrap
+                                font: charMeasurer.font
+                                color: terminalText
+                                selectedTextColor: terminalText
+                                selectionColor: theme ? theme.terminalSelection : "#446688"
                             }
 
                             function selectionPosition(contentX, contentY) {
-                                if (!selectionLoader.active || !selectionLoader.item) return 0;
-                                const point = logListView.contentItem.mapToItem(selectionLoader.item, contentX, contentY);
-                                return selectionLoader.item.positionAt(point.x, point.y);
+                                const point = logListView.contentItem.mapToItem(lineText, contentX, contentY);
+                                return lineText.positionAt(point.x, point.y);
                             }
                             Connections {
                                 target: liveLogDialog
                                 function onTextSelectionRangeChanged() { lineItem.applyHexSelection(); }
                             }
                             function applyHexSelection() {
-                                if (!sshTerminal || !selectionLoader || !selectionLoader.item || index < 0) return;
-                                if (liveLogDialog.applyTextSelection(selectionLoader.item, stableId)) return;
+                                if (!sshTerminal || index < 0) return;
+                                if (liveLogDialog.applyTextSelection(lineText, stableId)) return;
                                 const offset = sshTerminal.lineSegmentOffset(index);
                                 const start = Math.max(0, selectedHexStart - offset);
-                                const end = Math.min(selectionLoader.item.length, selectedHexEnd - offset);
+                                const end = Math.min(lineText.length, selectedHexEnd - offset);
                                 if (stableId === selectedLineId && selectedHexStart >= 0 && end > start)
-                                    selectionLoader.item.select(start, end);
+                                    lineText.select(start, end);
                                 else
-                                    selectionLoader.item.deselect();
+                                    lineText.deselect();
                             }
 
                             Text {
@@ -2597,19 +2785,15 @@ GlassPage {
                         }
 
                         footer: Item {
-                            width: liveLogDialog.wrapLogLines ? logListView.width : logListView.contentWidth
+                            id: liveFooter
+                            width: liveLogDialog.logContentWidth
                             height: sshTerminal.connected || sshTerminal.liveLine !== ""
-                                ? Math.max(charMeasurer.implicitHeight, liveLineText.implicitHeight,
-                                    liveSelectionLoader.item ? liveSelectionLoader.item.implicitHeight : 0) + 4 : 0
+                                ? Math.max(charMeasurer.implicitHeight, liveLineText.implicitHeight) + 4 : 0
                             property real cursorX: liveCursorMetrics.advanceWidth + sshTerminal.cursorPadding * liveLogDialog.charWidth
                             readonly property real naturalTextWidth: Math.max(liveLineMetrics.advanceWidth, cursorX) + 16
                             readonly property rect cursorRect: {
-                                const text = sshTerminal.liveLine, fontSize = liveLogDialog.terminalFontSize;
-                                const editorWidth = liveSelectionLoader.width;
-                                const editorText = liveSelectionLoader.item ? liveSelectionLoader.item.text : "";
-                                const editorHeight = liveSelectionLoader.item ? liveSelectionLoader.item.implicitHeight : 0;
-                                return liveLogDialog.wrapLogLines && liveSelectionLoader.item
-                                    ? liveSelectionLoader.item.positionToRectangle(Math.max(0, Math.min(sshTerminal.cursorPosition, liveSelectionLoader.item.length)))
+                                return liveLogDialog.wrapLogLines
+                                    ? liveLineText.positionToRectangle(Math.max(0, Math.min(sshTerminal.cursorPosition, liveLineText.length)))
                                     : Qt.rect(liveCursorMetrics.advanceWidth, 0, 2, charMeasurer.implicitHeight);
                             }
                             property real caretX: 10 + cursorRect.x + sshTerminal.cursorPadding * liveLogDialog.charWidth
@@ -2660,41 +2844,41 @@ GlassPage {
                                 text: sshTerminal.liveLine.slice(0, sshTerminal.cursorPosition)
                             }
                             function selectionPosition(contentX, contentY) {
-                                if (!liveSelectionLoader.active || !liveSelectionLoader.item) return 0;
-                                const point = logListView.contentItem.mapToItem(liveSelectionLoader.item, contentX, contentY);
-                                return liveSelectionLoader.item.positionAt(point.x, point.y);
+                                const point = logListView.contentItem.mapToItem(liveLineText, contentX, contentY);
+                                return liveLineText.positionAt(point.x, point.y);
+                            }
+                            function applyTextSelection() {
+                                if (!liveLogDialog.applyTextSelection(liveLineText, liveLogDialog.liveSelectionId))
+                                    liveLineText.deselect();
                             }
                             Connections {
                                 target: liveLogDialog
-                                function onTextSelectionRangeChanged() {
-                                    if (liveSelectionLoader.item && !liveLogDialog.applyTextSelection(liveSelectionLoader.item, liveLogDialog.liveSelectionId))
-                                        liveSelectionLoader.item.deselect();
-                                }
+                                function onTextSelectionRangeChanged() { liveFooter.applyTextSelection(); }
                             }
-                            Loader {
-                                id: liveSelectionLoader
-                                x: 10; width: parent.width - 16; height: parent.height
-                                active: liveLogDialog.wrapLogLines || liveLogDialog.selectionContains(liveLogDialog.liveSelectionId)
-                                onLoaded: liveLogDialog.applyTextSelection(item, liveLogDialog.liveSelectionId)
-                                sourceComponent: TextEdit {
-                                    objectName: "ssh-selected-live-text"
-                                    text: sshTerminal.liveLine; textFormat: TextEdit.PlainText
-                                    readOnly: true; selectByMouse: false; persistentSelection: true
-                                    font: charMeasurer.font; color: terminalText
-                                    selectedTextColor: terminalText; selectionColor: theme ? theme.terminalSelection : "#446688"
-                                    wrapMode: liveLogDialog.wrapLogLines ? TextEdit.WrapAnywhere : TextEdit.NoWrap
-                                }
-                            }
-                            Text {
+                            TextEdit {
                                 id: liveLineText
                                 objectName: "ssh-terminal-live-line"
-                                visible: !liveSelectionLoader.active
                                 x: 10; width: parent.width - 16
-                                wrapMode: liveLogDialog.wrapLogLines ? Text.WrapAnywhere : Text.NoWrap
                                 text: sshTerminal.liveLine
-                                textFormat: Text.PlainText
+                                textFormat: TextEdit.PlainText
+                                readOnly: true
+                                selectByMouse: false
+                                persistentSelection: true
+                                activeFocusOnPress: false
+                                activeFocusOnTab: false
+                                cursorVisible: false
+                                wrapMode: liveLogDialog.wrapLogLines ? TextEdit.WrapAnywhere : TextEdit.NoWrap
                                 font: charMeasurer.font
                                 color: terminalText
+                                selectedTextColor: terminalText
+                                selectionColor: theme ? theme.terminalSelection : "#446688"
+                            }
+                            Connections {
+                                target: sshTerminal
+                                function onLiveLineChanged() {
+                                    if (liveLogDialog.selectionContains(liveLogDialog.liveSelectionId))
+                                        liveFooter.applyTextSelection();
+                                }
                             }
                             Rectangle {
                                 objectName: "ssh-terminal-caret"
@@ -2716,7 +2900,10 @@ GlassPage {
                             id: logVerticalBar
                             objectName: "ssh-log-vertical-scroll"
                             policy: ScrollBar.AsNeeded
-                            onPressedChanged: if (pressed && !liveLogDialog.autoFollowEnabled) liveLogDialog.autoScroll = false
+                            onPressedChanged: {
+                                if (pressed) liveLogDialog.autoScroll = false
+                                else Qt.callLater(liveLogDialog.finishAutoFollowScroll)
+                            }
                         }
                         ScrollBar.horizontal: ScrollBar {
                             id: logHorizontalBar
@@ -2725,7 +2912,6 @@ GlassPage {
                             anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
                             visible: !liveLogDialog.wrapLogLines && logListView.contentWidth > logListView.width
                             policy: visible ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                            onPressedChanged: if (pressed && !liveLogDialog.autoFollowEnabled) liveLogDialog.autoScroll = false
                         }
                     }
 
@@ -2737,9 +2923,11 @@ GlassPage {
                         preventStealing: true
                         property bool hexDoubleClick: false
                         onWheel: function(wheel) {
-                            if (!liveLogDialog.autoFollowEnabled && wheel.modifiers === Qt.NoModifier
-                                    && (wheel.pixelDelta.y || wheel.angleDelta.y) > 0)
-                                liveLogDialog.autoScroll = false;
+                            if (wheel.modifiers === Qt.NoModifier) {
+                                const delta = wheel.pixelDelta.y || wheel.angleDelta.y;
+                                if (delta > 0) liveLogDialog.autoScroll = false;
+                                else if (delta < 0) Qt.callLater(liveLogDialog.finishAutoFollowScroll);
+                            }
                             wheel.accepted = false;
                         }
                         onPressed: function(mouse) {
@@ -3430,7 +3618,9 @@ GlassPage {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 Layout.alignment: Qt.AlignVCenter
-                text: sshTerminal.connected ? "点击终端直接输入，按键发送到远端  ·  Ctrl+Shift+F 查找  ·  Ctrl+Shift+C 复制行  ·  Ctrl+Shift+A 复制全部" : "尚未连接  —  填写连接参数后点击「连接」"
+                text: sshTerminal.connected ? "点击终端直接输入，按键发送到远端  ·  Ctrl+Shift+F 查找  ·  Ctrl+Shift+C 复制行  ·  Ctrl+Shift+A 复制全部"
+                    : liveLogDialog.workspaceManaged ? "尚未连接  —  右键标签，选择「连接参数…」"
+                    : "尚未连接  —  填写连接参数后点击「连接」"
                 color: theme ? theme.subText : "#888"
                 font.pixelSize: 11
                 elide: Text.ElideRight
@@ -3558,5 +3748,11 @@ GlassPage {
                 }
             }
         }
+    }
+
+    Timer {
+        id: followCursorTimer
+        interval: 600
+        onRunningChanged: liveLogDialog.followingCursor = running
     }
 }

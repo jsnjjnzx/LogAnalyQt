@@ -1,5 +1,138 @@
 # 测试结果
 
+## 2026-11-05 v5.4.0 发布验收（T79 / RELEASE-22、23）
+
+- `cmake --build --preset macos-debug -j4`：完成 5.4.0 全量编译与 QML 资源构建。
+- `ctest --test-dir build/macos-debug --output-on-failure --no-tests=error -E '^(prot698_qml_tests|stage10_qml_tests|ui_.*_runtime|macos_window_activation)$'`：27/27 通过，36.80 秒；包括断线续传、HTTP 416 完整重下、枚举边界、SSH 分卷与安全、MQTT、原生 macOS 和更新器替换。
+- `scripts/ci/check_build.py` 确认版本 5.4.0；发布工具 Python 测试 38/38 通过。沙盒初跑有 3 个回环端口权限错误，授权后重跑通过。修改的 Actions YAML 可解析，`git diff --check` 通过。
+- 按用户确认，本地和远端不运行 QML 套件、成品界面自动化或公开更新的工作区界面场景。待核对同提交双平台产物、正式附件和公开更新；Windows 实机、真实 SSH 设备和 Apple 公证不在本次验收范围。
+
+## 2026-11-05 应用层消息枚举含义（T78 / APPMSG-01）
+
+- 新增 `tests/app_msg_loader_tests.cpp`：加载实际 `protocol_xml/app_msg_protocol.xml`，断言 `0x0002/0x0014` 的运营商（0=中国移动、4=未知）、锁定网络（4=锁定5G网络）、鉴权方式（255=自适应）以及原有子节点写法 `0x0011` 的运营商（3=无线专网）。
+- 同一用例按 `0x0014` 报文构造 21 字节载荷并调用 `AppMsgParser::parseToFields`，确认说明列输出 `0 (中国移动)`、`4 (锁定5G网络)`，覆盖从 XML 加载到界面字段数据的完整路径。
+- `cmake --build --preset macos-debug --target app_msg_loader_tests -j2`：通过；仅有既有 `QDateTime::fromSecsSinceEpoch` 弃用告警。
+- `ctest --test-dir build/macos-debug -R '^app_msg_loader_tests$' --output-on-failure`：1/1 通过（0.39 秒）。
+- 未运行 QML 自动化测试；未更新固定自测应用（工作树含其他未验收改动），未提交或发布。
+
+## 2026-11-05 实时监控输出单控件选区（T77 / SSHUI-14）
+
+- 新增 `tests/qml-stage10/tst_ssh_workspace.qml::test_selectionKeepsTheSameVisibleEditorForHistoryAndLiveRows`：历史行和实时尾行在选中、取消选中后必须保持同一个 `TextEdit` 实例、保持可见，文本不丢失，选区按范围出现和清空；同时确认旧的临时选区控件不再创建。
+- 原监控和远程安全用例已从 `ssh-selected-text`、`ssh-selected-live-text` 迁移到稳定的 `ssh-log-text`、`ssh-terminal-live-line`。按项目约定未运行任何 QML 自动化测试，以上新增和迁移用例未在本轮执行。
+- `qmllint` 对 `LiveLogDialog.qml` 和两份改动测试完成语法检查，命令退出 0；输出仍包含项目原有的模块路径/未限定访问告警，未发现本次改动引入的语法错误。
+- `cmake --build --preset macos-debug --target appLogAnalyQt ssh_stream_tests -j2`：通过，仅既有 OpenSSL 重复链接和第三方依赖告警。
+- 授权环境执行 `ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure`：2/2 通过，`ui_migration_runtime` 44.96 秒、`ssh_stream_tests` 1.11 秒（总 46.08 秒）。整应用原生回归覆盖真实窗口中的历史行双击 HEX 选区、右键解析、拖选复制、实时尾行、规则高亮、监控窗口分离/收回和页面切换。
+- 调试过程如实记录：首版单控件实现使编辑器 `anchors.fill` 父项并与父行 `contentHeight` 互相读取，原生回归多次报 `RangeError: Maximum call stack size exceeded`；改为独立 `TextMetrics` 测宽、编辑器自然 `implicitHeight` 定高并将选区刷新移出编辑器内部文本信号后，最终两次完整原生回归通过。
+- 未验证：真实外部 SSH 设备上的长时间持续输出与目视录像、Windows、其他显示缩放/字体组合；未运行 QML 自动化，未更新固定自测应用，未提交或发布。
+
+## 2026-11-05 实时监控日志文件夹与分卷（T75 / SSHLOG-07～11）
+
+- `cmake --build --preset macos-debug --target ssh_stream_tests -j2 && build/macos-debug/ssh_stream_tests`：通过，`PASS: 516 SSH stream/model/session-log assertions`。新增覆盖模板展开与非法字符清理、序号命名、同名不覆盖、共享目录双会话、大小分卷、时长分卷、大小+时长同时启用、未完成行尾部迁移、下一卷失败保留当前文件，以及 `SshTerminal` 文件夹异步启动/停止。
+- `ctest --test-dir build/macos-debug -R '^(ssh_stream_tests|ssh_security_tests)$' --output-on-failure`：2/2 通过（安全 0.25 秒、流/日志 1.11 秒，总计 1.37 秒）。
+- `cmake --build --preset macos-debug -j2`：完整 Debug 构建成功；仅有既有 OpenSSL 重复链接和第三方依赖告警。
+- 成品 `build/macos-debug/t75-package/通联工坊.app`：重新部署 Qt 依赖、归一化库 ID、ad-hoc 签名；`check_build.py --macos-bundle` 通过，126 个 Mach-O 均为 arm64 且只依赖系统/包内库，版本 5.3.1。人工启动成品并检查“日志记录设置”：单文件/文件夹切换、文件夹路径、模板预览、按大小/按时长控件和布局正常，切换文件夹模式后取消，未保存用户配置。
+- 固定应用 `release_package/通联工坊.app` 已更新，`rsync -ani --delete` 无差异；主程序 SHA256 为 `8f6f9dd7411687c70645cbc5645210cd8462d932b52d4c9f80590f1593252865`，版本 5.3.1，deep strict 签名通过。
+- 按用户要求未运行任何 QML 自动化测试；QML 只通过完整构建、资源编译和人工界面检查确认，不能据此声明所有交互路径已自动覆盖。
+- 未验证：真实 SSH 设备上的长时间分卷、Windows、网络盘/移动盘断连后的分卷恢复及人工连续视觉验收；未提交或发布。
+
+## 2026-11-05 Windows 无边框窗口缩放与还原（T74 / WINFRAME-02）
+
+- 修复：主窗口补齐顶部和四角缩放命中，顶部避开窗口按钮，最大化/全屏禁用缩放；最大化/还原状态切换延后一帧；Windows 关闭整窗 QML 圆角遮罩，改用 DWM 原生圆角；普通窗口几何只在 `Window.Windowed` 时保存。
+- `WindowControls::test_maximizeRestoreAndHitAreas`、`WindowControls::test_dragAndDoubleClick`：通过（`/tmp/logaq-t74-titlebar.log`、`/tmp/logaq-t74-doubleclick.log`）。
+- `cmake --build --preset macos-debug -j2`：完成，仅既有 OpenSSL 重复链接告警（`/tmp/logaq-t74-build2.log`）。
+- 成品 `build/macos-debug/t74-package/通联工坊.app` 运行 `tests/test_ui_migration_runtime.py` 的 Cocoa 界面自动化：16 个页面切换、三档窗口伸缩，以及新增的“最大化→还原且尺寸回到原值”检查全部通过（`/tmp/logaq-t74-cocoa.log`）。
+- `tests/MigrationUiChecks.h` 增加 Windows 专用断言：顶部/四边/四角缩放命中区存在且启用；Windows CI 会执行该分支。
+- `python3 scripts/ci/check_build.py --macos-bundle`：126 个 Mach-O 均为 arm64 且只依赖系统或包内库，版本 5.3.1（`/tmp/logaq-t74-bundle-check.log`）；deep strict 签名通过。固定应用已同步，1871 个普通文件与 177 个符号链接一致，主程序 SHA256 为 `593bf18649d7769122a45a01fd9cda526b79eb5b285fab592b08377316239caf`。
+- 未验证：当前环境为 macOS，无法实际点击 Windows 标题栏“还原”、四边四角缩放或观察 DWM 圆角；Windows 原生断言和卡死修复需由 Windows 实机/CI 确认。未连接真实 SSH 设备，未提交或发布。
+
+## 2026-11-05 Windows 任务栏最小化（T73 / WINFRAME-01）
+
+- 根因排查：Windows 主窗口的 `Qt.Window | Qt.FramelessWindowHint` 覆盖默认提示，原生窗口未保留 `WS_MINIMIZEBOX`；已在 `qml/Next/Main.qml`、`qml/Next/ProtocolSyncDialog.qml` 的无边框窗口及 `qml/Next/SshMonitorPage.qml` 的分离监控窗口补回最小化、最大化、关闭和系统菜单提示。
+- `cmake --build --preset macos-debug -j2`：完成，仅既有 OpenSSL 重复链接告警（`/tmp/logaq-t73-build.log`、`/tmp/logaq-t73-build3.log`）；QML 加载正常。
+- 成品 `build/macos-debug/t73-package/通联工坊.app` 运行 `tests/test_ui_migration_runtime.py` 的 Cocoa 界面自动化：16 个页面自动切换及 1920×1080、1440×860、1200×740 三档窗口伸缩全部通过（`/tmp/logaq-t73-cocoa.log`）；该轮包含主窗口及两个无边框弹窗的修改。
+- 补入分离监控窗口提示后，`SshMonitorWorkspace::test_detachAndNativeCloseKeepTheSameSessionAndViewport` 通过（`/tmp/logaq-t73-detach.log`）。offscreen 全量复跑在“隔离 Enter 连接 peer”处因本机端口环境失败，未计为通过。
+- `tests/MigrationUiChecks.h` 新增 Windows 专用断言：读取主窗口原生 `GWL_STYLE`，必须包含 `WS_MINIMIZEBOX`；Windows CI 的 `tests/test_ui_migration_runtime.py` 会执行该分支。
+- 最终成品重新部署 Qt 依赖、归一化库 ID 并签名后，`python3 scripts/ci/check_build.py --macos-bundle`：126 个 Mach-O 均为 arm64 且只依赖系统或包内库，版本 5.3.1（`/tmp/logaq-t73-bundle-check3.log`）；deep strict 签名通过。固定应用已同步，1871 个普通文件与 177 个符号链接一致，主程序 SHA256 为 `0ecb8486264b62905e2ba0b22ab25f8f96deb9de9f9f5f050b60ecdfad69e667`。
+- 未验证：当前环境为 macOS，无法实际点击 Windows 任务栏；Windows 原生样式断言尚未在本地执行，需由 Windows CI 或实机确认第二次点击最小化及恢复。未连接真实 SSH 设备，未提交或发布。
+
+## 2026-11-05 实时监控跟随横向位置稳定（T72 / SSHFOLLOW-06）
+
+- 新增 `tests/qml-stage10/tst_ssh_workspace.qml::test_followingLongLinesKeepsHorizontalPosition`：修复前复现跟随状态新输出把 `contentX` 从 180 拉回 0；修复后连续三批长行保持横向位置，本地输入长命令仍会横向跟随光标，停止输入后被动输出不再移动横向视口。
+- `python3 tests/stage10_qml_tests.py`：160 passed / 0 failed / 0 skipped（`/tmp/logaq-t72-qml.log`）。按用户要求，后续修复默认改用成品界面自动化，不再默认运行整套 QML。
+- `cmake --build --preset macos-debug -j2`：完成，仅既有 OpenSSL 重复链接告警（`/tmp/logaq-t72-build.log`）。
+- 成品 `build/macos-debug/t72-package/通联工坊.app` 运行 `tests/test_ui_migration_runtime.py` 的 Cocoa 界面自动化：16 个页面自动切换及 1920×1080、1440×860、1200×740 三档窗口伸缩全部通过（`/tmp/logaq-t72-cocoa.log`）。
+- `python3 scripts/ci/check_build.py --macos-bundle`：126 个 Mach-O 均为 arm64 且只依赖系统或包内库，版本 5.3.1（`/tmp/logaq-t72-bundle-check.log`）；deep strict 签名通过。固定应用 `release_package/通联工坊.app` 已同步，1871 个普通文件与 177 个符号链接一致，主程序 SHA256 为 `a60ef4ff0e720ea966b9318f26368a0920c7bff11fdb4c246d6cab1b5a241d95`。
+- 未验证：真实外部 SSH 设备上的持续长行输出、Windows、物理触控板连续拖动及人工视觉录像；界面自动化覆盖页面切换与窗口尺寸，不等同于对本次横向跟随手感的人工验收。未提交或发布。
+
+## 2026-11-04 实时监控全自动跟随（T71 / SSHFOLLOW-05）
+
+- `python3 tests/stage10_qml_tests.py`：159 passed / 0 failed / 0 skipped。`test_manualReviewPausesAndResumesFollowing` 覆盖滚轮和竖向滚动条上翻暂停、新输出保持视口、到达底部自动恢复、回车恢复；`test_connectionEditorHasNoFollowSwitchAndIgnoresLegacySetting` 覆盖菜单/弹框无开关、旧 `autoFollowEnabled=false` 被忽略、保存后会话和连接均不再写该字段、重启默认跟随。原规则命中、选区、长行视口、分组/分离窗口及停止接收用例保持通过。
+- `cmake --build --preset macos-debug -j2`：完整 Debug 构建成功，仅既有 OpenSSL 重复链接告警。`ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure`：2/2 通过（40.66 秒、1.18 秒）。
+- 独立成品 `build/macos-debug/t71-package/通联工坊.app`：复用 T70 应用包更新主程序/助手/Info，运行 `macdeployqt`、库 ID 归一化及 ad-hoc 签名；126 个随包 Mach-O 均为 arm64 且只依赖系统或包内库，`codesign --verify --deep --strict` 与 `check_build.py --macos-bundle` 通过。
+- 成品 Cocoa 回归：清除开发库/QML 环境后运行 `tests/test_ui_migration_runtime.py`，外观、配置迁移、监控规则/会话重启、MQTT、协议解析及工作区恢复全部通过（`/tmp/loganalyqt-t71-cocoa.log`）。
+- 固定应用 `release_package/通联工坊.app` 已同步；`rsync -ani --delete` 无差异，1871 个普通文件与 177 个符号链接一致，版本 5.3.1、deep strict 签名通过。成品与固定应用主程序 SHA256 均为 `7c3d07c42977809cffeeb4f679e10f258f8248f99837894ae79c4d725bcebe54`。
+- 通过固定路径实际启动应用，窗口标题为“通联工坊 v5.3.1”；进入实时监控并打开现有标签右键菜单，实际菜单从“停止刷屏”开始，不再出现“自动跟随”项。
+- 未验证：Windows、真实外部 SSH 设备、物理滚轮/触控板的连续手势及人工视觉录像；自动化覆盖了真实 QML 滚动状态和完整成品启动，不将这些结果扩展为其他显示设备或网络环境已验收。未修改真实用户连接、日志或凭据，未提交或发布。
+
+## 2026-11-04 暂停跟随长行视口闪动（T70 / SSHFOLLOW-04）
+
+- 修复前专项 `python3 tests/stage10_qml_tests.py --filter SshMonitorWorkspace::test_pausedLongLinesKeepViewportAndWidthStable` 失败（`/tmp/loganalyqt-t70-before.log`）：暂停后长行进入视口时 Qt 报 `QML ListView: Binding loop detected for property "contentWidth"`。该用例位于 `tests/qml-stage10/tst_ssh_workspace.qml`，同时检查连续批次中的锚点、行内偏移、内容宽度和横向滚动条。
+- 修复后同一专项通过（`/tmp/loganalyqt-t70-after.log`）。完整 `python3 tests/stage10_qml_tests.py`：161 passed / 0 failed / 0 skipped（`/tmp/loganalyqt-t70-qml.log`，49.15 秒），原有暂停视口、滚动、缩放、换行、选区、规则、窗口和连接参数用例保持通过。
+- `cmake --build --preset macos-debug -j2`：完整 Debug 构建成功（`/tmp/loganalyqt-t70-build.log`），仅既有 OpenSSL 重复链接告警。`ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure` 在授权沙箱外重跑：2/2 通过（40.38 秒、0.98 秒，`/tmp/loganalyqt-t70-native.log`）。
+- 独立成品 `build/macos-debug/t70-package/通联工坊.app`：重新运行 `macdeployqt`、库 ID 归一化和 ad-hoc 签名；126 个随包 Mach-O 均为 arm64 且只依赖系统或包内库，`codesign --verify --deep --strict`、`check_build.py --macos-bundle` 通过。清除开发库/QML 环境后，以 Cocoa 运行 `tests/test_ui_migration_runtime.py`，配置迁移、监控规则/会话重启、MQTT、协议解析及工作区恢复全部通过（`/tmp/loganalyqt-t70-cocoa.log`）。
+- 固定应用 `release_package/通联工坊.app` 已同步该成品；`rsync -ani --delete` 无差异，1871 个普通文件与 177 个符号链接一致，版本 5.3.1、deep strict 签名通过。成品与固定应用主程序 SHA256 均为 `ee4472abd60b28e2881c1f3e6186771c0ead4a695ff52e83ebfd1d9896e6001c`。
+- 未验证：真实外部 SSH 设备、Windows、其他显示器/触控板及人工连续录像；自动回归证明已复现的长行绑定循环消失，不把所有显示驱动的闪烁原因都声明为已覆盖。未修改用户真实连接、规则、日志或凭据，未提交或发布。
+
+## 2026-11-04 实时监控长行跨行光标回显（T69 / SSHCURSOR-01）
+
+- `cmake --build --preset macos-debug --target ssh_stream_tests -j2 && build/macos-debug/ssh_stream_tests`：通过，`PASS: 472 SSH stream/model/session-log assertions`。新增用例覆盖 80 列长行左移跨行后的原始行完整性和光标坐标，并验证继续输入只覆盖一个字符。
+- 本机真实 80 列 bash PTY 抓取序列复核：180 字符输入左移 45 次后，原行仍为完整 180 字符（加提示符 182 字符）；继续输入一个字符后逻辑行为 183 字符、光标位于插入点后，没有补充空格或截断。该验证只使用本机临时 bash PTY，不连接真实设备或公司服务器。
+- `cmake --build --preset macos-debug -j2`：完整 Debug 构建成功，仅既有 OpenSSL 重复链接告警。`ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure` 在授权沙箱外重跑：2/2 通过（40.80 秒、1.01 秒）。
+- 独立成品 `build/macos-debug/t67-package/通联工坊.app` 重新部署并签名，126 个 Mach-O 架构/依赖及 deep strict 签名通过；成品 Cocoa 完整回归通过。`release_package/通联工坊.app` 已同步，主程序 SHA256 与成品一致。
+- 未验证 Windows、真实外部 SSH 设备、不同 shell 的终端控制序列及完整屏幕 TUI；超过 8192 字符的单行历史段编辑仍不在当前行模型支持范围。
+
+## 2026-11-04 连接参数弹框编码下拉对齐（T68 / SSHCONN-04）
+
+- `python3 tests/stage10_qml_tests.py --filter SshMonitorWorkspace::test_connectionEditorKeepsLiveStateAndDoesNotPutParametersAboveTerminal`：通过；断言编码下拉的外层/内容项组合内边距与同排文本字段一致。
+- `python3 tests/stage10_qml_tests.py`：160 passed / 0 failed / 0 skipped；完整监控 QML 回归无新增失败。
+- `cmake --build --preset macos-debug -j2`：成功，仅既有 OpenSSL 重复链接告警。`ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure` 在授权沙箱外重跑：2/2 通过（42.05 秒、0.99 秒）。
+- 独立成品 `build/macos-debug/t67-package/通联工坊.app` 重新部署并签名，126 个 Mach-O 架构/依赖及 deep strict 签名通过；成品 Cocoa 完整回归通过。`release_package/通联工坊.app` 已同步，主程序 SHA256 与成品一致。
+- 未改全局 `GlassComboBox`、网络、凭据、持久化或其他页面；未做 Windows 和真实设备验证。
+
+## 2026-11-04 实时监控连接参数弹框（T67 / SSHCONN-01～03）
+
+- `python3 tests/stage10_qml_tests.py`：160 passed / 0 failed / 0 skipped，覆盖标签右键“连接参数…”、已保存连接右键编辑、工作区上方不显示参数表单、连接中身份字段锁定、保存失败回滚、自动跟随快速开关同步已保存连接、重启后 `autoFollowEnabled=false` 从会话和连接两处恢复，以及原跟随/分组/窗口/规则/日志/终端用例。
+- `cmake --build --preset macos-debug -j2`：完整 Debug 构建成功，仅既有 OpenSSL 重复链接告警。最终 `ctest --test-dir build/macos-debug -R '^(ui_migration_runtime|ssh_stream_tests)$' --output-on-failure` 在授权沙箱外重跑：2/2 通过（41.08 秒、1.07 秒），使用本机临时回环端口与隔离数据。
+- 独立成品 `build/macos-debug/t67-package/通联工坊.app`：以固定 5.3.0 应用包为基线替换当前 5.3.1 主程序/Info/Helpers，运行 `macdeployqt`、库 ID 归一化和 ad-hoc 签名；126 个 Mach-O 均为 arm64 且仅依赖系统或包内库，`codesign --verify --deep --strict` 与 `check_build.py --macos-bundle` 通过。
+- 成品 Cocoa 回归：清除开发库/QML 环境后，以 `QT_QPA_PLATFORM=cocoa` 运行 `tests/test_ui_migration_runtime.py build/macos-debug/t67-package/通联工坊.app/Contents/MacOS/appLogAnalyQt`，外观、配置迁移、监控规则/会话重启、MQTT、协议解析及工作区恢复全部通过。
+- 固定应用：`release_package/通联工坊.app` 已与该成品逐文件核对（1871 个普通文件、177 个符号链接，`rsync -ani --delete` 无差异），版本 5.3.1、deep strict 签名通过。桌面验证工具连接到了另一处同 bundle ID 的既有实例，因此未将旧窗口当作新包的视觉验收；固定路径进程按精确 PID 正常退出、完成替换，新包已通过上述隔离直接运行验证。
+- 未验证：真实外部 SSH 设备交互、Windows、Apple 公证及新弹框的人工视觉走查；当前同 bundle ID 实例阻止了固定路径窗口的独立人工检查。未修改用户真实连接、规则、日志或凭据，未生成压缩包，未提交或发布。
+
+## 2026-11-04 升级下载切页与断点续传（T66 / UPDATE-01～03）
+
+- `cmake --build --preset macos-debug --target update_checker_tests -j2 && build/macos-debug/update_checker_tests`：通过。新增覆盖持久化部分下载在重启后被识别、`Range: bytes=9-`只请求缺失后缀、中断后自动重试续传、续传文件字节无重复、SHA256仍通过；原元数据、平台选择、降级、防篡改和取消用例保留通过。
+- `cmake --build --preset macos-debug -j2`：完整Debug构建成功，仅既有OpenSSL重复链接与MUI弃用告警。`ctest --test-dir build/macos-debug -R '^(update_checker_tests|ui_migration_runtime)$' --output-on-failure`：2/2通过（1.26秒、39.61秒）。
+- 真实公开更新：`tests/test_github_update.py build/.../appLogAnalyQt v5.3.1`通过。下载开始150ms后调用`navigate(0)`切回主页面，界面已隐藏但下载继续，随后SHA256校验、替换、重启和便携数据保留全部通过。
+- 未独立验证：Windows打包应用的实际Range代理/CDN行为、下载过程中强制杀进程后的下一启动续传；这些路径由跨平台URL/HTTP实现及独立`UpdateChecker`重启用例覆盖，未声明为Windows实机验收。未修改版本号、真实用户配置或发布。
+
+## 2026-11-05 中间调外观视觉稿（T76 / APPEARANCE-06）
+
+- 范围仅设计预览 HTML/CSS 与浏览器导出的 PNG；未修改产品 QML/C++、未编译、未运行应用回归、未更新固定自测应用。
+- Microsoft Edge 无头模式实际渲染 `workspace.html`、`settings.html`，导出均为 1600×1000 PNG；目视检查导航、工具栏、日志行、解析表格、三张外观卡片和选中标记，无重叠或裁切。首轮发现 SVG 图标被默认填黑、日志区因 `white-space: pre` 多出空行，修正后重新渲染通过。
+- 静态对比度：正文/工作背景 7.34:1、正文/内容面 6.30:1、次要文字/内容面 4.55:1、强调蓝/工作背景 5.08:1、日志正文/阅读区 7.42:1。
+- 未验证：Qt 实际渲染、原生 AppKit 玻璃、减少透明度、主题持久化、独立窗口、Windows 和成品应用。浏览器预览中的玻璃/阴影为 CSS 模拟。
+- Monokai 中灰变体：同样导出 1600×1000 主工作区和外观选择 PNG，目视检查暖炭背景、青色操作、粉色选中线、黄色命中文字和绿色结果状态。日志正文/阅读区 12.18:1、正文/工作背景 8.99:1、次要文字/内容面 5.11:1；粉色小字对比度不足，已只保留粉色作选中线/底色，标签小字改用较亮粉色 `#ffa1bb`。
+
+### T76 实施验收
+
+- 完整配置与构建：`cmake --preset macos-debug -DLOGANALYQT_BUILD_PROTOCOL_TESTS=ON` 与 `cmake --build --preset macos-debug -j2` 成功，仅出现项目既有 OpenSSL 重复链接和第三方弃用告警。首次配置因沙箱无法访问 GitHub 获取 cJSON/mosquitto 失败，授权网络后重试成功；这不是主题运行依赖。
+- AppKit 材质：`ctest --test-dir build/macos-debug -R '^mac_backdrop_tests$' --output-on-failure` 1/1 通过，覆盖浅色 Aqua、Monokai 深色原生窗口且实色表面、reduce transparency、原生标题栏和全屏/最大化边界。
+- 启动恢复：隔离配置分别写入 `light`、`monokai`、`dark` 后运行 `--ui-smoke --expect-color-mode`，三种模式均退出 0；Monokai 读取后保持存储值。
+- 实际 Cocoa：隔离数据目录启动并截图，设置页三卡、Monokai 选中态、主工作区日志/解析表、青色主按钮和深色标题栏显示正常；最终实际截图保存在 `docs/design/neutral-mid-theme-20261105/implemented-settings.png`，设计稿另存为 `monokai-settings.png`、`monokai-main.png`。
+- 独立成品：`macdeployqt` 部署、库 ID 归一化、ad-hoc deep strict 签名及 `check_build.py --macos-bundle` 通过（126 个 Mach-O，arm64，仅系统/包内依赖）。首次在打包后直接换入更新主程序时，依赖检查发现 `QtXml` 仍指向 Homebrew；重新执行 `macdeployqt`、归一化 11 个库 ID 并重签名后修正。最终从 `release_package/通联工坊.app` 以 Cocoa 启动并截图设置页通过；自测包版本 5.3.1，大小约 152 MB。
+- 合并复核：与主工作区未提交日志改动做三方合并，Monokai 任务改为 T76；合并后完整 Debug 构建成功，`ctest -R '^(mac_backdrop_tests|ssh_stream_tests)$'` 2/2 通过，真实 Cocoa 设置页启动正常。合并版本已更新 `release_package/通联工坊.app`，签名、126 个随包 Mach-O 和主程序 SHA256 `b2c1f83070b10ede08707f30685f5dde21d3ee8fdf65f435740fd6c4c957013d` 核对通过。
+- 未执行：按项目约定不运行 QML 自动化测试；未手工点击三张卡片验证保存失败/成功、未验证 Windows、真实 SSH 设备、Apple 公证或所有辅助功能组合。CI 中的更新后 QML 用例仍需运行。
+
 ## 2026-11-04 v5.3.1 发布准备（T65 / RELEASE-20、21）
 
 - 版本与范围：CMake/README/CHANGELOG 更新为 5.3.1，发布内容限定 T63/T64 及相关正式测试和流程文档；不纳入个人配置、构建缓存或固定应用。

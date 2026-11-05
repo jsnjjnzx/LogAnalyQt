@@ -87,7 +87,7 @@ GlassPage {
             text: control.text
             font: control.font
 
-            color: control.highlighted ? "white" : (theme ? theme.buttonText : "#333333")
+            color: control.highlighted ? (theme ? theme.highlightedText : "white") : (theme ? theme.buttonText : "#333333")
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
