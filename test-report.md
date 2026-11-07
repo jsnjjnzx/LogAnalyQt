@@ -1,11 +1,13 @@
 # 测试结果
 
-## 2026-11-07 v5.5.0 发布前验证（T90 / RELEASE-26、27）
+## 2026-11-07 v5.5.0 发布验收（T90 / RELEASE-26、27）
 
 - v5.5.0 版本检查、macOS Debug 完整构建、原生 CTest 28/28 和发布工具 38/38 通过，见 `build/macos-debug/t90-build.log`、`t90-ctest.log` 和 `t90-release-tools.log`。按 AGENTS.md 排除 QML 和成品界面自动化。
 - SFTP、FTP MLSD、FTP 传统 LIST 回环各 77 项通过，覆盖被服务器从列表隐藏的同名点文件不会被上传或改名覆盖，新点文件仍可命名。证据：`build/macos-debug/t90-transfer-loopback.log`。
 - 固定 macOS 自测包已更新 v5.5.0，126 个 arm64 Mach-O、依赖、deep strict 签名与 Cocoa 隔离启动通过。主程序 SHA-256 为 `ba2199b9872cc54854839d30aa6991c51d653224266cde48a96d9c5eccedf914`。
-- 远端双平台构建、公开发布及公开更新验收将在同一提交推送后执行。未进行真实远端设备、Windows 实机和 Apple 公证验收。
+- 发行提交 `b9b6ce85a01aae391b85fa68f485d9fa1a1535a8` 的 [双平台构建 42369127466](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/42369127466) 成功。Windows x64 用时 10m04s，macOS arm64 用时 14m19s；两端编译、原生测试、包检查和独立成品 HTTPS 探测通过。校验两个产物来自同一个 main 提交后推送版本标签。
+- [v5.5.0](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.5.0) 于北京时间 19:55:35 公开。GitHub API 确认为最新正式版，七个附件齐全，匿名下载的 `update.json` 摘要为 `55efd19d3f2aba25d94fa0421f962bb231b55f73ab19b8f013aaf7c6b4390501`，更新清单与附件的名称、大小、下载地址和 SHA-256 一致。证据：`build/macos-debug/t90-public-release-verification.json`。
+- [发布与公开更新 42370203240](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/42370203240) 成功。Windows x64 和 macOS arm64 分别在 47s、36s 内完成公开更新演练。未进行真实远端设备、Windows 实机和 Apple 公证验收。
 
 ## 2026-11-07 SSH 连接卡片统一使用右键菜单（T89）
 
