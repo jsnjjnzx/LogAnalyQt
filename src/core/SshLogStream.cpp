@@ -1,5 +1,6 @@
 #include "SshLogStream.h"
 #include <utility>
+#include <algorithm>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #else
@@ -37,6 +38,23 @@ CellPosition cellPosition(QStringView text, int target, bool roundUp = false) {
   }
   return {text.size(), column};
 }
+constexpr quint32 rgb(int r, int g, int b) {
+  return 0xff000000u | (quint32(r) << 16) | (quint32(g) << 8) | quint32(b);
+}
+quint32 indexedColor(int index) {
+  constexpr quint32 palette[] = {
+    0xff000000, 0xffcd3131, 0xff0dbc79, 0xffe5b34f, 0xff4c86d8, 0xffbc3fbc, 0xff11a8cd, 0xffe5e5e5,
+    0xff666666, 0xfff14c4c, 0xff23d18b, 0xfff5f543, 0xff6faeff, 0xffd670d6, 0xff29b8db, 0xffffffff
+  };
+  if (index < 16) return palette[index];
+  if (index >= 232) {
+    const int gray = 8 + (index - 232) * 10;
+    return rgb(gray, gray, gray);
+  }
+  const auto component = [](int n) { return n ? 55 + n * 40 : 0; };
+  index -= 16;
+  return rgb(component(index / 36), component(index / 6 % 6), component(index % 6));
+}
 }
 
 SshLogStream::SshLogStream(const QString &encoding) { reset(encoding); }
@@ -71,10 +89,12 @@ bool SshLogStream::encodingAvailable() const {
 #endif
 }
 
-void SshLogStream::reset(const QString &encoding, bool clearedPartialLine) {
+void SshLogStream::reset(const QString &encoding, bool clearedPartialLine, bool preserveColors) {
   m_gb = encoding.startsWith("GB", Qt::CaseInsensitive);
   m_utf8 = QStringDecoder(QStringConverter::Utf8);
   m_pendingBytes.clear(); m_partial.clear();
+  m_styles.clear();
+  if (!preserveColors) { m_style = {}; m_basicForeground = -1; m_bright = false; }
   m_state = State::Text; m_csi.clear(); m_column = m_lineColumns = m_rowStart = 0; m_continuation = clearedPartialLine; m_pendingUtf8 = 0;
   ++m_logicalId;
   m_logicalOffset = 0;
@@ -173,10 +193,47 @@ QByteArray SshLogStream::encode(const QString &text, const QString &encoding) {
 void SshLogStream::emitLine(std::vector<SshLogLine> &lines, bool continues) {
   m_rowStart = continues ? m_rowStart - columns(m_partial) : 0;
   m_logicalOffset = continues ? m_logicalOffset + m_partial.size() : 0;
+  auto colors = colorRuns();
   lines.push_back({std::exchange(m_partial, {}), m_logicalId, m_continuation, continues});
+  lines.back().colors = std::move(colors);
+  m_styles.clear();
   m_column = m_lineColumns = 0;
   m_continuation = continues;
   if (!continues) ++m_logicalId;
+}
+
+QList<SshColorRun> SshLogStream::colorRuns() const {
+  QList<SshColorRun> result;
+  for (int start = 0, end; start < m_styles.size(); start = end) {
+    const auto style = m_styles[start];
+    for (end = start + 1; end < m_styles.size() && m_styles[end] == style; ++end) {}
+    if (style != SshColorStyle{}) result.append({start, end - start, style});
+  }
+  return result;
+}
+
+void SshLogStream::replace(qsizetype start, qsizetype length, QStringView text, SshColorStyle style) {
+  if (!m_styles.isEmpty() || (style != SshColorStyle{} && !text.isEmpty())) {
+    if (m_styles.isEmpty()) m_styles.resize(m_partial.size());
+    if (length == text.size()) {
+      std::fill_n(m_styles.begin() + start, length, style);
+    } else {
+      m_styles.remove(start, length);
+      m_styles.insert(start, text.size(), style);
+    }
+  }
+  m_partial.replace(start, length, text.data(), text.size());
+}
+
+void SshLogStream::splitLine(qsizetype split, std::vector<SshLogLine> &lines) {
+  auto tail = m_partial.mid(split);
+  auto styles = m_styles.isEmpty() ? QList<SshColorStyle>{} : m_styles.sliced(split);
+  replace(split, m_partial.size() - split, {}, {});
+  emitLine(lines, true);
+  m_partial = std::move(tail);
+  m_styles = std::move(styles);
+  m_column = m_lineColumns = columns(m_partial);
+  m_rowStart += qMax(0, (m_column - m_rowStart - 1) / TerminalColumns) * TerminalColumns;
 }
 
 void SshLogStream::append(QStringView text, std::vector<SshLogLine> &lines) {
@@ -188,26 +245,29 @@ void SshLogStream::append(QStringView text, std::vector<SshLogLine> &lines) {
       const auto end = cellPosition(m_partial, m_column + width, true);
       const QString replacement = QString(qMax(0, m_column - start.column), ' ') + text.first(length)
           + QString(qMax(0, end.column - m_column - width), ' ');
-      m_partial.replace(start.index, end.index - start.index, replacement);
+      replace(start.index, end.index - start.index, replacement, m_style);
       m_column += width; m_lineColumns = columns(m_partial);
       m_rowStart += qMax(0, (m_column - m_rowStart - 1) / TerminalColumns) * TerminalColumns;
       text = text.sliced(length);
       if (m_partial.size() > SegmentCharacters) {
         auto split = SegmentCharacters;
         if (m_partial[split - 1].isHighSurrogate()) --split;
-        const auto tail = m_partial.mid(split); m_partial.truncate(split);
-        emitLine(lines, true); append(tail, lines);
+        splitLine(split, lines);
       }
       continue;
     }
     if (m_partial.size() == SegmentCharacters) {
       // Keep a UTF-16 surrogate pair together at the display-segment boundary.
       if (m_partial.back().isHighSurrogate() && text.front().isLowSurrogate()) {
-        const auto high = m_partial.back(); m_partial.chop(1);
-        emitLine(lines, true); m_partial.append(high); m_column = m_lineColumns = 1;
+        splitLine(m_partial.size() - 1, lines);
+        m_column = m_lineColumns = 1;
       } else emitLine(lines, true);
     }
     const auto take = qMin(SegmentCharacters - m_partial.size(), text.size());
+    if (!m_styles.isEmpty() || m_style != SshColorStyle{}) {
+      if (m_styles.isEmpty()) m_styles.resize(m_partial.size());
+      m_styles.insert(m_styles.size(), take, m_style);
+    }
     if (m_partial.isEmpty()) m_partial = text.first(take).toString();
     else m_partial.append(text.first(take));
     m_lineColumns += columns(text.first(take)); m_column = m_lineColumns;
@@ -218,6 +278,7 @@ void SshLogStream::append(QStringView text, std::vector<SshLogLine> &lines) {
 }
 
 void SshLogStream::applyCsi(QChar final) {
+  if (final == 'm') { applySgr(); return; }
   // shortcut: current-line terminal editing only; use a screen emulator for full-screen TUIs.
   bool valid = false;
   const int value = m_csi.section(';', 0, 0).toInt(&valid);
@@ -229,16 +290,72 @@ void SshLogStream::applyCsi(QChar final) {
   else if (final == 'G' || final == '`') moveCursor(m_rowStart + count - 1);
   else if (final == 'K') {
     const int mode = valid ? value : 0;
-    if (mode == 0) m_partial.truncate(cellPosition(m_partial, m_column).index);
-    else if (mode == 1) m_partial.replace(0, cellPosition(m_partial, m_column + 1, true).index, QString(m_column + 1, ' '));
-    else if (mode == 2) m_partial.clear();
+    if (mode == 0) {
+      const auto start = cellPosition(m_partial, m_column).index;
+      replace(start, m_partial.size() - start, {}, {});
+    } else if (mode == 1) replace(0, cellPosition(m_partial, m_column + 1, true).index, QString(m_column + 1, ' '), m_style);
+    else if (mode == 2) { m_partial.clear(); m_styles.clear(); }
     m_lineColumns = columns(m_partial);
   } else if (final == 'P' || final == '@' || final == 'X') {
     const auto start = cellPosition(m_partial, m_column);
     const auto end = cellPosition(m_partial, m_column + count, true);
-    if (final == '@') m_partial.insert(start.index, QString(qMin(count, int(SegmentCharacters - m_partial.size())), ' '));
-    else m_partial.replace(start.index, end.index - start.index, final == 'X' ? QString(qMin(count, int(end.column - start.column)), ' ') : QString());
+    if (final == '@') replace(start.index, 0, QString(qMax(0, qMin(count, int(SegmentCharacters - m_partial.size()))), ' '), m_style);
+    else replace(start.index, end.index - start.index, final == 'X' ? QString(qMin(count, int(end.column - start.column)), ' ') : QString(), m_style);
     m_lineColumns = columns(m_partial);
+  }
+}
+
+void SshLogStream::applySgr() {
+  for (const auto c : m_csi)
+    if ((c < '0' || c > '9') && c != ';' && c != ':') return;
+  const auto parameters = m_csi.split(';');
+  const auto byte = [](const QString &value) {
+    bool ok = false;
+    const int n = value.toInt(&ok);
+    return ok && n >= 0 && n <= 255 ? n : -1;
+  };
+  const auto extended = [&](int mode, const QStringList &values, qsizetype offset) -> quint32 {
+    if (mode == 5 && values.size() == offset + 1) {
+      const int i = byte(values[offset]);
+      return i >= 0 ? indexedColor(i) : 0;
+    }
+    if (mode == 2 && (values.size() == offset + 3 || values.size() == offset + 4)) {
+      const int r = byte(values[values.size() - 3]), g = byte(values[values.size() - 2]), b = byte(values.back());
+      if (r >= 0 && g >= 0 && b >= 0) return rgb(r, g, b);
+    }
+    return 0;
+  };
+  for (qsizetype i = 0; i < parameters.size(); ++i) {
+    const auto &parameter = parameters[i];
+    const auto sub = parameter.contains(':') ? parameter.split(':') : QStringList{};
+    const int code = parameter.isEmpty() ? 0 : byte(sub.isEmpty() ? parameter : sub.front());
+    if (!sub.isEmpty() && code != 38 && code != 48) continue;
+    if (code == 0) { m_style = {}; m_basicForeground = -1; m_bright = false; }
+    else if (code == 1 || code == 22) {
+      m_bright = code == 1;
+      if (m_basicForeground >= 0) m_style.foreground = indexedColor(m_basicForeground + (m_bright ? 8 : 0));
+    } else if (code >= 30 && code <= 37) {
+      m_basicForeground = code - 30;
+      m_style.foreground = indexedColor(m_basicForeground + (m_bright ? 8 : 0));
+    } else if (code == 39 || (code >= 90 && code <= 97)) {
+      m_basicForeground = -1;
+      m_style.foreground = code == 39 ? 0 : indexedColor(code - 82);
+    } else if (code >= 40 && code <= 47) m_style.background = indexedColor(code - 40);
+    else if (code >= 100 && code <= 107) m_style.background = indexedColor(code - 92);
+    else if (code == 49) m_style.background = 0;
+    else if (code == 38 || code == 48 || code == 58) {
+      quint32 color = 0;
+      if (sub.size() > 1) color = extended(byte(sub[1]), sub, 2);
+      else if (i + 1 < parameters.size()) {
+        const int mode = byte(parameters[++i]);
+        const int count = mode == 5 ? 1 : mode == 2 ? 3 : 0;
+        if (!count || i + count >= parameters.size()) break;
+        color = extended(mode, parameters.mid(i + 1, count), 0);
+        i += count;
+      }
+      if (code == 38 && color) { m_style.foreground = color; m_basicForeground = -1; }
+      if (code == 48 && color) m_style.background = color;
+    }
   }
 }
 
@@ -264,15 +381,18 @@ void SshLogStream::consume(QStringView text, std::vector<SshLogLine> &lines) {
         append(text.sliced(start, i - start), lines);
       }
     } else if (m_state == State::Escape) {
-      if (c == '[') { m_csi.clear(); m_state = State::Csi; }
+      if (c == '[') { m_csi.clear(); m_csiOverflow = false; m_state = State::Csi; }
       else if (c == ']') m_state = State::Osc;
       else if (c == 'P' || c == '^' || c == '_') m_state = State::String;
       else if (c.unicode() >= 0x20 && c.unicode() <= 0x2f) m_state = State::EscapeIntermediate;
       else m_state = State::Text;
     } else if (m_state == State::Csi) {
-      if (c.unicode() >= 0x40 && c.unicode() <= 0x7e) { applyCsi(c); m_csi.clear(); m_state = State::Text; }
-      else if (c == QChar(0x1b)) m_state = State::Escape;
+      if (c.unicode() >= 0x40 && c.unicode() <= 0x7e) {
+        if (!m_csiOverflow) applyCsi(c);
+        m_csi.clear(); m_state = State::Text;
+      } else if (c == QChar(0x1b)) m_state = State::Escape;
       else if (m_csi.size() < 64) m_csi.append(c);
+      else m_csiOverflow = true;
     } else if (m_state == State::EscapeIntermediate) {
       if (c.unicode() >= 0x30 && c.unicode() <= 0x7e) m_state = State::Text;
     } else if (m_state == State::StringEscape) {

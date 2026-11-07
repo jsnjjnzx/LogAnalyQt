@@ -309,6 +309,7 @@ GlassPage {
     function measureLogWidth(width) {
         if (!wrapLogLines && width > widestLogText) widestLogText = width;
     }
+    property var textSelectionCaret: null
     property var textSelectionAnchor: null
     property var textSelectionFocus: null
     property bool selectionPointerDown: false
@@ -986,21 +987,25 @@ GlassPage {
         }
         return {id: sshTerminal.lineIdAt(index), position: offset - sshTerminal.lineSegmentOffset(index)};
     }
-    function selectHexAt(x, y) {
+    function selectWordAt(x, y) {
         // positionAt returns the nearest caret; bias to the character under the pointer.
-        const point = selectionPoint(x - charWidth / 2, y);
+        const point = selectionPoint(x - charWidth / 2, y, true);
         clearTextSelection();
         selectedLineIndex = -1; selectedLineId = -1;
         selectedHexStart = -1; selectedHexEnd = -1; selectedHexText = "";
         if (!point) return;
         const index = sshTerminal.indexForLineId(point.id);
-        if (index >= 0 && !sshTerminal.lineIsComplete(index)) return;
         const text = index >= 0 ? sshTerminal.lineAt(index) : sshTerminal.liveLine;
         const offset = index >= 0 ? sshTerminal.lineSegmentOffset(index) : 0;
-        const hex = extractHexSegmentFromLine(text, offset + point.position);
-        if (!hex) return;
-        textSelectionAnchor = index >= 0 ? logicalSelectionPoint(index, hex.start) : {id: point.id, position: hex.start};
-        textSelectionFocus = index >= 0 ? logicalSelectionPoint(index, hex.end) : {id: point.id, position: hex.end};
+        const hex = index < 0 || sshTerminal.lineIsComplete(index)
+            ? extractHexSegmentFromLine(text, offset + point.position) : null;
+        if (hex) {
+            textSelectionAnchor = index >= 0 ? logicalSelectionPoint(index, hex.start) : {id: point.id, position: hex.start};
+            textSelectionFocus = index >= 0 ? logicalSelectionPoint(index, hex.end) : {id: point.id, position: hex.end};
+        } else if (point.word.length === 2) {
+            textSelectionAnchor = {id: point.id, position: point.word[0]};
+            textSelectionFocus = {id: point.id, position: point.word[1]};
+        } else return;
         autoScroll = false;
     }
 
@@ -1014,10 +1019,15 @@ GlassPage {
 
     function clearTextSelection() {
         selectionPointerDown = false;
+        textSelectionCaret = null;
         textSelectionAnchor = null;
         textSelectionFocus = null;
     }
+    function retainsSelectionPoint(point) {
+        return !!point && point.id >= sshTerminal.firstLineId && point.id <= liveSelectionId;
+    }
     function selectAllTerminalText() {
+        textSelectionCaret = null;
         textSelectionAnchor = {id: sshTerminal.firstLineId, position: 0};
         textSelectionFocus = {id: liveSelectionId, position: sshTerminal.liveLine.length};
         autoScroll = false;
@@ -1032,7 +1042,7 @@ GlassPage {
             id === range.lastId ? Math.min(range.lastOffset, editor.length) : editor.length);
         return true;
     }
-    function selectionPoint(x, y) {
+    function selectionPoint(x, y, selectWord) {
         const point = selectionArea.mapToItem(logListView.contentItem, x,
             Math.max(0, Math.min(selectionArea.height - 1, y)));
         const index = logListView.indexAt(1, point.y);
@@ -1041,10 +1051,8 @@ GlassPage {
             : footer && footer.height > 0 && point.y >= footer.y && point.y < footer.y + footer.height ? footer : null;
         if (!row) return null;
         const id = index >= 0 ? sshTerminal.lineIdAt(index) : liveSelectionId;
-        if (!textSelectionAnchor) textSelectionAnchor = {id: id, position: 0};
-        if (!textSelectionFocus || textSelectionFocus.id !== id) textSelectionFocus = {id: id, position: 0};
         const position = row.selectionPosition(point.x, point.y);
-        return {id: id, position: position};
+        return {id: id, position: position, word: selectWord ? row.wordAt(position) : []};
     }
     function extendTextSelection() {
         const point = selectionPoint(selectionArea.mouseX, selectionArea.mouseY);
@@ -1746,7 +1754,8 @@ GlassPage {
             if (sshTerminal.currentLineCount === 0 && sshTerminal.liveLine === "") {
                 liveLogDialog.widestLogText = 0; liveLogDialog.pausedLogWidth = 0; logListView.contentX = 0;
             }
-            if (sshTerminal.currentLineCount === 0 || textSelectionRange
+            if (sshTerminal.currentLineCount === 0 || textSelectionCaret && !retainsSelectionPoint(textSelectionCaret)
+                    || textSelectionRange
                     && (textSelectionRange.firstId < sshTerminal.firstLineId || textSelectionRange.lastId > liveSelectionId))
                 clearTextSelection();
             updateSearchResult();
@@ -2828,8 +2837,14 @@ GlassPage {
                                 color: terminalText
                                 selectedTextColor: terminalText
                                 selectionColor: theme ? theme.terminalSelection : "#446688"
+                                SshTextColors {
+                                    id: lineColors
+                                    source: lineText.textDocument
+                                    runs: model && model.lineColors ? model.lineColors : []
+                                }
                             }
 
+                            function wordAt(position) { return lineColors.wordAt(position); }
                             function selectionPosition(contentX, contentY) {
                                 const point = logListView.contentItem.mapToItem(lineText, contentX, contentY);
                                 return lineText.positionAt(point.x, point.y);
@@ -2917,6 +2932,7 @@ GlassPage {
                                 font: charMeasurer.font
                                 text: sshTerminal.liveLine.slice(0, sshTerminal.cursorPosition)
                             }
+                            function wordAt(position) { return liveColors.wordAt(position); }
                             function selectionPosition(contentX, contentY) {
                                 const point = logListView.contentItem.mapToItem(liveLineText, contentX, contentY);
                                 return liveLineText.positionAt(point.x, point.y);
@@ -2946,6 +2962,11 @@ GlassPage {
                                 color: terminalText
                                 selectedTextColor: terminalText
                                 selectionColor: theme ? theme.terminalSelection : "#446688"
+                                SshTextColors {
+                                    id: liveColors
+                                    source: liveLineText.textDocument
+                                    runs: sshTerminal.liveColors || []
+                                }
                                 Component.onCompleted: Qt.callLater(liveFooter.updateCursorRect)
                                 onFontChanged: Qt.callLater(liveFooter.updateCursorRect)
                                 onWidthChanged: Qt.callLater(liveFooter.updateCursorRect)
@@ -3004,7 +3025,8 @@ GlassPage {
                         anchors.fill: parent
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         preventStealing: true
-                        property bool hexDoubleClick: false
+                        property bool wordDoubleClick: false
+                        property bool extendingSelection: false
                         onWheel: function(wheel) {
                             if (wheel.modifiers === Qt.NoModifier) {
                                 const delta = wheel.pixelDelta.y || wheel.angleDelta.y;
@@ -3029,21 +3051,31 @@ GlassPage {
                                 return;
                             }
                             liveLogDialog.focusTerminal();
-                            hexDoubleClick = false;
-                            liveLogDialog.clearTextSelection();
+                            wordDoubleClick = false;
+                            const point = liveLogDialog.selectionPoint(mouse.x, mouse.y);
+                            const anchor = liveLogDialog.textSelectionAnchor || liveLogDialog.textSelectionCaret;
+                            extendingSelection = (mouse.modifiers & Qt.ShiftModifier) !== 0
+                                && liveLogDialog.retainsSelectionPoint(anchor);
+                            if (extendingSelection && !point) return;
+                            if (!extendingSelection) liveLogDialog.clearTextSelection();
                             selectedLineId = -1; selectedLineIndex = -1;
                             selectedHexStart = -1; selectedHexEnd = -1; selectedHexText = "";
-                            const point = liveLogDialog.selectionPoint(mouse.x, mouse.y);
                             if (point) {
-                                liveLogDialog.textSelectionAnchor = point;
+                                if (extendingSelection) {
+                                    const index = sshTerminal.indexForLineId(anchor.id);
+                                    const text = index < 0 ? sshTerminal.liveLine : sshTerminal.lineAt(index);
+                                    liveLogDialog.textSelectionAnchor = {id: anchor.id,
+                                        position: Math.min(anchor.position, text.length)};
+                                } else liveLogDialog.textSelectionAnchor = point;
                                 liveLogDialog.textSelectionFocus = point;
                                 liveLogDialog.selectionPointerDown = true;
+                                if (liveLogDialog.hasTextSelection) liveLogDialog.autoScroll = false;
                             }
                         }
                         onPositionChanged: if (liveLogDialog.selectionPointerDown) liveLogDialog.extendTextSelection()
                         onReleased: function(mouse) {
-                            if (mouse.button === Qt.LeftButton && hexDoubleClick) {
-                                hexDoubleClick = false;
+                            if (mouse.button === Qt.LeftButton && wordDoubleClick) {
+                                wordDoubleClick = false;
                                 liveLogDialog.selectionPointerDown = false;
                                 if (liveLogDialog.copyOnSelect && liveLogDialog.hasTextSelection) liveLogDialog.copyTextSelection();
                                 return;
@@ -3054,15 +3086,22 @@ GlassPage {
                             if (liveLogDialog.hasTextSelection) {
                                 if (liveLogDialog.copyOnSelect) liveLogDialog.copyTextSelection();
                             } else {
-                                const row = sshTerminal.indexForLineId(liveLogDialog.textSelectionAnchor.id);
-                                liveLogDialog.clearTextSelection();
-                                if (row >= 0) liveLogDialog.selectLineAndExtractHex(row);
+                                const caret = liveLogDialog.textSelectionFocus;
+                                const row = sshTerminal.indexForLineId(caret.id);
+                                if (row >= 0 && !extendingSelection) liveLogDialog.selectLineAndExtractHex(row);
+                                else liveLogDialog.clearTextSelection();
+                                liveLogDialog.textSelectionCaret = caret;
                             }
                         }
-                        onCanceled: { liveLogDialog.selectionPointerDown = false; hexDoubleClick = false; }
+                        onCanceled: { liveLogDialog.selectionPointerDown = false; wordDoubleClick = false; }
                         onDoubleClicked: function(mouse) {
-                            hexDoubleClick = true;
-                            liveLogDialog.selectHexAt(mouse.x, mouse.y);
+                            if (mouse.button !== Qt.LeftButton) return;
+                            if (mouse.modifiers & Qt.ShiftModifier) {
+                                mouse.accepted = false;
+                                return;
+                            }
+                            wordDoubleClick = true;
+                            liveLogDialog.selectWordAt(mouse.x, mouse.y);
                         }
                     }
                     Timer {

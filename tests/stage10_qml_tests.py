@@ -17,9 +17,10 @@ def main():
         backend.mkdir()
         (backend / "qmldir").write_text("module LogAnalyQt\n")
         module(backend / "Next", "LogAnalyQt.Next", source / "qml/Next")
-        (backend / "SshTerminal.qml").symlink_to(source / "tests/qml-stage10/MockSshTerminal.qml")
         with (backend / "qmldir").open("a") as stream:
-            stream.write("SshTerminal 1.0 SshTerminal.qml\n")
+            for name in ("SshTerminal", "SshTextColors", "SshFileTransfer"):
+                (backend / f"{name}.qml").symlink_to(source / f"tests/qml-stage10/Mock{name}.qml")
+                stream.write(f"{name} 1.0 {name}.qml\n")
         icon_directory = imports / "assets"
         icon_directory.mkdir()
         (icon_directory / "logo.ico").symlink_to(source / "assets/logo.ico")

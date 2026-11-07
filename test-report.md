@@ -1,5 +1,43 @@
 # 测试结果
 
+## 2026-11-07 v5.5.0 发布前验证（T90 / RELEASE-26、27）
+
+- v5.5.0 版本检查、macOS Debug 完整构建、原生 CTest 28/28 和发布工具 38/38 通过，见 `build/macos-debug/t90-build.log`、`t90-ctest.log` 和 `t90-release-tools.log`。按 AGENTS.md 排除 QML 和成品界面自动化。
+- SFTP、FTP MLSD、FTP 传统 LIST 回环各 77 项通过，覆盖被服务器从列表隐藏的同名点文件不会被上传或改名覆盖，新点文件仍可命名。证据：`build/macos-debug/t90-transfer-loopback.log`。
+- 固定 macOS 自测包已更新 v5.5.0，126 个 arm64 Mach-O、依赖、deep strict 签名与 Cocoa 隔离启动通过。主程序 SHA-256 为 `ba2199b9872cc54854839d30aa6991c51d653224266cde48a96d9c5eccedf914`。
+- 远端双平台构建、公开发布及公开更新验收将在同一提交推送后执行。未进行真实远端设备、Windows 实机和 Apple 公证验收。
+
+## 2026-11-07 SSH 连接卡片统一使用右键菜单（T89）
+
+- 完整 macOS Debug 构建和 QML 资源编译通过；原生 `ssh_file_transfer_tests` 1/1 通过。原有卡片连接和传输用例改走右键菜单；按 AGENTS.md 未运行 QML 或成品界面自动化，未实测鼠标、键盘菜单交互。
+- 成品 126 个 Mach-O 的架构及依赖检查、deep strict 签名、Cocoa 隔离启动通过。固定应用已更新，主程序 SHA-256 `0290db9ffed16a953fac6c39a2f4f44f2dd3f539552e2aaa991c5491386df9c7`。
+
+## 2026-11-07 双栏文件传输工作台（T88）
+
+- 先交付 `docs/design/sftp-transfer-workspace.html`，包含嵌入字体、无远端请求的交互示例。JavaScript 语法、静态 DOM 引用和字体嵌入检查通过；应用内浏览器禁止打开本地文件地址，未做浏览器目视验证。
+- macOS Debug 完整构建、QML 资源编译和传输窗口静态 `qmllint` 通过；按项目约定排除 QML 及成品界面自动化，原生 CTest 28/28。新增队列固定目标路径和失败重试的 QML 用例，按约定未执行。
+- 本机回环 SFTP 77 项、FTP MLSD 68 项、FTP 传统 UNIX LIST 68 项通过。验证本地与远程创建/改名、重名及越级拒绝、可用修改时间、二进制往返、实际字节进度、传输期间远程浏览及取消清理。证据：`build/macos-debug/t88-ctest-final.log`、`build/macos-debug/t88-loopback.log`。
+- 126 个随包 Mach-O 的 arm64 和依赖检查、deep strict 签名及 Cocoa 隔离启动通过；固定应用 `release_package/通联工坊.app` 已更新，主程序 SHA-256 `83edef817ed8884defcb0df20f24656942619fecaa32a103924b0e05e11678eb`。未在 GUI 中目视验收双栏窗口，未测试 Windows 实机、实际远端设备或 Apple 公证。
+
+## 2026-11-07 实时监控 Shift 扩展选区（T87）
+
+- 完整 macOS Debug 构建和终端 QML 资源编译通过。原生 `ssh_stream_tests`、`ssh_file_transfer_tests` 2/2 通过；首次默认沙箱无法绑定临时回环端口，允许本机回环后复跑通过，见 `build/macos-debug/t87-ctest-final.log`。
+- 126 个 Mach-O 的 arm64 和依赖检查、deep strict 签名、Cocoa 隔离启动均通过。固定应用 `release_package/通联工坊.app` 已更新，主程序 SHA-256 为 `61da1b396b656c68293042c265d8319f4708ab49d9d91b04fe2c09bf1184d9c4`。
+- 新增 QML 回归用例，覆盖单击保留 HEX、向前与向后跨行、实时尾行、重复 Shift 点击、选中即复制和清屏。按 AGENTS.md 未运行 QML 或成品界面自动化，未实测 GUI 点击或 Windows。
+
+## 2026-11-07 文件传输归属 SSH 连接卡片（T86）
+
+- 完整 macOS Debug 构建通过，重新编译三个相关 QML 资源；`ssh_file_transfer_tests`、`ssh_security_tests`、`ssh_stream_tests` 3/3 通过，见 `build/macos-debug/t86-ctest.log`。
+- 沿用已验证包的 Qt 依赖并重签，126 个 Mach-O 通过 arm64 和包内/系统依赖检查；Cocoa 隔离启动通过。固定应用 `release_package/通联工坊.app` 已更新，deep strict 签名和主程序 SHA-256 `415ea18506388832e07cae4e4dffed6967bf72acd7c5736145b44ccecb7d7973` 已核对。
+- 新增卡片 A/B 参数隔离、同一连接复用窗口、关闭 A 不影响 B、打开不发起 SSH shell 的 QML 回归用例。按 AGENTS.md 未执行该用例或成品界面自动化。本轮未目视操作卡片，未复测 Windows 或远端传输。
+
+## 2026-11-07 监控颜色、双击选词和文件传输（T85）
+
+- 完整 macOS Debug 构建与 QML 资源编译通过。按 AGENTS.md 排除 QML 和成品界面自动化，原生 CTest 28/28。审查后重编并重跑 `ssh_stream_tests`、`ssh_security_tests`，流测试 528 项断言，含 SGR 拆包、256 色和 RGB 前景/背景、清屏保留颜色、颜色重置、尾行同文换色、删除重绘、长行/代理对边界与纯文本提取；原生文档检查验证颜色格式和选词范围。
+- `tests/run_ssh_file_transfer.py` 使用 Paramiko 与 pyftpdlib，只绑定 `127.0.0.1`。SFTP 50 项、FTP MLSD 42 项、FTP 传统 UNIX LIST 42 项通过。覆盖中文及符号文件名、二进制文件往返一致、导航、重名拒绝、失败与取消后无本地半成品；SFTP 验证首次指纹拒绝时不认证、确认后可传输、变更指纹拒绝。证据：`build/macos-debug/t85-file-transfer-loopback.log` 和 `build/macos-debug/t85-ctest.log`。
+- 通过 `macdeployqt`、库 ID 归一化和 ad-hoc 签名部署成品；126 个 Mach-O 为 arm64、只依赖系统或包内库。唯一固定应用 `release_package/通联工坊.app` 通过 deep strict 签名和 Cocoa 隔离配置启动（只启动，无自动操作）；可执行文件 SHA-256 为 `14d90958755b3a5246c922d5e85f898b6f8e00aa12fb493eb7b91ac0b5972b41`。默认沙箱内 Cocoa 访问系统剪贴板服务失败，允许原生系统服务后复验通过。
+- 未运行 QML 和成品界面自动化；未测试 Windows 实机、实际远端设备、IIS 目录输出、FTP 并发写入或 Apple 公证。
+
 ## 2026-11-05 v5.4.1 发布验收（T84 / RELEASE-24、25）
 
 - 提交前核对 `scripts/ci/check_build.py` 识别 5.4.1，发布工具测试 38/38 通过，`git diff --check` 通过。三个模拟 HTTP 用例在沙箱无法绑定回环端口，允许本机回环后重跑通过。

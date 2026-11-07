@@ -35,6 +35,22 @@ struct SshMonitorMark {
   }
 };
 
+struct SshColorStyle {
+  quint32 foreground = 0, background = 0;
+  bool operator==(const SshColorStyle &other) const {
+    return foreground == other.foreground && background == other.background;
+  }
+  bool operator!=(const SshColorStyle &other) const { return !(*this == other); }
+};
+
+struct SshColorRun {
+  int start, length;
+  SshColorStyle style;
+  bool operator==(const SshColorRun &other) const {
+    return start == other.start && length == other.length && style == other.style;
+  }
+};
+
 struct SshLogLine {
   QString text;
   quint64 logicalId = 0;
@@ -46,6 +62,16 @@ struct SshLogLine {
   qsizetype monitorOffset = 0;
   QList<QPair<int, int>> monitorRanges;
   QList<SshMonitorMark> monitorMarks;
+  QList<SshColorRun> colors;
+
+  QVariantList colorRuns() const {
+    QVariantList result;
+    result.reserve(colors.size());
+    for (const auto &run : colors)
+      result.append(QVariantMap{{"start", run.start}, {"length", run.length},
+                                {"fg", run.style.foreground}, {"bg", run.style.background}});
+    return result;
+  }
 
   QVariantList matchRanges() const {
     QVariantList result;
@@ -89,6 +115,7 @@ struct SshLogLine {
   qsizetype storageBytes() const { return sizeof(SshLogLine) + (text.capacity() + monitorColor.capacity() + monitorRuleName.capacity()) * qsizetype(sizeof(QChar))
       + monitorRanges.capacity() * qsizetype(sizeof(QPair<int, int>))
       + monitorMarks.capacity() * qsizetype(sizeof(SshMonitorMark))
+      + colors.capacity() * qsizetype(sizeof(SshColorRun))
       + std::accumulate(monitorMarks.cbegin(), monitorMarks.cend(), qsizetype(0),
           [](qsizetype total, const SshMonitorMark &mark) { return total + mark.storageBytes(); }); }
 };
@@ -106,10 +133,11 @@ public:
   SshLogStream(const SshLogStream &) = delete;
   SshLogStream &operator=(const SshLogStream &) = delete;
 
-  void reset(const QString &encoding, bool clearedPartialLine = false);
+  void reset(const QString &encoding, bool clearedPartialLine = false, bool preserveColors = false);
   std::vector<SshLogLine> feed(QByteArrayView bytes);
   std::vector<SshLogLine> finish();
   const QString &partialLine() const { return m_partial; }
+  QList<SshColorRun> colorRuns() const;
   int cursorColumn() const { return m_column; }
   int cursorPosition() const;
   int cursorPadding() const;
@@ -129,7 +157,10 @@ private:
   void consume(QStringView text, std::vector<SshLogLine> &lines);
   void append(QStringView text, std::vector<SshLogLine> &lines);
   void emitLine(std::vector<SshLogLine> &lines, bool continues);
+  void splitLine(qsizetype split, std::vector<SshLogLine> &lines);
+  void replace(qsizetype start, qsizetype length, QStringView text, SshColorStyle style);
   void applyCsi(QChar final);
+  void applySgr();
   void syncCursorRow();
   void moveCursor(int column);
   void moveCursorRows(int rows);
@@ -141,11 +172,16 @@ private:
 #endif
   QByteArray m_pendingBytes;
   QString m_partial;
+  QList<SshColorStyle> m_styles;
+  SshColorStyle m_style;
+  int m_basicForeground = -1;
+  bool m_bright = false;
   quint64 m_logicalId = 0;
   qsizetype m_logicalOffset = 0;
   State m_state = State::Text;
   State m_stringState = State::Osc;
   QString m_csi;
+  bool m_csiOverflow = false;
   int m_column = 0;
   int m_lineColumns = 0;
   int m_rowStart = 0; // May be negative when a display segment starts partway through a PTY row.

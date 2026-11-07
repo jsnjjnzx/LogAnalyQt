@@ -118,7 +118,12 @@ Item {
             const text = editor.text; editor.destroy()
             return text
         }
-        function test_doubleClickTabAndSavedConfigurationAlwaysCreateIndependentConnections() {
+        function chooseSavedConnectionAction(index, action) {
+            const row = item(page, "ssh-saved-row-" + index)
+            mouseClick(row, 35, 20, Qt.RightButton); wait(30)
+            mouseClick(item(scene.Window.window.contentItem, "ssh-saved-" + action + "-" + index)); wait(30)
+        }
+        function test_doubleClickTabAndSavedConnectionMenuCreateIndependentConnections() {
             make()
             const a = page.activeSession, config = page.blankConfiguration("采集网关")
             config.host = "synthetic.example"; config.password = "synthetic-password"
@@ -138,16 +143,70 @@ Item {
             page.savedConnections = [config]; wait(30)
             const saved = item(page, "ssh-saved-row-0")
             mouseDoubleClickSequence(saved, 35, 18); wait(30)
+            compare(page.sessions.length, 2)
+            chooseSavedConnectionAction(0, "connect-tab")
             const c = page.activeSession
             compare(page.sessions.length, 3); compare(c.terminal.connectCalls, 1)
             compare(c.sessionName, "采集网关 · 2")
-            mouseDoubleClickSequence(saved, 35, 18); wait(30)
+            chooseSavedConnectionAction(0, "connect-tab")
             compare(page.sessions.length, 4); compare(page.activeSession.sessionName, "采集网关 · 3")
             connected(page.activeSession); wait(20)
             compare(page.savedConnections.length, 1); compare(page.savedConnections[0].name, "采集网关")
             compare(item(page, "ssh-saved-row-0"), saved)
             item(page, "ssh-connection-search").text = "missing"; wait(20); verify(!item(page, "ssh-saved-row-0").visible)
             item(page, "ssh-connection-search").text = "synthetic"; wait(20); verify(item(page, "ssh-saved-row-0").visible)
+        }
+        function test_fileTransferFollowsSavedConnectionCard() {
+            make()
+            const a = Object.assign(page.blankConfiguration("网关 A"),
+                                    {host: "a.example", port: "2201", username: "a", password: "not-copied"})
+            const b = Object.assign(page.blankConfiguration("网关 B"),
+                                    {host: "b.example", port: "2202", username: "b"})
+            page.savedConnections = [a, b]; wait(30)
+            const keyA = page.connectionKey(a), keyB = page.connectionKey(b)
+            chooseSavedConnectionAction(0, "transfer-menu")
+            const windowA = page.fileWindows[keyA]
+            verify(windowA && windowA.visible)
+            const first = windowA.connectionOptions()
+            compare(first.host, a.host); compare(first.port, 2201); compare(first.user, a.username)
+            compare(first.password, "")
+            chooseSavedConnectionAction(1, "transfer-menu")
+            const windowB = page.fileWindows[keyB]
+            verify(windowB && windowB !== windowA && windowA.visible)
+            compare(windowB.connectionOptions().host, b.host)
+            chooseSavedConnectionAction(0, "transfer-menu")
+            compare(page.fileWindows[keyA], windowA)
+            compare(page.sessions.length, 1)
+            compare(page.activeSession.terminal.connectCalls, 0)
+            windowA.close()
+            verify(page.fileWindows[keyA] === undefined && windowB.visible)
+        }
+        function test_transferQueueKeepsTheDestinationWhenBrowsingChanges() {
+            make()
+            const config = Object.assign(page.blankConfiguration("网关"), {host: "device.example"})
+            page.savedConnections = [config]
+            page.openFileTransfer(config)
+            const window = page.fileWindows[page.connectionKey(config)]
+            const browser = item(window, "ssh-file-browser"), worker = item(window, "ssh-file-worker")
+            const local = item(window, "ssh-file-local-pane")
+            const remote = item(window, "ssh-file-remote-pane")
+            const files = ["alpha.log", "beta.log"].map(name => ({name: name, file: true, directory: false, size: 12, modified: 0}))
+            browser.complete("local", {path: "/local", entries: files})
+            browser.complete("list", {path: "/original", entries: []})
+            local.selection = ["alpha.log", "beta.log"]
+            window.enqueue(local)
+            compare(worker.calls.length, 1)
+            compare(worker.calls[0].remote, "/original")
+            window.browse(remote, "/other")
+            browser.complete("list", {path: "/other", entries: []})
+            worker.complete("upload", {name: "alpha.log"})
+            tryVerify(() => worker.calls.length === 2)
+            compare(worker.calls[1].remote, "/original")
+            worker.complete("upload", {error: "测试失败"})
+            compare(window.jobs[1].state, "failed")
+            window.queueAction(window.jobs[1])
+            compare(worker.calls[2].remote, "/original")
+            compare(remote.path, "/other")
         }
         function test_splitReorderMergeAndCrossWindowMovePreserveSessionState() {
             make()
@@ -1209,6 +1268,32 @@ Item {
             a.copyTextSelection(); compare(clipboard(), "bcd")
             a.terminal.appendTestLines(["replacement"], 2); wait(20)
             verify(!a.hasTextSelection); compare(clipboard(), "bcd")
+        }
+        function test_shiftClickExtendsFromTheLastCaretInEitherDirection() {
+            make()
+            const a = page.activeSession; connected(a)
+            a.copyOnSelect = true
+            a.terminal.liveLine = "prompt"
+            const hex = "68 04 07 00 00 00"
+            a.terminal.appendTestLines(["RX: " + hex, "second row"], 10); wait(30)
+            const first = item(a, "ssh-log-line-0"), second = item(a, "ssh-log-line-1")
+            const footer = item(a, "ssh-log-list").footerItem
+            const x = function(position) { return 10 + a.charWidth * (position + 0.05) }
+
+            mouseClick(first, x(4), first.height / 2)
+            verify(!a.hasTextSelection); compare(a.parseableHexText, hex)
+            mouseClick(footer, x(3), footer.height / 2, Qt.LeftButton, Qt.ShiftModifier)
+            compare(clipboard(), hex + "\nsecond row\npro")
+            verify(!a.autoScroll)
+            mouseClick(second, x(6), second.height / 2, Qt.LeftButton, Qt.ShiftModifier)
+            compare(clipboard(), hex + "\nsecond")
+
+            mouseClick(footer, x(5), footer.height / 2)
+            verify(!a.hasTextSelection)
+            mouseClick(first, x(4), first.height / 2, Qt.LeftButton, Qt.ShiftModifier)
+            compare(clipboard(), hex + "\nsecond row\npromp")
+            a.clearTerminal()
+            verify(!a.hasTextSelection && a.textSelectionCaret === null)
         }
         function test_selectionCopiesMarkupAndUnicodeAsPlainText() {
             make()

@@ -168,6 +168,51 @@ static void streamChecks() {
   check(!bounded.completeLineAt(0), "evicted/incomplete long line cannot masquerade as complete");
 }
 
+static void ansiColorChecks() {
+  SshLogStream stream;
+  check(stream.feed("\x1b[1;3").empty(), "split SGR stays pending");
+  const auto lines = stream.feed("4m蓝\nABC\x1b[38;5;196;48;2;1;2;3mR\x1b[39;49m plain\n");
+  check(lines.size() == 2 && lines[0].text == QString::fromUtf8("蓝") && lines[1].text == "ABCR plain",
+        "colors do not enter plain text");
+  check(lines[0].colors == QList<SshColorRun>{{0, 1, {0xff6faeff, 0}}}, "bright foreground on first line");
+  check(lines[1].colors == QList<SshColorRun>{{0, 3, {0xff6faeff, 0}}, {3, 1, {0xffff0000, 0xff010203}}},
+        "newlines retain style; indexed foreground, true-color background and defaults work");
+  TerminalLineModel model(20);
+  model.appendRecords(lines);
+  check(model.data(model.index(1, 0), TerminalLineModel::LineColorsRole).toList() == lines[1].colorRuns()
+        && model.bufferText() == QString::fromUtf8("蓝\nABCR plain\n"), "model exposes colors separately from plain text");
+
+  stream.feed("\x1b[38:2::1:2:3mab\x1b[0mcd\r\x1b[92ma");
+  check(stream.partialLine() == "abcd" && stream.colorRuns() ==
+        QList<SshColorRun>{{0, 1, {0xff23d18b, 0}}, {1, 1, {0xff010203, 0}}},
+        "same-text overwrite changes only the affected color");
+  SshTerminal terminal;
+  QSignalSpy liveChanged(&terminal, &SshTerminal::liveLineChanged);
+  SshLogLine tail{stream.partialLine()};
+  SshTerminalTestAccess::publish(terminal, {}, tail);
+  tail.colors = stream.colorRuns();
+  SshTerminalTestAccess::publish(terminal, {}, tail);
+  check(liveChanged.size() == 2 && terminal.liveLine() == "abcd" && terminal.liveColors() == tail.colorRuns(),
+        "color-only tail changes notify without changing the displayed text");
+  const auto edited = stream.feed("\r\x1b[1P\x1b[2G\x1b[K\n");
+  check(edited.front().text == "b" && edited.front().colors ==
+        QList<SshColorRun>{{0, 1, {0xff010203, 0}}}, "delete and erase keep remaining colors at correct offsets");
+
+  stream.reset("UTF-8");
+  const auto split = stream.feed(QByteArray("\x1b[31m") + QByteArray(8191, 'a') + "😀x\x1b[0m!\n");
+  check(split.size() == 2 && split[0].text.size() == 8191 &&
+        split[0].colors == QList<SshColorRun>{{0, 8191, {0xffcd3131, 0}}} &&
+        split[1].text == QString::fromUtf8("😀x!") &&
+        split[1].colors == QList<SshColorRun>{{0, 3, {0xffcd3131, 0}}}, "segmentation keeps style and surrogate pairs intact");
+  stream.feed("\x1b[96m");
+  stream.reset("UTF-8", false, true);
+  check(stream.feed("after-clear\n").front().colors == QList<SshColorRun>{{0, 11, {0xff29b8db, 0}}},
+        "clearing the display does not reset the active terminal color");
+  stream.reset("UTF-8");
+  const auto malformed = stream.feed("\x1b[38;2;999;0;0m\x1b[>4;1mplain\n");
+  check(malformed.front().text == "plain" && malformed.front().colors.isEmpty(), "invalid colors do not restyle plain text");
+}
+
 static void modelChecks() {
   TerminalLineModel model(5000);
   QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::Fatal);
@@ -790,7 +835,7 @@ void SshTerminalTestAccess::connectionStateChecks() {
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
-    streamChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); liveViewportNotificationChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); folderLogChecks(); currentConnectionErrorChecks(); SshTerminalTestAccess::connectionStateChecks();
+    streamChecks(); ansiColorChecks(); modelChecks(); monitorChecks(); receptionPauseChecks(); liveViewportNotificationChecks(); SshTerminalTestAccess::inputSchedulingChecks(); sessionLogChecks(); folderLogChecks(); currentConnectionErrorChecks(); SshTerminalTestAccess::connectionStateChecks();
     QTextStream(stdout) << "PASS: " << checks << " SSH stream/model/session-log assertions; files used isolated temporary directories\n";
     return 0;
   } catch (const std::exception &error) {

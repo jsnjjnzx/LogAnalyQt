@@ -24,7 +24,7 @@
 class TerminalLineModel : public QAbstractListModel {
   Q_OBJECT
 public:
-  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole, MonitorColorRole, MonitorRuleNameRole, MonitorWholeLineRole, MonitorRangesRole, MonitorMarksRole };
+  enum Roles { LineTextRole = Qt::UserRole + 1, LineIdRole, ContinuationRole, ContinuesRole, MonitorColorRole, MonitorRuleNameRole, MonitorWholeLineRole, MonitorRangesRole, MonitorMarksRole, LineColorsRole };
 
   explicit TerminalLineModel(int maxLines, QObject *parent = nullptr);
 
@@ -124,6 +124,7 @@ class SshTerminal : public QObject {
   Q_PROPERTY(bool receptionPaused READ receptionPaused WRITE setReceptionPaused NOTIFY receptionPausedChanged)
   Q_PROPERTY(bool persistSettings MEMBER m_persistSettings)
   Q_PROPERTY(QString liveLine READ liveLine NOTIFY liveLineChanged)
+  Q_PROPERTY(QVariantList liveColors READ liveColors NOTIFY liveLineChanged)
   Q_PROPERTY(QString liveMonitorColor READ liveMonitorColor NOTIFY liveLineChanged)
   Q_PROPERTY(bool liveMonitorWholeLine READ liveMonitorWholeLine NOTIFY liveLineChanged)
   Q_PROPERTY(QVariantList liveMonitorRanges READ liveMonitorRanges NOTIFY liveLineChanged)
@@ -209,6 +210,7 @@ public:
   bool receptionPaused() const { return m_receptionPaused; }
   void setReceptionPaused(bool paused);
   QString liveLine() const { return m_committedPartial; }
+  QVariantList liveColors() const { return m_committedColors; }
   QString liveMonitorColor() const { return m_committedMonitorColor; }
   bool liveMonitorWholeLine() const { return m_committedMonitorWholeLine; }
   QVariantList liveMonitorRanges() const { return m_committedMonitorRanges; }
@@ -386,6 +388,7 @@ private:
 
   QTimer *m_flushTimer;
   QString m_committedPartial;
+  QVariantList m_committedColors;
   QString m_committedMonitorColor;
   bool m_committedMonitorWholeLine = true;
   QVariantList m_committedMonitorRanges;

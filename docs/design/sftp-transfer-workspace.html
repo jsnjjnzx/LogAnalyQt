@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>通联工坊 · 文件传输设计稿</title>
+<style>
+/* Icon subset from the app’s Material Design Icons font. */
+@font-face{font-family:mdi;src:url("data:font/ttf;base64,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") format("truetype")}
+:root{color-scheme:dark;--shell:#1d2025;--panel:#22262d;--well:#1b1f25;--line:#353c47;--text:#edf1f7;--quiet:#a5aebb;--blue:#87baff;--accent:#347ddd;--select:#2a405e;--green:#8bd6a9;--danger:#f4a3a3}
+*{box-sizing:border-box}
+body{margin:0;padding:34px 28px;min-width:320px;background:#171a1f;color:var(--text);font:13px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;white-space:nowrap}
+button:disabled{cursor:default;opacity:.4}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+button,input,select{border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+button{padding:5px 9px;height:30px}
+button:hover:not(:disabled){background:#343d49}
+i{font:normal 17px/1 mdi;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle}
+.window{max-width:1120px;margin:auto;border:1px solid #3d444f;border-radius:13px;overflow:hidden;background:var(--shell);box-shadow:0 18px 48px #0005}
+.titlebar,.connection,.panelhead,.nav,.queuehead,.queueitem,.foot{display:flex;align-items:center;gap:9px}
+.titlebar{height:43px;padding:0 15px;background:#242830;border-bottom:1px solid var(--line);font-size:12px;color:var(--quiet)}
+.titlebar .right{margin-left:auto}
+.connection{padding:13px 15px 12px;flex-wrap:wrap;gap:10px}
+.identity{display:flex;align-items:center;gap:10px;min-width:0}
+.mark{display:grid;place-items:center;width:34px;height:34px;border-radius:8px;background:#263d58;color:var(--blue);flex:none}
+strong{font-size:15px;font-weight:650}
+.endpoint{font:12px ui-monospace,SFMono-Regular,monospace;color:var(--quiet)}
+.state{display:flex;align-items:center;gap:5px;color:var(--green);white-space:nowrap;margin-left:auto}
+.state[data-off]{color:var(--quiet)}
+.dot{width:6px;height:6px;border-radius:100%;background:currentColor}
+.pill{border:1px solid #49607a;color:var(--blue);border-radius:5px;padding:2px 6px;font-size:11px;letter-spacing:.3px}
+.panes{display:grid;grid-template-columns:minmax(0,1fr) 5px minmax(0,1fr);padding:0 12px;min-height:350px}
+.divider{cursor:col-resize;touch-action:none}
+.divider:hover{background:var(--line)}
+.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden;min-width:0;display:flex;flex-direction:column}
+.panelhead{padding:8px 9px 7px;gap:6px}
+.panelhead b{font-size:13px;flex:1}
+.panelhead i{color:var(--quiet)}
+.panelhead .action{background:var(--accent);border-color:transparent;font-weight:600;color:white;padding:4px 9px}
+.panelhead .action i{color:inherit}
+.panelhead .action:hover:not(:disabled){background:#4089e9}
+.panelhead .secondary-action{border-color:#4a6281;color:var(--blue)}
+.icon{display:grid;place-items:center;padding:0;width:29px;height:29px;flex:none;background:transparent}
+.nav{margin:0 8px 8px;gap:5px}
+.path,.filter{min-width:0;width:100%;height:29px;padding:3px 7px;background:var(--well)}
+.path{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;color:var(--text)}
+.filter{font-size:12px;max-width:115px}
+.colhead,.file{display:grid;grid-template-columns:minmax(0,1fr) 72px 105px;gap:5px;align-items:center;text-align:left}
+.colhead{height:27px;background:#262c35;border-block:1px solid var(--line);padding:0 10px;color:var(--quiet)}
+.colhead button{font-size:11px;height:24px;border:none;background:transparent;padding:0;color:inherit;text-align:inherit}
+.colhead button:nth-child(2),.num{text-align:right}
+.list{flex:1;background:var(--well);min-height:192px;padding:2px 0 4px}
+.file{width:100%;border:0;border-radius:0;height:29px;padding:0 10px;color:var(--text);background:transparent}
+.file:hover{background:#282f3a!important}
+.file[aria-pressed=true]{background:var(--select)!important;box-shadow:inset 2px 0 var(--blue)}
+.name{display:flex;align-items:center;gap:7px;min-width:0}
+.name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.name i{color:#a5bdde;flex:none}
+.name i.folder{color:#e1b571}
+.num,.date{font-size:11px;color:var(--quiet);font-variant-numeric:tabular-nums;white-space:nowrap}
+.foot{height:27px;justify-content:space-between;padding:0 10px;font-size:11px;color:var(--quiet);border-top:1px solid var(--line)}
+.queue{margin:10px 12px 12px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.queuehead{min-height:37px;padding:4px 9px;gap:7px}
+.queuehead b{margin-right:auto}
+.queuehead button[aria-pressed=true]{background:var(--select);border-color:#506e95;color:var(--blue)}
+.queuehead button{height:26px;padding:0 8px;font-size:12px}
+.queueitem{padding:5px 10px;border-top:1px solid var(--line);min-height:34px}
+.queueitem .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queueitem .status{width:92px;font-size:11px;color:var(--quiet);text-align:right;white-space:nowrap}
+.queueitem[data-state=done] .status{color:var(--green)}
+.queueitem[data-state=failed] .status{color:var(--danger)}
+progress{width:125px;height:5px;accent-color:var(--blue);border:0}
+.queueitem button{height:23px;font-size:11px;padding:0 6px}
+dialog{width:min(360px,calc(100vw - 30px));border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);padding:16px}
+dialog::backdrop{background:#0c0f16a0}
+dialog form{display:grid;gap:10px}
+dialog input,dialog select{height:32px;padding:4px 8px;width:100%}
+dialog label{display:grid;gap:3px;color:var(--quiet)}
+.form-buttons{display:flex;justify-content:end;gap:6px}
+.primary{background:var(--accent);color:white}
+.note{max-width:1120px;margin:8px auto 0;color:var(--quiet);font-size:11px;text-align:right}
+@media(max-width:850px){body{padding:15px 12px}.colhead,.file{grid-template-columns:minmax(0,1fr) 54px 77px}.date{font-size:10px}.filter{max-width:80px}}
+@media(max-width:640px){.panes{grid-template-columns:1fr!important;gap:7px}.divider{display:none}.connection .state{margin-left:0}.list{min-height:125px}.queueitem progress{width:55px}.queuehead button{padding:0 4px}.titlebar .right{display:none}}
+</style>
+<main class="window">
+  <div class="titlebar"><i aria-hidden="true">&#xF04E1;</i> 文件传输 <span class="right">通联工坊</span></div>
+  <header class="connection">
+    <div class="identity"><span class="mark"><i aria-hidden="true">&#xF0162;</i></span><div><strong>配网采集网关</strong><div id="endpoint" class="endpoint">maint@192.0.2.18:22</div></div></div>
+    <span class="pill" id="protocol">SFTP</span>
+    <span class="state" id="state"><span class="dot"></span><span>已连接</span></span>
+    <button id="connect">断开</button>
+  </header>
+  <div class="panes" id="panes">
+    <section class="panel" id="local" aria-label="本地文件"></section>
+    <div class="divider" id="divider" aria-hidden="true"></div>
+    <section class="panel" id="remote" aria-label="远程文件"></section>
+  </div>
+  <section class="queue" aria-label="传输队列">
+    <div class="queuehead"><b>传输队列 <span id="count"></span></b><button data-filter="all" aria-pressed="true">全部</button><button data-filter="failed" aria-pressed="false">失败</button><button id="clean">清除记录</button></div>
+    <div id="queue"></div>
+  </section>
+</main>
+<p class="note">设计预览 · 示例数据</p>
+<dialog id="name-dialog"><form method="dialog"><strong id="name-title"></strong><label>名称<input id="name-input" required></label><div class="form-buttons"><button value="cancel" formnovalidate>取消</button><button class="primary" value="save">确定</button></div></form></dialog>
+<dialog id="connection-dialog"><form method="dialog"><strong>连接设置</strong><label>协议<select id="protocol-input"><option>SFTP</option><option>FTP（明文）</option></select></label><label>主机<input id="host" value="192.0.2.18" required></label><label>端口<input id="port" type="number" min="1" max="65535" value="22" required></label><label>账号<input id="user" value="maint" required></label><label>密码<input type="password"></label><div class="form-buttons"><button value="cancel" formnovalidate>取消</button><button class="primary" value="save">连接</button></div></form></dialog>
+<script>
+const el = id => document.getElementById(id);
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icon = n => '<i aria-hidden="true">&#x' + n + ';</i>';
+const item = (name,size,date) => ({name,size,date,dir:size===null});
+const localRoot = "/Users/maint/Work/网关巡检", remoteRoot="/var/log/gateway";
+const localFiles=[item("归档",null,"11/07 14:02"),item("脚本",null,"11/07 13:40"),item("采集模板",null,"11/06 17:21"),item("gateway.ini",2400,"11/07 14:18"),item("capture-1107.zip",8250000,"11/07 14:08"),item("devices.csv",18400,"11/07 11:42"),item("readme.txt",780,"11/06 17:08")];
+const remoteFiles=[item("archive",null,"11/07 13:20"),item("diagnostics",null,"11/07 12:03"),item("gateway.log",12650000,"11/07 14:20"),item("gateway.log.1",8930000,"11/07 12:00"),item("health.json",6100,"11/07 14:19"),item("runtime.conf",1500,"11/06 16:38")];
+const fmt = n => n===null ? "—" : n<1024 ? n+" B" : n<1048576 ? (n/1024).toFixed(1)+" KB" : (n/1048576).toFixed(1)+" MB";
+let connected=true, filterQueue="all", nameAction=null;
+const queue=[{name:"gateway.log",direction:"download",size:12650000,progress:64,state:"active"},{name:"gateway.ini",direction:"upload",size:2400,progress:100,state:"done"},{name:"health.json",direction:"download",size:6100,state:"failed"}];
+const nameDialog=el("name-dialog"), connectionDialog=el("connection-dialog");
+function view(side,path,files) {
+  const panel=el(side), local=side==="local", source=new Map([[path,files]]);
+  let current=path, selected=new Set(local ? ["capture-1107.zip","devices.csv"] : ["gateway.log"]), last="", sort="name", desc=false, query="";
+  const btn=(id,symbol,label)=>'<button type="button" class="icon" data-role="'+id+'" title="'+label+'" aria-label="'+label+'">'+icon(symbol)+'</button>';
+  panel.innerHTML='<div class="panelhead">'+icon(local?'F0214':'F0162')+'<b>'+(local?'本地':'远程')+'</b>'+
+    btn("new","F0257","新建文件夹")+btn("rename","F0455","重命名")+
+    '<button data-role="transfer" class="'+(local?'action':'secondary-action')+'">'+icon(local?'F0054':'F004D')+(local?' 上传':' 下载')+' <span></span></button></div>'+
+    '<div class="nav">'+btn("up","F005D","上一级")+btn("refresh","F0450","刷新")+
+    '<input class="path" aria-label="'+(local?'本地路径':'远程路径')+'"><input class="filter" placeholder="筛选…" aria-label="筛选当前目录"></div>'+
+    '<div class="colhead"><button data-sort="name">名称</button><button data-sort="size">大小</button><button data-sort="date">修改时间</button></div>'+
+    '<div class="list"></div><div class="foot"><span></span><span></span></div>';
+  const find=selector=>panel.querySelector(selector), control=id=>find('[data-role="'+id+'"]');
+  function entries() {
+    return !local&&!connected ? [] : (source.get(current)||[]).filter(f=>f.name.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>
+      Number(b.dir)-Number(a.dir) || (desc?-1:1)*(sort==="size" ? (a.size||0)-(b.size||0) : a[sort].localeCompare(b[sort],"zh-CN")));
+  }
+  function show() {
+    const rows=entries(), picked=rows.filter(f=>selected.has(f.name)), list=find(".list");
+    find(".path").value=current;
+    for(const b of panel.querySelectorAll("[data-sort]")) b.textContent=({name:"名称",size:"大小",date:"修改时间"}[b.dataset.sort])+(sort===b.dataset.sort?(desc?" ↓":" ↑"):"");
+    list.innerHTML=rows.map((f,n)=>'<button class="file" type="button" data-index="'+n+'" aria-pressed="'+selected.has(f.name)+'"><span class="name"><i aria-hidden="true" class="'+(f.dir?"folder":"")+'">&#x'+(f.dir?"F024B":"F0219")+';</i><span>'+escapeHtml(f.name)+'</span></span><span class="num">'+fmt(f.size)+'</span><span class="date">'+escapeHtml(f.date)+'</span></button>').join("");
+    if(!local&&!connected) list.innerHTML='<div style="padding:20px;color:var(--quiet)">未连接</div>';
+    find(".foot span:first-child").textContent=rows.length+" 项";
+    find(".foot span:last-child").textContent=picked.length ? "已选 "+picked.length+" 项" : "";
+    const number=picked.filter(f=>!f.dir).length;
+    control("transfer").querySelector("span").textContent=number||"";
+    control("transfer").disabled=!connected||!number;
+    control("new").disabled=!local&&!connected;
+    control("rename").disabled=picked.length!==1;
+    control("up").disabled=current==="/"||(!local&&!connected);
+    control("refresh").disabled=!local&&!connected;
+  }
+  function go(path) { current=path||"/"; selected.clear(); last=""; query=""; find(".filter").value=""; show(); }
+  find(".list").onclick=e=>{
+    const row=e.target.closest(".file"); if(!row)return;
+    const rows=entries(), f=rows[+row.dataset.index];
+    if(e.shiftKey&&last&&rows.some(v=>v.name===last)){
+      const a=rows.findIndex(v=>v.name===last),b=+row.dataset.index;
+      selected=new Set(rows.slice(Math.min(a,b),Math.max(a,b)+1).map(v=>v.name));
+    } else if(e.metaKey||e.ctrlKey){selected.has(f.name)?selected.delete(f.name):selected.add(f.name);last=f.name;}
+    else{selected=new Set([f.name]);last=f.name;}
+    for(const b of find(".list").children)b.setAttribute("aria-pressed",selected.has(rows[+b.dataset.index].name));
+    find(".foot span:last-child").textContent=selected.size?"已选 "+selected.size+" 项":"";
+    const count=rows.filter(v=>selected.has(v.name)&&!v.dir).length;
+    control("transfer").querySelector("span").textContent=count||"";
+    control("transfer").disabled=!connected||!count;
+    control("rename").disabled=selected.size!==1;
+  };
+  const enter=row=>{const f=entries()[+row.dataset.index]; if(f?.dir)go(current.replace(/\/$/,"")+"/"+f.name);};
+  find(".list").ondblclick=e=>{const row=e.target.closest(".file");if(row)enter(row);};
+  find(".list").onkeydown=e=>{if(e.key==="Enter"&&e.target.matches(".file")){e.preventDefault();enter(e.target);}};
+  find(".filter").oninput=e=>{query=e.target.value;selected.clear();last="";show();};
+  find(".path").onkeydown=e=>{if(e.key==="Enter"&&(local||connected))go(e.target.value.trim());};
+  control("up").onclick=()=>go(current.slice(0,current.lastIndexOf("/")));
+  control("refresh").onclick=show;
+  for(const b of panel.querySelectorAll("[data-sort]"))b.onclick=()=>{desc=b.dataset.sort===sort&&!desc;sort=b.dataset.sort;show();};
+  for(const action of ["new","rename"]) control(action).onclick=()=>{
+    const old=entries().find(v=>selected.has(v.name));
+    nameAction=value=>{
+      const list=source.get(current)||[];
+      if(list.some(v=>v.name===value))return;
+      if(action==="rename"&&old){old.name=value;selected=new Set([value]);}
+      else {list.push(item(value,null,"11/07 14:21"));source.set(current,list);}
+      show();
+    };
+    nameDialog.returnValue="";el("name-title").textContent=action==="new"?"新建文件夹":"重命名";el("name-input").value=action==="rename"?old.name:"";nameDialog.showModal();
+  };
+  control("transfer").onclick=()=>{
+    for(const f of entries().filter(f=>selected.has(f.name)&&!f.dir))
+      queue.push({name:f.name,direction:local?"upload":"download",size:f.size,progress:0,state:"waiting"});
+    drawQueue();
+  };
+  show();return show;
+}
+nameDialog.onclose=()=>{const value=el("name-input").value.trim();if(nameDialog.returnValue==="save"&&value&&!/[\\/]/.test(value)&&value!=="."&&value!=="..")nameAction?.(value);};
+const showLocal=view("local",localRoot,localFiles),showRemote=view("remote",remoteRoot,remoteFiles);
+function drawQueue(){
+  el("count").textContent="· "+queue.length;
+  const status={active:"传输中",done:"已完成",failed:"连接中断",waiting:"等待",cancelled:"已取消"};
+  el("queue").innerHTML=queue.map((q,n)=>filterQueue==="failed"&&q.state!=="failed"?"":'<div class="queueitem" data-state="'+q.state+'"><span class="name">'+icon(q.direction==="upload"?"F0054":"F004D")+escapeHtml(q.name)+' <small class="num">'+fmt(q.size)+'</small></span>'+
+    (q.state==="active"?'<progress max="100" value="'+q.progress+'" aria-label="传输进度"></progress>':'')+'<span class="status">'+(q.state==="active"?q.progress+"% · ":"")+status[q.state]+'</span>'+
+    (["active","waiting","failed","cancelled"].includes(q.state)?'<button data-index="'+n+'">'+(["failed","cancelled"].includes(q.state)?"重试":"取消")+'</button>':'')+'</div>').join("");
+}
+el("queue").onclick=e=>{
+  const index=e.target.dataset.index;if(index===undefined)return;
+  const q=queue[+index];q.state=["failed","cancelled"].includes(q.state)?"waiting":"cancelled";q.progress=0;drawQueue();
+};
+for(const b of document.querySelectorAll("[data-filter]"))b.onclick=()=>{filterQueue=b.dataset.filter;for(const other of document.querySelectorAll("[data-filter]"))other.setAttribute("aria-pressed",other===b);drawQueue();};
+el("clean").onclick=()=>{for(let i=queue.length-1;i>=0;i--)if(["done","failed","cancelled"].includes(queue[i].state))queue.splice(i,1);drawQueue();};
+let tick=0;
+setInterval(()=>{
+  if(!connected)return;
+  const q=queue.find(q=>q.state==="active")||queue.find(q=>q.state==="waiting");
+  if(!q||(++tick<7&&q.name==="gateway.log"&&q.progress===64))return;
+  q.state="active";q.progress=Math.min(100,(q.progress||0)+12);
+  if(q.progress===100)q.state="done";drawQueue();
+},850);
+function connectionState(value){connected=value;el("state").toggleAttribute("data-off",!value);el("state").lastElementChild.textContent=value?"已连接":"未连接";el("connect").textContent=value?"断开":"连接…";showLocal();showRemote();}
+el("connect").onclick=()=>{if(connected)connectionState(false);else{connectionDialog.returnValue="";connectionDialog.showModal();}};
+connectionDialog.onclose=()=>{if(connectionDialog.returnValue!=="save")return;el("endpoint").textContent=el("user").value+"@"+el("host").value+":"+el("port").value;el("protocol").textContent=el("protocol-input").value;connectionState(true);};
+el("divider").onpointerdown=e=>{
+  const d=e.currentTarget;d.setPointerCapture(e.pointerId);
+  d.onpointermove=m=>{const r=el("panes").getBoundingClientRect(),ratio=Math.max(.35,Math.min(.65,(m.clientX-r.left)/r.width));el("panes").style.gridTemplateColumns=ratio+"fr 5px "+(1-ratio)+"fr";};
+  d.onpointerup=d.onpointercancel=()=>{d.onpointermove=null;};
+};
+drawQueue();
+</script>
+</html>

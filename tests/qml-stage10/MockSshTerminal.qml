@@ -75,6 +75,7 @@ QtObject {
         }
     }
     property bool presentationActive: true
+    property var liveColors: []
     property string liveLine: ""
     property string liveMonitorColor: ""
     property bool liveMonitorWholeLine: true

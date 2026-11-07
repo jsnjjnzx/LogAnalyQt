@@ -1,6 +1,8 @@
 #include "LogBackend.h"
 #include "LogMerger.h"
 #include "SshTerminal.h"
+#include "SshTextColors.h"
+#include "SshFileTransfer.h"
 #include "UpdateChecker.h"
 #include "WindowHelper.h"
 #include "mqtt/MqttController.h"
@@ -216,6 +218,8 @@ Button { text: "关闭"; onClicked: Qt.quit() }
   qmlRegisterType<UpdateChecker>("LogAnalyQt", 1, 2, "UpdateChecker");
   qmlRegisterSingletonType<WindowHelper>("LogAnalyQt", 1, 2, "WindowHelper",
       [](QQmlEngine *, QJSEngine *) -> QObject * { return new WindowHelper; });
+  qmlRegisterType<SshFileTransfer>("LogAnalyQt", 1, 2, "SshFileTransfer");
+  qmlRegisterType<SshTextColors>("LogAnalyQt", 1, 2, "SshTextColors");
 #ifdef LOGANALYQT_UI_TESTING
   const int sshBenchmarkIndex = app.arguments().indexOf(QStringLiteral("--ssh-performance"));
   const bool sshBenchmark = uiSmokeMode && sshBenchmarkIndex >= 0;

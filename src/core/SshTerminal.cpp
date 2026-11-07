@@ -28,7 +28,7 @@
 
 
 // libssh2 和 socket 头文件
-#include <libssh2.h>
+#include "SshLibrary.h"
 static_assert(LIBSSH2_TERM_WIDTH == SshLogStream::TerminalColumns,
               "SSH PTY width must match the stream's physical row width");
 #ifdef Q_OS_WIN
@@ -278,12 +278,12 @@ public slots:
     m_outgoing.append(data);
     resumeRead();
   }
-  void resetStream(quint64 revision, const QString &encoding, bool discardPartial) {
+  void resetStream(quint64 revision, const QString &encoding, bool discardPartial, bool preserveColors) {
     if (revision != m_buffer->contentRevision.load()) return;
     if (m_encoding != encoding) logBoundary(encoding);
     m_streamRevision = revision; m_encoding = encoding;
     m_replay.clear(); m_replayOffset = 0;
-    m_stream.reset(encoding, discardPartial);
+    m_stream.reset(encoding, discardPartial, preserveColors);
     if (!m_stream.encodingAvailable()) { fail(QStringLiteral("当前系统不支持所选 SSH 字符编码"), true); return; }
     resumeRead();
   }
@@ -436,6 +436,7 @@ private:
   void publish(std::vector<SshLogLine> lines) {
     bool notify = false;
     SshLogLine partial{m_stream.partialLine(), m_stream.logicalId(), m_stream.continuation(), m_stream.hasPendingInput()};
+    partial.colors = m_stream.colorRuns();
     m_monitor.feed(lines, partial);
     auto hit = m_monitor.takeHit();
     {
@@ -449,7 +450,8 @@ private:
         m_buffer->bytes += line.storageBytes();
         m_buffer->lines.push_back(std::move(line));
       }
-      const bool liveChanged = m_buffer->partial.text != m_stream.partialLine() || m_buffer->cursorColumn != m_stream.cursorColumn();
+      const bool liveChanged = m_buffer->partial.text != partial.text || m_buffer->partial.colors != partial.colors
+          || m_buffer->cursorColumn != m_stream.cursorColumn();
       m_buffer->partial = std::move(partial);
       m_buffer->cursorColumn = m_stream.cursorColumn();
       m_buffer->cursorPosition = m_stream.cursorPosition(); m_buffer->cursorPadding = m_stream.cursorPadding();
@@ -510,8 +512,7 @@ private:
         m_lastConnectError = error ? error : lastSocketError();
         tryNextAddress(); return;
       }
-      static const int initialized = libssh2_init(0);
-      if (initialized != 0 || !(m_session = libssh2_session_init())) {
+      if (!initializeSshLibrary() || !(m_session = libssh2_session_init())) {
         fail(QStringLiteral("初始化 SSH 会话失败")); return;
       }
       libssh2_session_set_blocking(m_session, 0);
@@ -630,9 +631,10 @@ private:
           qsizetype allowance;
           {
             QMutexLocker lock(&m_buffer->mutex);
-            // Account for worst-case one-character rows and a final unterminated segment.
-            allowance = (SshLogStream::PendingBytes - m_buffer->bytes -
-                         4 * SshLogStream::SegmentCharacters) / 128;
+            // Tab may expand to eight cells; keep the budget signed so a full queue pauses reads.
+            constexpr qsizetype tailBytes = SshLogStream::SegmentCharacters * (sizeof(QChar) + sizeof(SshColorRun));
+            constexpr qsizetype recordBytes = sizeof(SshLogLine) + 16 * sizeof(QChar) + sizeof(SshColorRun);
+            allowance = (SshLogStream::PendingBytes - m_buffer->bytes - tailBytes) / recordBytes;
           }
           if (allowance <= 0) { paused = true; break; }
           if (m_replayOffset < m_replay.size()) {
@@ -775,6 +777,7 @@ QVariant TerminalLineModel::data(const QModelIndex &index, int role) const {
   const auto &line = m_lines[size_t(index.row())];
   if (role == LineTextRole || role == Qt::DisplayRole)
     return line.text;
+  if (role == LineColorsRole) return line.colorRuns();
   if (role == LineIdRole) return lineId(index.row());
   if (role == ContinuationRole) return line.continuation;
   if (role == MonitorColorRole) return line.monitorColor;
@@ -789,7 +792,8 @@ QVariant TerminalLineModel::data(const QModelIndex &index, int role) const {
 QHash<int, QByteArray> TerminalLineModel::roleNames() const {
   return {{LineTextRole, "lineText"}, {LineIdRole, "lineId"},
           {ContinuationRole, "continuation"}, {ContinuesRole, "continues"}, {MonitorColorRole, "monitorColor"}, {MonitorRuleNameRole, "monitorRuleName"},
-          {MonitorWholeLineRole, "monitorWholeLine"}, {MonitorRangesRole, "monitorRanges"}, {MonitorMarksRole, "monitorMarks"}};
+          {MonitorWholeLineRole, "monitorWholeLine"}, {MonitorRangesRole, "monitorRanges"}, {MonitorMarksRole, "monitorMarks"},
+          {LineColorsRole, "lineColors"}};
 }
 
 void TerminalLineModel::appendLines(const QStringList &lines) {
@@ -1877,7 +1881,7 @@ void SshTerminal::triggerReconnect() {
 
 void SshTerminal::resetPendingData(bool discardPartial) {
   m_flushTimer->stop();
-  m_committedPartial.clear(); m_committedMonitorColor.clear();
+  m_committedPartial.clear(); m_committedColors.clear(); m_committedMonitorColor.clear();
   m_committedMonitorWholeLine = true; m_committedMonitorRanges.clear();
   m_committedMonitorMarks.clear();
   m_cursorColumn = 0;
@@ -1896,8 +1900,8 @@ void SshTerminal::resetPendingData(bool discardPartial) {
   }
   if (m_tabBusy) finishTabCapture();
   const auto encoding = m_encoding;
-  QMetaObject::invokeMethod(m_worker, [worker = m_worker, revision, encoding, discard = discardPartial && hadPartial] {
-    worker->resetStream(revision, encoding, discard);
+  QMetaObject::invokeMethod(m_worker, [worker = m_worker, revision, encoding, discardPartial, hadPartial] {
+    worker->resetStream(revision, encoding, discardPartial && hadPartial, discardPartial);
   });
 }
 
@@ -1919,7 +1923,7 @@ void SshTerminal::flushFinalPendingData() {
     emit lineCountChanged();
   }
   m_flushTimer->stop();
-  m_committedPartial.clear(); m_committedMonitorColor.clear();
+  m_committedPartial.clear(); m_committedColors.clear(); m_committedMonitorColor.clear();
   m_committedMonitorWholeLine = true; m_committedMonitorRanges.clear();
   m_committedMonitorMarks.clear();
   m_cursorColumn = m_cursorPosition = m_cursorPadding = 0; emit liveLineChanged();
@@ -1980,10 +1984,11 @@ void SshTerminal::flushPendingData() {
     emit monitorMatched(data);
   }
   if (bytes || previousCount != m_lineModel->rowCount()) emit lineCountChanged();
-  if (liveTextChanged || m_cursorColumn != column || m_committedMonitorColor != liveColor
+  auto colors = monitorPartial.colorRuns();
+  if (liveTextChanged || m_committedColors != colors || m_cursorColumn != column || m_committedMonitorColor != liveColor
       || m_committedMonitorWholeLine != liveWholeLine || m_committedMonitorRanges != liveRanges
       || m_committedMonitorMarks != liveMarks) {
-    m_committedPartial = std::move(live); m_cursorColumn = column;
+    m_committedPartial = std::move(live); m_committedColors = std::move(colors); m_cursorColumn = column;
     m_committedMonitorColor = liveColor;
     m_committedMonitorWholeLine = liveWholeLine; m_committedMonitorRanges = std::move(liveRanges);
     m_committedMonitorMarks = std::move(liveMarks);

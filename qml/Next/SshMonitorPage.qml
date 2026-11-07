@@ -9,6 +9,7 @@ GlassPage {
     property var backend
     property var sessions: []
     property var savedConnections: []
+    property var fileWindows: ({})
     property int currentIndex: -1
     readonly property var activeSession: currentIndex >= 0 && currentIndex < sessions.length ? sessions[currentIndex] : null
     property int nextSessionId: 1
@@ -200,6 +201,26 @@ GlassPage {
         ruleWindow.requestAction(function() { ruleWindow.loadText(text, sourceSessionId); });
     }
     Next.SshMonitorRuleWindow { id: ruleWindow; theme: root.theme; library: root }
+
+    function openFileTransfer(config) {
+        if (!config || shuttingDown) return;
+        const key = connectionKey(config);
+        let window = fileWindows[key];
+        if (!window) {
+            window = fileWindowComponent.createObject(root);
+            if (!window) return;
+            fileWindows[key] = window;
+            window.closing.connect(function() {
+                delete root.fileWindows[key];
+                window.destroy();
+            });
+        }
+        window.present(root.ownerWindow || root.Window.window, config);
+    }
+    Component {
+        id: fileWindowComponent
+        Next.SshFileTransferWindow { theme: root.theme; palette: root.palette }
+    }
 
     QtObject {
         id: commandLibrary
@@ -506,6 +527,7 @@ GlassPage {
     function shutdown() {
         if (shuttingDown) return;
         saveWorkspace(); shuttingDown = true; saveTimer.stop(); ruleWindow.close();
+        for (const key of Object.keys(fileWindows)) fileWindows[key].close();
         for (const container of containers) if (container.window) container.window.hide();
         for (const page of sessions) page.closeSshSession();
     }
@@ -845,10 +867,9 @@ GlassPage {
                             width: ListView.view.width; height: matches ? 52 : 0; visible: matches
                             highlighted: !!root.activeSession && root.connectionKey(root.activeSession.connectionConfiguration()) === root.connectionKey(config)
                             Accessible.name: config.name + " " + config.host
-                            Accessible.description: "双击或按 Enter 新建标签并连接；按菜单键或右键编辑连接参数"
-                            onDoubleClicked: root.connectSaved(config)
-                            Keys.onReturnPressed: root.connectSaved(config)
-                            Keys.onEnterPressed: root.connectSaved(config)
+                            Accessible.description: "右键、Enter 或菜单键打开连接操作"
+                            Keys.onReturnPressed: savedMenu.popup()
+                            Keys.onEnterPressed: savedMenu.popup()
                             Keys.onMenuPressed: savedMenu.popup()
                             contentItem: Column {
                                 spacing: 3
@@ -863,8 +884,15 @@ GlassPage {
                                     objectName: "ssh-saved-edit-" + savedRow.index; text: "编辑连接参数…"
                                     onTriggered: root.openConnectionEditor(null, savedRow.index)
                                 }
-                                Next.GlassMenuItem { text: "在新标签中连接"; onTriggered: root.connectSaved(savedRow.config) }
+                                Next.GlassMenuItem {
+                                    objectName: "ssh-saved-connect-tab-" + savedRow.index; text: "在新标签中连接"
+                                    onTriggered: root.connectSaved(savedRow.config)
+                                }
                                 Next.GlassMenuItem { text: "在新窗口中连接"; onTriggered: { const page = root.connectSaved(savedRow.config); if (page) root.detachSession(page); } }
+                                Next.GlassMenuItem {
+                                    objectName: "ssh-saved-transfer-menu-" + savedRow.index; text: "文件传输…"
+                                    onTriggered: root.openFileTransfer(savedRow.config)
+                                }
                                 Next.GlassMenuItem { objectName: "ssh-saved-remove-" + savedRow.index; text: "移除配置"; onTriggered: root.removeSaved(savedRow.index) }
                             }
                         }

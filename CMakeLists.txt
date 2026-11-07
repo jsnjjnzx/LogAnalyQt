@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 5.4.1 LANGUAGES CXX)
+project(LogAnalyQt VERSION 5.5.0 LANGUAGES CXX)
 if(NOT WIN32)
     find_package(Iconv REQUIRED)
 endif()
@@ -236,6 +236,10 @@ qt_add_executable(appLogAnalyQt
     src/core/LogMerger.h
     src/core/LogMerger.cpp
     src/core/SshTerminal.h
+    src/core/SshTextColors.h
+    src/core/SshFileTransfer.h
+    src/core/SshFileTransfer.cpp
+    src/core/SshLibrary.h
     src/core/SshTerminal.cpp
     src/core/SshLogStream.h
     src/core/SshLogStream.cpp
@@ -441,6 +445,16 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     endif()
     add_test(NAME ssh_stream_tests COMMAND ssh_stream_tests)
     set_tests_properties(ssh_stream_tests PROPERTIES TIMEOUT 30)
+
+    add_executable(ssh_file_transfer_tests tests/ssh_file_transfer_tests.cpp
+        src/core/SshFileTransfer.h src/core/SshFileTransfer.cpp src/core/SshTextColors.h)
+    target_include_directories(ssh_file_transfer_tests PRIVATE src/core)
+    target_link_libraries(ssh_file_transfer_tests PRIVATE Qt6::Quick Qt6::Network Qt6::Concurrent Qt6::Test libssh2_static)
+    add_test(NAME ssh_file_transfer_tests COMMAND ssh_file_transfer_tests)
+    set_tests_properties(ssh_file_transfer_tests PROPERTIES TIMEOUT 20)
+    if(NOT WIN32)
+        set_tests_properties(ssh_file_transfer_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
 
     add_executable(app_paths_tests
         tests/app_paths_tests.cpp

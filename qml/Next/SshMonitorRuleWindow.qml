@@ -1,12 +1,18 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs as Dialogs
 import LogAnalyQt.Next as Next
 
 ApplicationWindow {
     id: editor
     objectName: "ssh-rule-window"
     title: "规则库 — 通联工坊"
+    Dialogs.ColorDialog {
+        id: paletteDialog
+        title: "规则颜色"
+        onAccepted: colorInput.text = selectedColor.toString()
+    }
     width: 1060; height: 750
     minimumWidth: 760; minimumHeight: 560
     visible: false; modality: Qt.NonModal
@@ -165,7 +171,24 @@ ApplicationWindow {
                                 onClicked: colorInput.text = modelData
                             }
                         }
-                        Item { Layout.fillWidth: true }
+                        Next.GlassButton {
+                            text: "调色盘…"
+                            Accessible.name: "打开规则调色盘"
+                            contentItem: Row {
+                                spacing: 6
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 14; height: 14; radius: 3
+                                    color: colorInput.acceptableInput ? colorInput.text : "transparent"
+                                    border.color: editor.secondaryColor
+                                }
+                                Label { text: "调色盘…"; color: editor.textColor }
+                            }
+                            onClicked: {
+                                paletteDialog.selectedColor = colorInput.acceptableInput ? colorInput.text : "#e8b76a";
+                                paletteDialog.open();
+                            }
+                        }
                         Next.GlassTextField { id: colorInput; objectName: "ssh-rule-color"; text: "#e8b76a"; Layout.preferredWidth: 106; maximumLength: 7; validator: RegularExpressionValidator { regularExpression: /^#[0-9a-fA-F]{6}$/ } Accessible.name: "自定义规则颜色" }
                     }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme ? theme.groupBorder : "#444a53"; Layout.topMargin: 8; Layout.bottomMargin: 5 }

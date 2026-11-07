@@ -1,5 +1,31 @@
 # 关键决策与踩坑记录
 
+## 2026-11-07 发布 v5.5.0（T90）
+
+- GitHub 已公开 v4.5.0，当前正式版为 v5.4.1。用户确认 T85～T89 发布为 v5.5.0。沿用 main 同提交双平台产物、标签公开和公开更新验证流程，不改动历史发布。
+## 2026-11-07 SSH 连接卡片统一使用右键菜单（T89）
+
+- 文件传输与其他卡片操作共用已有右键菜单。键盘 Enter 或菜单键也打开该菜单；终端标签与左侧已保存卡片的操作分开。
+
+## 2026-11-07 双栏文件传输工作台（T88）
+
+- [第一稿](docs/design/sftp-transfer-workspace.html) 使用示例文件，不访问设备。参考 [WinSCP 双栏](https://winscp.net/eng/docs/ui_commander)、[FileZilla 传输队列](https://filezillapro.com/docs/v3/basic-usage-instructions/transfer-files-using-filezilla-filezilla-pro/) 和 [Cyberduck 目录操作](https://docs.cyberduck.io/cyberduck/browser/)。
+- 双栏浏览与队列分别使用后台对象。入队只保存路径、连接标识和文件元数据；密码仍由当前连接提供，不写入队列或配置。传输保留原有暂存交付，重试从头开始。
+
+## 2026-11-07 实时监控 Shift 扩展选区（T87）
+
+- 普通单击保留行 ID 和字符偏移作为起点，未产生文本选区时仍按既有单击逻辑处理 HEX。Shift 单击复用现有范围、选区绘制和复制流程。Qt 把紧接的 Shift 单击归为双击时，拒绝该双击以收到第二次的按下和释放（[MouseArea 文档](https://doc.qt.io/qt-6/qml-qtquick-mousearea.html#doubleClicked-signal)）。
+
+## 2026-11-07 文件传输归属 SSH 连接卡片（T86）
+
+- 用既有主机、端口和账号组合定位已打开的文件窗口，归工作区管理，不挂在可回收的列表 delegate 上。不同连接从各自的卡片取参数，各用一个传输窗口和后台对象；打开既有窗口只前置，不重置正在使用的连接。
+
+## 2026-11-07 监控颜色、双击选词和文件传输（T85）
+
+- 规则颜色复用现有 HEX 草稿和保存机制。ANSI 样式跟随流中的 UTF-16 字符，不进入用于查找、规则、选区和日志的正文；用原有 TextEdit 显示。
+- 文件窗口独立于 shell；SFTP 复用随包 libssh2 和应用信任文件。FTP 使用系统 curl，界面标明明文。不会自动从 SSH 会话填充或保存密码。
+- 文件窗口按操作建立后台连接；上传暂存后改名，下载在目标目录暂存。FTP 优先 MLSD，支持常见 UNIX/IIS LIST 回退。curl 仅用于 FTP，禁用代理与用户 curl 配置；测试用的 Python 库不随应用分发。
+
 ## 2026-11-05 v5.4.1 发布（T84）
 
 - 以远端 main `1b6fb9f` 为基线，发布包含 T80、T81、T83 的产品改动与 T82 排查记录。发布说明集中描述实时监控的跟随、日志设置、光标和独立窗口修复。T82 发现的 Tab 极端空行队列超预算保留为已知测试项。
