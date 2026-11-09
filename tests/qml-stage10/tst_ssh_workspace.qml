@@ -123,7 +123,7 @@ Item {
             mouseClick(row, 35, 20, Qt.RightButton); wait(30)
             mouseClick(item(scene.Window.window.contentItem, "ssh-saved-" + action + "-" + index)); wait(30)
         }
-        function test_doubleClickTabAndSavedConnectionMenuCreateIndependentConnections() {
+        function test_doubleClickTabAndSavedCardCreateIndependentConnections() {
             make()
             const a = page.activeSession, config = page.blankConfiguration("采集网关")
             config.host = "synthetic.example"; config.password = "synthetic-password"
@@ -143,8 +143,6 @@ Item {
             page.savedConnections = [config]; wait(30)
             const saved = item(page, "ssh-saved-row-0")
             mouseDoubleClickSequence(saved, 35, 18); wait(30)
-            compare(page.sessions.length, 2)
-            chooseSavedConnectionAction(0, "connect-tab")
             const c = page.activeSession
             compare(page.sessions.length, 3); compare(c.terminal.connectCalls, 1)
             compare(c.sessionName, "采集网关 · 2")
@@ -159,7 +157,8 @@ Item {
         function test_fileTransferFollowsSavedConnectionCard() {
             make()
             const a = Object.assign(page.blankConfiguration("网关 A"),
-                                    {host: "a.example", port: "2201", username: "a", password: "not-copied"})
+                                    {host: "a.example", port: "2201", username: "a", password: "fixture",
+                                     transferLocalPath: "/work", transferRemotePath: "/remote"})
             const b = Object.assign(page.blankConfiguration("网关 B"),
                                     {host: "b.example", port: "2202", username: "b"})
             page.savedConnections = [a, b]; wait(30)
@@ -169,11 +168,17 @@ Item {
             verify(windowA && windowA.visible)
             const first = windowA.connectionOptions()
             compare(first.host, a.host); compare(first.port, 2201); compare(first.user, a.username)
-            compare(first.password, "")
+            compare(first.password, a.password)
+            const browser = item(windowA, "ssh-file-browser")
+            compare(browser.calls[0].local, "/work")
+            browser.complete("local", {path: "/work", entries: []})
+            compare(browser.calls[1].action, "list")
+            compare(browser.calls[1].remote, "/remote")
             chooseSavedConnectionAction(1, "transfer-menu")
             const windowB = page.fileWindows[keyB]
             verify(windowB && windowB !== windowA && windowA.visible)
             compare(windowB.connectionOptions().host, b.host)
+            verify(windowB.connectionOptions().useStoredSshPassword)
             chooseSavedConnectionAction(0, "transfer-menu")
             compare(page.fileWindows[keyA], windowA)
             compare(page.sessions.length, 1)
@@ -2739,6 +2744,8 @@ Item {
             item(page, "ssh-editor-port").text = "2200"
             item(page, "ssh-editor-username").text = "operator"
             item(page, "ssh-editor-password").text = "new-password"
+            item(page, "ssh-editor-transfer-local").text = "/work"
+            item(page, "ssh-editor-transfer-remote").text = "/logs"
             item(page, "ssh-editor-copy-on-select").checked = true
             mouseClick(item(page, "ssh-editor-save")); wait(30)
             verify(!editor.opened)
@@ -2746,6 +2753,8 @@ Item {
             compare(page.savedConnections[0].port, "2200")
             compare(page.savedConnections[0].username, "operator")
             compare(page.savedConnections[0].password, "new-password")
+            compare(page.savedConnections[0].transferLocalPath, "/work")
+            compare(page.savedConnections[0].transferRemotePath, "/logs")
             verify(page.savedConnections[0].copyOnSelect)
 
             const restored = page.connectSaved(page.savedConnections[0]); wait(30)
@@ -2754,6 +2763,9 @@ Item {
             compare(restored.terminal.username, "operator")
             compare(restored.terminal.password, "new-password")
             verify(restored.autoScroll && restored.copyOnSelect)
+            connected(restored); wait(20)
+            compare(page.savedConnections[0].transferLocalPath, "/work")
+            compare(page.savedConnections[0].transferRemotePath, "/logs")
         }
         function test_savedConnectionListKeepsAccountAndPasswordAfterClosingTabs() {
             make()

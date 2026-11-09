@@ -1,5 +1,29 @@
 # 测试结果
 
+## 2026-11-09 v5.5.1 发布验收（T94 / RELEASE-28、29）
+
+- v5.5.1 版本检查、macOS Debug 完整构建、原生 CTest 28/28、发布工具单元测试 38/38 通过。日志见 `build/macos-debug/t94-build.log`、`t94-ctest.log`、`t94-release-tools.log`。
+- 本机 SFTP 回环通过 79 项断言，覆盖复用 SSH 卡片凭据、主机指纹、目录操作、传输和取消清理。见 `build/macos-debug/t94-sftp-loopback.log`。
+- 固定 macOS 自测应用已更新至 v5.5.1，126 个 arm64 Mach-O 和依赖、deep strict 签名及隔离 Cocoa 启动通过。主程序 SHA-256 `3b4cdfbaecfa4942eafd6ea9cc8747801e141504e484bc9ca2fbe6e4e61bc8b8`。
+- 按 AGENTS.md 排除 QML 和成品界面自动化；未手动点击卡片、连接真实 SSH 设备或使用实际用户钥匙串。GitHub 同提交的双平台构建、包来源和公开更新待验证。
+
+## 2026-11-09 移除 FTP 并恢复双击 SSH 卡片监控（T93）
+
+- macOS Debug 完整构建、QML 资源编译及设计稿 JavaScript 语法检查通过。原生 SSH 专项 3/3，本机 SFTP 回环 79 项通过，含卡片凭据、指纹校验、目录操作、传输和取消清理。见 `build/macos-debug/t93-build.log`、`t93-ctest.log` 和 `t93-sftp-loopback.log`。
+- 更新固定 v5.5.0 自测应用；126 个 arm64 Mach-O、依赖、deep strict 签名和 Cocoa 隔离启动通过。主程序 SHA-256 `29046749706d7fbba94249c547405ed0dc64217f2aa16cf6cc9c20f0e289299d`。
+- 已调整既有 QML 用例以覆盖卡片双击、右键连接和 SFTP 入口。按 AGENTS.md 未运行 QML/成品界面自动化，未实测 GUI 双击、Windows 或真实设备。
+
+## 2026-11-09 默认位置仅用于 SFTP（T92）
+
+- macOS Debug 完整构建、修改后的 QML 资源编译、126 个 arm64 Mach-O 及依赖检查、deep strict 签名和 Cocoa 隔离启动通过。固定自测应用已更新；主程序 SHA-256 `50a34f6b13b7a37e903b31c2042572665d67df0f543802f1a843a9d4af4ef716`。
+- 原有 SSH 卡片用例补充 FTP 不读取已填默认路径的断言。按 AGENTS.md 未执行 QML 或成品界面自动化，未实测 GUI；仅修改路径初始化和字段标签，未重跑原生网络测试。
+
+## 2026-11-09 SSH 卡片直开 SFTP 与默认位置（T91）
+
+- macOS Debug 完整构建和 QML 资源编译通过。原生 SSH 专项 3/3；独立本机回环 SFTP 81 项、FTP MLSD 79 项、FTP 传统 LIST 79 项通过。确认系统 SSH 密码在主机确认后才读取、身份与保存的 SSH 卡片一致、FTP 拒绝使用该凭据，以及原有传输和取消回归通过。证据见 `build/macos-debug/t91-ctest.log` 和 `t91-transfer-loopback.log`。
+- 更新固定 v5.5.0 自测应用，126 个 arm64 Mach-O、依赖和 deep strict 签名检查通过；Cocoa 隔离启动通过。主程序 SHA-256 `df068cb4cdbb49d73025e7aaaba03a13e0524f48c21b5bf20a35b33d6e08bb44`。
+- 已更新卡片默认位置、自动列目录、重连后保留及 FTP 隔离的 QML 用例。按 AGENTS.md 未运行 QML 自动化、成品界面自动化或实测 GUI 操作；未连接真实设备或调用实际用户钥匙串。
+
 ## 2026-11-07 v5.5.0 发布验收（T90 / RELEASE-26、27）
 
 - v5.5.0 版本检查、macOS Debug 完整构建、原生 CTest 28/28 和发布工具 38/38 通过，见 `build/macos-debug/t90-build.log`、`t90-ctest.log` 和 `t90-release-tools.log`。按 AGENTS.md 排除 QML 和成品界面自动化。

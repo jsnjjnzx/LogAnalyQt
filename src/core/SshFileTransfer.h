@@ -7,6 +7,8 @@
 #include <atomic>
 #include <memory>
 
+class SecureCredentialStore;
+
 class SshFileTransfer : public QObject {
   Q_OBJECT
   Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
@@ -14,7 +16,8 @@ class SshFileTransfer : public QObject {
 
 public:
   explicit SshFileTransfer(QObject *parent = nullptr);
-  explicit SshFileTransfer(QString dataRoot, QObject *parent = nullptr);
+  explicit SshFileTransfer(QString dataRoot, QObject *parent = nullptr,
+                           std::shared_ptr<SecureCredentialStore> credentials = {});
   ~SshFileTransfer() override;
   bool busy() const { return m_busy; }
   qint64 transferredBytes() const { return m_transferredBytes; }
@@ -38,7 +41,7 @@ private:
   struct Job {
     QString action, host, user, password, remotePath, localPath, name, newName, acceptedFingerprint;
     int port = 0;
-    bool ftp = false;
+    bool useStoredSshPassword = false;
   };
   struct State {
     std::atomic_bool cancelled{false};
@@ -46,9 +49,11 @@ private:
   };
   void start(Job job);
   void syncProgress();
-  static QVariantMap execute(const Job &job, const QString &dataRoot, State &state);
+  static QVariantMap execute(const Job &job, const QString &dataRoot, State &state,
+                             SecureCredentialStore &credentials);
 
   QString m_dataRoot;
+  std::shared_ptr<SecureCredentialStore> m_credentials;
   QFutureWatcher<QVariantMap> m_watcher;
   Job m_job;
   std::shared_ptr<State> m_state;

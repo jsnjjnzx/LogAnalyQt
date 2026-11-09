@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 5.5.0 LANGUAGES CXX)
+project(LogAnalyQt VERSION 5.5.1 LANGUAGES CXX)
 if(NOT WIN32)
     find_package(Iconv REQUIRED)
 endif()
@@ -449,7 +449,7 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     add_executable(ssh_file_transfer_tests tests/ssh_file_transfer_tests.cpp
         src/core/SshFileTransfer.h src/core/SshFileTransfer.cpp src/core/SshTextColors.h)
     target_include_directories(ssh_file_transfer_tests PRIVATE src/core)
-    target_link_libraries(ssh_file_transfer_tests PRIVATE Qt6::Quick Qt6::Network Qt6::Concurrent Qt6::Test libssh2_static)
+    target_link_libraries(ssh_file_transfer_tests PRIVATE Qt6::Quick Qt6::Network Qt6::Concurrent Qt6::Test libssh2_static loganalyqt_credentials)
     add_test(NAME ssh_file_transfer_tests COMMAND ssh_file_transfer_tests)
     set_tests_properties(ssh_file_transfer_tests PROPERTIES TIMEOUT 20)
     if(NOT WIN32)

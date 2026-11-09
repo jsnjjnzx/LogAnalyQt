@@ -239,6 +239,8 @@ GlassPage {
         for (const key of ["name", "host", "port", "username", "maxLines", "reconnectCount", "reconnectInterval"])
             if (typeof config[key] !== "string" || config[key].length > 1024) return false;
         return (config.password === undefined || typeof config.password === "string" && config.password.length <= 4096)
+            && (config.transferLocalPath === undefined || typeof config.transferLocalPath === "string" && config.transferLocalPath.length <= 4096)
+            && (config.transferRemotePath === undefined || typeof config.transferRemotePath === "string" && config.transferRemotePath.length <= 4096)
             && ["UTF-8", "GB2312"].indexOf(config.encoding) >= 0
             && typeof config.autoReconnect === "boolean" && typeof config.expanded === "boolean"
             && typeof config.commandManagementExpanded === "boolean"
@@ -594,8 +596,12 @@ GlassPage {
     function connectionKey(config) {
         return JSON.stringify([config.host.trim().toLowerCase(), Number(config.port), config.username.trim()]);
     }
-    function savedConfiguration(config, page) {
+    function savedConfiguration(config, page, previous) {
         const row = Object.assign({}, config);
+        if (previous) {
+            for (const key of ["transferLocalPath", "transferRemotePath"])
+                if (row[key] === undefined && previous[key] !== undefined) row[key] = previous[key];
+        }
         row.host = String(row.host || "").trim();
         row.username = String(row.username || "").trim();
         row.password = page && page.secureCredentials ? "" : String(row.password || "");
@@ -643,7 +649,12 @@ GlassPage {
             connectionEditorNameSuffix = "";
         }
         const draft = Object.assign({}, config);
-        if (index >= 0) draft.name = savedConnections[index].name;
+        if (index >= 0) {
+            const saved = savedConnections[index];
+            draft.name = saved.name;
+            draft.transferLocalPath = saved.transferLocalPath;
+            draft.transferRemotePath = saved.transferRemotePath;
+        }
         connectionEditorPage = page;
         connectionEditorSavedIndex = index;
         connectionEditorOldKey = page ? page.savedConnectionKey || connectionKey(config) : connectionKey(config);
@@ -699,7 +710,7 @@ GlassPage {
         if (index < 0) index = savedConnections.findIndex(function(value) { return connectionKey(value) === key; });
         if (index < 0) return;
         const rows = savedConnections.slice();
-        rows[index] = savedConfiguration(Object.assign({}, config, {name: rows[index].name}), page);
+        rows[index] = savedConfiguration(Object.assign({}, config, {name: rows[index].name}), page, rows[index]);
         savedConnections = rows;
         page.savedConnectionKey = key;
     }
@@ -723,7 +734,7 @@ GlassPage {
         const rows = savedConnections.slice();
         const index = rows.findIndex(function(value) { return root.connectionKey(value) === key; });
         config.name = index < 0 ? config.name.replace(/ · \d+$/, "") : rows[index].name;
-        if (index < 0) rows.push(savedConfiguration(config, page)); else rows[index] = savedConfiguration(config, page);
+        if (index < 0) rows.push(savedConfiguration(config, page)); else rows[index] = savedConfiguration(config, page, rows[index]);
         savedConnections = rows;
         page.savedConnectionKey = key;
         saveWorkspace();
@@ -867,7 +878,8 @@ GlassPage {
                             width: ListView.view.width; height: matches ? 52 : 0; visible: matches
                             highlighted: !!root.activeSession && root.connectionKey(root.activeSession.connectionConfiguration()) === root.connectionKey(config)
                             Accessible.name: config.name + " " + config.host
-                            Accessible.description: "右键、Enter 或菜单键打开连接操作"
+                            Accessible.description: "双击开始监控；右键、Enter 或菜单键打开连接操作"
+                            onDoubleClicked: root.connectSaved(savedRow.config)
                             Keys.onReturnPressed: savedMenu.popup()
                             Keys.onEnterPressed: savedMenu.popup()
                             Keys.onMenuPressed: savedMenu.popup()
@@ -890,7 +902,7 @@ GlassPage {
                                 }
                                 Next.GlassMenuItem { text: "在新窗口中连接"; onTriggered: { const page = root.connectSaved(savedRow.config); if (page) root.detachSession(page); } }
                                 Next.GlassMenuItem {
-                                    objectName: "ssh-saved-transfer-menu-" + savedRow.index; text: "文件传输…"
+                                    objectName: "ssh-saved-transfer-menu-" + savedRow.index; text: "SFTP 文件传输…"
                                     onTriggered: root.openFileTransfer(savedRow.config)
                                 }
                                 Next.GlassMenuItem { objectName: "ssh-saved-remove-" + savedRow.index; text: "移除配置"; onTriggered: root.removeSaved(savedRow.index) }
@@ -952,6 +964,8 @@ GlassPage {
             reconnectIntervalInput.text = sourceConfig.reconnectInterval || "2000";
             copyOnSelectSwitch.checked = sourceConfig.copyOnSelect === true;
             wrapLinesSwitch.checked = sourceConfig.wrapLogLines === true;
+            transferLocalInput.text = sourceConfig.transferLocalPath || "";
+            transferRemoteInput.text = sourceConfig.transferRemotePath || "";
             open();
         }
         function configuration() {
@@ -962,7 +976,8 @@ GlassPage {
                 encoding: encodingCombo.currentText, maxLines: maxLinesInput.text,
                 autoReconnect: autoReconnectSwitch.checked, reconnectCount: reconnectCountInput.text,
                 reconnectInterval: reconnectIntervalInput.text,
-                copyOnSelect: copyOnSelectSwitch.checked, wrapLogLines: wrapLinesSwitch.checked
+                copyOnSelect: copyOnSelectSwitch.checked, wrapLogLines: wrapLinesSwitch.checked,
+                transferLocalPath: transferLocalInput.text, transferRemotePath: transferRemoteInput.text
             });
         }
         function validationMessage() {
@@ -1050,6 +1065,18 @@ GlassPage {
                     Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
                     implicitHeight: 28
                 }
+                Label { text: "SFTP 本地默认位置"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: transferLocalInput; objectName: "ssh-editor-transfer-local"
+                    Layout.columnSpan: 3; Layout.fillWidth: true; implicitHeight: 32; maximumLength: 4096
+                    placeholderText: "本机用户目录"; Accessible.name: "SFTP 本地默认位置"
+                }
+                Label { text: "SFTP 远程默认位置"; color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 12 }
+                Next.GlassTextField {
+                    id: transferRemoteInput; objectName: "ssh-editor-transfer-remote"
+                    Layout.columnSpan: 3; Layout.fillWidth: true; implicitHeight: 32; maximumLength: 4096
+                    placeholderText: "远程登录目录"; Accessible.name: "SFTP 远程默认位置"
+                }
             }
 
             RowLayout {
@@ -1091,7 +1118,7 @@ GlassPage {
             Label {
                 Layout.fillWidth: true; wrapMode: Text.Wrap
                 text: editor.identityLocked
-                    ? "连接期间仅可修改复制、换行和重连参数；主机、端口、用户与密码需断开后修改。"
+                    ? "主机、端口、用户与密码需断开后修改。"
                     : "复制、换行及连接参数会随此连接保存，下次重连或再次打开时沿用。"
                 color: root.theme ? root.theme.subText : "#777777"; font.pixelSize: 11
             }

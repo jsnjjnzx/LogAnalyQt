@@ -30,6 +30,9 @@ ApplicationWindow {
     readonly property color error: theme ? theme.error : "#d54747"
 
     property bool connected: false
+    property bool openCardSftp: false
+    property string cardKey: ""
+    property string cardPassword: ""
     property bool closingWindow: false
     property string status: ""
     property bool failed: false
@@ -45,14 +48,14 @@ ApplicationWindow {
     property bool failuresOnly: false
     property bool queueExpanded: true
     readonly property bool canBrowse: !browser.busy && !trustClient
-    readonly property bool ftp: protocol.currentIndex === 1
+    readonly property bool useCardCredential: cardKey !== "" && cardKey === connectionKey()
     readonly property bool hasQueuedWork: runningJobId >= 0 || jobs.some(job => job.state === "waiting")
     readonly property bool confirmedPaths: localPane.path !== "" && remotePane.path !== "" &&
         localPane.path === localPane.pathInput.text && remotePane.path === remotePane.pathInput.text
     readonly property var shownJobs: failuresOnly ? jobs.filter(job => job.state === "failed") : jobs
     readonly property int failureCount: jobs.filter(job => job.state === "failed").length
     readonly property bool configurationValid: hostInput.text.trim() !== "" && portInput.acceptableInput &&
-                                                userInput.text.trim() !== "" && (ftp || passwordInput.text !== "")
+                                                userInput.text.trim() !== "" && (useCardCredential || passwordInput.text !== "")
 
     FontLoader { id: fileIcons; source: "qrc:/qt/qml/LogAnalyQt/assets/materialdesignicons-webfont.ttf" }
 
@@ -63,19 +66,23 @@ ApplicationWindow {
             hostInput.text = target.host;
             userInput.text = target.username;
             portInput.text = String(target.port);
-            remotePane.pathInput.text = ".";
-            if (!localPane.path.length && !browser.busy)
-                browser.browseLocal(browser.homePath());
+            cardKey = connectionKey();
+            cardPassword = target.password || "";
+            remotePane.pathInput.text = target.transferRemotePath || ".";
+            localPane.pathInput.text = target.transferLocalPath || browser.homePath();
+            openCardSftp = true;
+            browser.browseLocal(localPane.pathInput.text);
         }
         showNormal(); raise(); requestActivate();
     }
 
     function connectionOptions() {
+        const password = passwordInput.text || (useCardCredential ? cardPassword : "");
         return {host: hostInput.text.trim(), port: Number(portInput.text), user: userInput.text.trim(),
-                password: passwordInput.text, ftp: ftp};
+                password: password, useStoredSshPassword: useCardCredential && password === ""};
     }
     function connectionKey() {
-        return JSON.stringify([hostInput.text.trim().toLowerCase(), Number(portInput.text), userInput.text.trim(), ftp]);
+        return JSON.stringify([hostInput.text.trim().toLowerCase(), Number(portInput.text), userInput.text.trim()]);
     }
     function disconnectTransfer() {
         connected = false;
@@ -206,7 +213,7 @@ ApplicationWindow {
         closingWindow = true;
         trustClient = null; trustDialog.close();
         browser.cancel(); worker.cancel();
-        passwordInput.clear();
+        passwordInput.clear(); cardPassword = "";
     }
 
     SshFileTransfer {
@@ -223,6 +230,10 @@ ApplicationWindow {
                 (action === "local" ? localPane : remotePane).showListing(result);
                 if (action === "list") root.connected = true;
                 root.status = ""; root.failed = false;
+                if (action === "local" && root.openCardSftp) {
+                    root.openCardSftp = false;
+                    root.browse(remotePane, remotePane.pathInput.text);
+                }
             } else {
                 const pane = root.editPane;
                 if (pane && pane.path === root.editPath) pane.refreshNeeded = true;
@@ -265,44 +276,35 @@ ApplicationWindow {
         parent: root.contentItem; anchors.centerIn: parent
         width: 420; modal: true
         property var previous: null
-        onAboutToShow: previous = {protocol: protocol.currentIndex, host: hostInput.text,
-                                  port: portInput.text, user: userInput.text, password: passwordInput.text,
-                                  path: remotePane.pathInput.text}
+        onAboutToShow: previous = {password: passwordInput.text, path: remotePane.pathInput.text}
         onRejected: {
             if (!previous) return;
-            protocol.currentIndex = previous.protocol; hostInput.text = previous.host;
-            portInput.text = previous.port; userInput.text = previous.user; passwordInput.text = previous.password;
+            passwordInput.text = previous.password;
             remotePane.pathInput.text = previous.path;
         }
         onClosed: { previous = null; Qt.callLater(root.processQueue); }
         onOpened: if (hostInput.text && userInput.text) passwordInput.forceActiveFocus()
-        onAccepted: root.browse(remotePane, remotePane.pathInput.text)
+        onAccepted: {
+            root.openCardSftp = false;
+            root.browse(remotePane, remotePane.pathInput.text);
+        }
         contentItem: GridLayout {
             columns: 2; rowSpacing: 8; columnSpacing: 12
-            Label { text: "协议" }
-            Next.GlassComboBox {
-                id: protocol
-                model: ["SFTP", "FTP（明文）"]
-                Layout.preferredWidth: 150
-                Accessible.name: "协议"
-                onActivated: {
-                    portInput.text = root.ftp ? "21" : "22";
-                    remotePane.pathInput.text = root.ftp ? "/" : ".";
-                }
-            }
             Label { text: "主机" }
-            Next.GlassTextField { id: hostInput; Layout.fillWidth: true; Accessible.name: "主机" }
+            Next.GlassTextField { id: hostInput; Layout.fillWidth: true; readOnly: true; Accessible.name: "主机" }
             Label { text: "端口" }
             Next.GlassTextField {
-                id: portInput; Layout.preferredWidth: 80; Accessible.name: "端口"
+                id: portInput; Layout.preferredWidth: 80; readOnly: true; Accessible.name: "端口"
                 validator: IntValidator { bottom: 1; top: 65535 }
             }
             Label { text: "账号" }
-            Next.GlassTextField { id: userInput; Layout.fillWidth: true; Accessible.name: "账号" }
+            Next.GlassTextField { id: userInput; Layout.fillWidth: true; readOnly: true; Accessible.name: "账号" }
             Label { text: "密码" }
             Next.GlassTextField {
                 id: passwordInput; Layout.fillWidth: true; Accessible.name: "密码"
                 echoMode: TextInput.Password
+                inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+                placeholderText: "留空沿用 SSH 凭据"
                 onAccepted: if (root.configurationValid) settingsDialog.accept()
             }
             Label { text: "远程目录" }
@@ -393,7 +395,7 @@ ApplicationWindow {
                 Layout.preferredWidth: protocolLabel.implicitWidth + 12
                 Layout.preferredHeight: 21; radius: 4
                 color: root.selectedFill
-                Label { id: protocolLabel; anchors.centerIn: parent; text: root.ftp ? "FTP · 明文" : "SFTP"; color: root.accent; font.pixelSize: 11 }
+                Label { id: protocolLabel; anchors.centerIn: parent; text: "SFTP"; color: root.accent; font.pixelSize: 11 }
             }
             Rectangle {
                 Layout.preferredWidth: 6; Layout.preferredHeight: 6; radius: 3

@@ -87,7 +87,7 @@ dialog label{display:grid;gap:3px;color:var(--quiet)}
   <div class="titlebar"><i aria-hidden="true">&#xF04E1;</i> 文件传输 <span class="right">通联工坊</span></div>
   <header class="connection">
     <div class="identity"><span class="mark"><i aria-hidden="true">&#xF0162;</i></span><div><strong>配网采集网关</strong><div id="endpoint" class="endpoint">maint@192.0.2.18:22</div></div></div>
-    <span class="pill" id="protocol">SFTP</span>
+    <span class="pill">SFTP</span>
     <span class="state" id="state"><span class="dot"></span><span>已连接</span></span>
     <button id="connect">断开</button>
   </header>
@@ -103,7 +103,7 @@ dialog label{display:grid;gap:3px;color:var(--quiet)}
 </main>
 <p class="note">设计预览 · 示例数据</p>
 <dialog id="name-dialog"><form method="dialog"><strong id="name-title"></strong><label>名称<input id="name-input" required></label><div class="form-buttons"><button value="cancel" formnovalidate>取消</button><button class="primary" value="save">确定</button></div></form></dialog>
-<dialog id="connection-dialog"><form method="dialog"><strong>连接设置</strong><label>协议<select id="protocol-input"><option>SFTP</option><option>FTP（明文）</option></select></label><label>主机<input id="host" value="192.0.2.18" required></label><label>端口<input id="port" type="number" min="1" max="65535" value="22" required></label><label>账号<input id="user" value="maint" required></label><label>密码<input type="password"></label><div class="form-buttons"><button value="cancel" formnovalidate>取消</button><button class="primary" value="save">连接</button></div></form></dialog>
+<dialog id="connection-dialog"><form method="dialog"><strong>连接设置</strong><label>主机<input id="host" value="192.0.2.18" required></label><label>端口<input id="port" type="number" min="1" max="65535" value="22" required></label><label>账号<input id="user" value="maint" required></label><label>密码<input type="password"></label><div class="form-buttons"><button value="cancel" formnovalidate>取消</button><button class="primary" value="save">连接</button></div></form></dialog>
 <script>
 const el = id => document.getElementById(id);
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -215,7 +215,7 @@ setInterval(()=>{
 },850);
 function connectionState(value){connected=value;el("state").toggleAttribute("data-off",!value);el("state").lastElementChild.textContent=value?"已连接":"未连接";el("connect").textContent=value?"断开":"连接…";showLocal();showRemote();}
 el("connect").onclick=()=>{if(connected)connectionState(false);else{connectionDialog.returnValue="";connectionDialog.showModal();}};
-connectionDialog.onclose=()=>{if(connectionDialog.returnValue!=="save")return;el("endpoint").textContent=el("user").value+"@"+el("host").value+":"+el("port").value;el("protocol").textContent=el("protocol-input").value;connectionState(true);};
+connectionDialog.onclose=()=>{if(connectionDialog.returnValue!=="save")return;el("endpoint").textContent=el("user").value+"@"+el("host").value+":"+el("port").value;connectionState(true);};
 el("divider").onpointerdown=e=>{
   const d=e.currentTarget;d.setPointerCapture(e.pointerId);
   d.onpointermove=m=>{const r=el("panes").getBoundingClientRect(),ratio=Math.max(.35,Math.min(.65,(m.clientX-r.left)/r.width));el("panes").style.gridTemplateColumns=ratio+"fr 5px "+(1-ratio)+"fr";};

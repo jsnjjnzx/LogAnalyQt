@@ -1,4 +1,5 @@
 #include "SshFileTransfer.h"
+#include "config/CredentialAccess.h"
 
 #include "SshHostKeyStore.h"
 #include "SshLibrary.h"
@@ -7,18 +8,16 @@
 
 #include <QDir>
 #include <QDateTime>
+#include <QMutex>
 #include <QDirIterator>
-#include <QProcess>
 #include <QRegularExpression>
 #include <QTcpSocket>
 #include <QTemporaryFile>
 #include <QUuid>
-#include <QUrl>
 #include <QtConcurrentRun>
 #include <algorithm>
 
 namespace {
-constexpr int MaxListing = 8 * 1024 * 1024;
 constexpr int MaxEntries = 20000;
 
 [[noreturn]] void fail(const QString &error) { throw error; }
@@ -77,7 +76,7 @@ public:
 
   QString connect(const QString &host, int port, const QString &user, const QString &password,
                   SshHostKeyStore &trust, const QString &acceptedFingerprint,
-                  const std::atomic_bool &cancelled) {
+                  const std::atomic_bool &cancelled, SecureCredentialStore *storedCredential) {
     socket.connectToHost(host, quint16(port));
     if (!socket.waitForConnected(10000)) fail(QStringLiteral("SFTP 连接失败：") + socket.errorString());
     checkCancelled(cancelled);
@@ -105,9 +104,26 @@ public:
     case SshHostKeyStore::Trusted: break;
     }
     checkCancelled(cancelled);
-    const auto login = user.toUtf8(), secret = password.toUtf8();
-    if (libssh2_userauth_password_ex(session, login.constData(), unsigned(login.size()),
-                                    secret.constData(), unsigned(secret.size()), nullptr) != 0)
+    const auto login = user.toUtf8();
+    auto secret = password.toUtf8();
+    if (secret.isEmpty() && storedCredential && storedCredential->isAvailable()) {
+      static QMutex systemCredentialReads;
+      QMutexLocker lock(&systemCredentialReads);
+      checkCancelled(cancelled);
+      if (!storedCredential->read(CredentialAccess::sshProfile(host, port, user), &secret, &error)) {
+        secret.fill(0);
+        fail(error.isEmpty() ? QStringLiteral("无法读取系统 SSH 凭据") : error);
+      }
+    }
+    if (cancelled.load() || secret.isEmpty()) {
+      secret.fill(0);
+      checkCancelled(cancelled);
+      fail(QStringLiteral("未找到该连接的 SSH 密码，请手动输入 SFTP 密码"));
+    }
+    const auto auth = libssh2_userauth_password_ex(session, login.constData(), unsigned(login.size()),
+                                                   secret.constData(), unsigned(secret.size()), nullptr);
+    secret.fill(0);
+    if (auth != 0)
       sshError(QStringLiteral("SFTP 密码认证失败"));
     if (!(sftp = libssh2_sftp_init(session))) sshError(QStringLiteral("服务器未能打开 SFTP 子系统"));
     return {};
@@ -234,226 +250,12 @@ private:
   LIBSSH2_SFTP *sftp = nullptr;
 };
 
-QString curlProgram() {
-#ifdef Q_OS_WIN
-  const QString systemRoot = qEnvironmentVariable("SystemRoot");
-  return systemRoot.isEmpty() ? QString{} : QDir(systemRoot).filePath(QStringLiteral("System32/curl.exe"));
-#else
-  return QStringLiteral("/usr/bin/curl");
-#endif
-}
-
-struct CurlResult { int code; QByteArray output; QString error; };
-
-class FtpConnection {
-public:
-  FtpConnection(const QString &host, int port, const QString &user, const QString &password,
-                const std::atomic_bool &cancelled, std::atomic<qint64> &progress)
-      : cancelled(cancelled), progress(progress) {
-    QUrl base;
-    base.setScheme(QStringLiteral("ftp"));
-    base.setHost(host);
-    base.setPort(port);
-    if (!base.isValid() || base.host().isEmpty() || host.contains('%'))
-      fail(QStringLiteral("FTP 主机地址无效"));
-    endpoint = base.toEncoded();
-    if (user.contains(':')) fail(QStringLiteral("FTP 用户名不能包含冒号"));
-    auto login = (user + ':' + password).toUtf8();
-    login.replace("\\", "\\\\").replace("\"", "\\\"");
-    config = "user = \"" + login + "\"\n";
-  }
-
-  QVariantList list(const QString &path) const {
-    const auto result = request({"--request", "MLSD"}, path, true);
-    if (result.code == 0) return parseMlsd(result.output);
-    if (result.code != 19 && result.code != 21 && result.code != 78) verify(result);
-    const auto legacy = request({}, path, true);
-    verify(legacy);
-    return parseList(legacy.output);
-  }
-
-  void download(const QString &directory, const QString &name, QFileDevice &target) const {
-    const auto rows = list(directory);
-    for (const auto &entry : rows) {
-      const auto row = entry.toMap();
-      if (row.value("name").toString() == name && row.value("file").toBool()) {
-        verify(request({}, remoteChild(directory, name), false, &target));
-        return;
-      }
-    }
-    fail(QStringLiteral("远程文件不存在或不是常规文件"));
-  }
-
-  void mkdir(const QString &directory, const QString &name) const {
-    ensureMissing(list(directory), name);
-    checkCancelled(cancelled);
-    verify(request({"--head", "--quote", "MKD " + remoteChild(directory, name)}, directory, true, nullptr, false));
-  }
-
-  void rename(const QString &directory, const QString &oldName, const QString &newName) const {
-    const auto rows = list(directory);
-    ensureMissing(directory, rows, newName);
-    for (const auto &entry : rows) {
-      const auto row = entry.toMap();
-      if (row.value("name").toString() == oldName && (row.value("directory").toBool() || row.value("file").toBool())) {
-        renamePath(directory, remoteChild(directory, oldName), remoteChild(directory, newName));
-        return;
-      }
-    }
-    fail(QStringLiteral("远程项目不存在或类型不支持"));
-  }
-
-  void upload(const QString &directory, const QString &name, const QString &localFile) const {
-    ensureMissing(directory, list(directory), name);
-    const auto target = remoteChild(directory, name), temporary = remoteChild(directory, temporaryName());
-    try {
-      verify(request({"--upload-file", localFile}, temporary, false));
-      ensureMissing(directory, list(directory), name);
-      renamePath(directory, temporary, target);
-    } catch (const QString &error) {
-      const auto cleanup = request({"--head", "--quote", "DELE " + temporary}, directory, true, nullptr, false);
-      if (cleanup.code != 0)
-        fail(error + QStringLiteral("；如有远程暂存文件，请手动检查：") + temporary);
-      throw;
-    }
-  }
-
-private:
-  void ensureMissing(const QString &directory, const QVariantList &rows, const QString &name) const {
-    ensureMissing(rows, name);
-    if (!name.startsWith('.')) return;
-    // A server can omit dotfiles from its listing; RNFR alone probes the exact name without renaming it.
-    const auto probe = request({"--head", "--quote", "RNFR " + remoteChild(directory, name),
-                                "--write-out", "%{response_code}"}, directory, true);
-    if (probe.code == 0) fail(QStringLiteral("远程已存在同名项目"));
-    if (probe.code != 21 || probe.output.trimmed() != "550") verify(probe);
-  }
-  static void ensureMissing(const QVariantList &rows, const QString &name) {
-    for (const auto &row : rows)
-      if (row.toMap().value("name").toString().compare(name, Qt::CaseInsensitive) == 0)
-        fail(QStringLiteral("远程已存在同名项目"));
-  }
-  void renamePath(const QString &directory, const QString &from, const QString &to) const {
-    checkCancelled(cancelled);
-    // shortcut: FTP RNTO has no no-replace flag; concurrent writers need SFTP.
-    verify(request({"--head", "--quote", "RNFR " + from, "--quote", "RNTO " + to},
-                   directory, true, nullptr, false));
-  }
-  static void verify(const CurlResult &result) {
-    if (result.code) fail(QStringLiteral("FTP 操作失败（%1）：%2").arg(result.code).arg(result.error));
-  }
-
-  CurlResult request(const QStringList &args, const QString &path, bool directory,
-                     QFileDevice *target = nullptr, bool canCancel = true) const {
-    if (canCancel) checkCancelled(cancelled);
-    const auto executable = curlProgram();
-    if (executable.isEmpty() || !QFileInfo(executable).isExecutable())
-      fail(QStringLiteral("未找到系统 curl，无法使用 FTP"));
-    QString url = QString::fromLatin1(endpoint + '/' + QUrl::toPercentEncoding(path, "/"));
-    if (directory && !url.endsWith('/')) url += '/';
-    QProcess process;
-    process.start(executable,
-        QStringList{"-q", "--config", "-", "--silent", "--show-error", "--globoff", "--proto", "=ftp",
-          "--noproxy", "*", "--connect-timeout", canCancel ? "10" : "4", "--speed-limit", "1",
-          "--speed-time", canCancel ? "12" : "4", "--ftp-skip-pasv-ip"} +
-        (canCancel ? QStringList{} : QStringList{"--max-time", "6"}) + args + QStringList{"--url", url});
-    if (!process.waitForStarted(3000)) fail(QStringLiteral("无法启动系统 curl：") + process.errorString());
-    process.write(config);
-    process.closeWriteChannel();
-
-    QByteArray output, error;
-    do {
-      process.waitForReadyRead(100);
-      const auto part = process.readAllStandardOutput();
-      error += process.readAllStandardError().left(qMax(0, 4096 - int(error.size())));
-      if (canCancel && cancelled.load()) {
-        process.kill(); process.waitForFinished(1000);
-        checkCancelled(cancelled);
-      }
-      if (target) {
-        if (target->write(part) != part.size()) {
-          process.kill(); process.waitForFinished(1000);
-          fail(target->errorString());
-        }
-        progress.fetch_add(part.size(), std::memory_order_relaxed);
-      } else {
-        if (output.size() + part.size() > MaxListing) {
-          process.kill(); process.waitForFinished(1000);
-          fail(QStringLiteral("FTP 目录响应过大"));
-        }
-        output += part;
-      }
-    } while (process.state() != QProcess::NotRunning);
-    return {process.exitStatus() == QProcess::NormalExit ? process.exitCode() : -1,
-            std::move(output), QString::fromUtf8(error).trimmed()};
-  }
-
-  static QVariantList parseMlsd(const QByteArray &data) {
-    QVariantList rows;
-    for (const auto &raw : data.split('\n')) {
-      const auto line = raw.endsWith('\r') ? raw.chopped(1) : raw;
-      if (line.isEmpty()) continue;
-      const auto separator = line.indexOf(' ');
-      if (separator <= 0) fail(QStringLiteral("FTP MLSD 目录格式无效"));
-      const auto name = QString::fromUtf8(line.mid(separator + 1));
-      if (name.toUtf8() != line.mid(separator + 1))
-        fail(QStringLiteral("FTP 文件名不是 UTF-8，无法安全识别"));
-      QByteArray type;
-      qint64 size = -1, modified = 0;
-      for (const auto &fact : line.left(separator).split(';')) {
-        const auto key = fact.left(fact.indexOf('=')).toLower();
-        if (key == "type") type = fact.mid(5).toLower();
-        else if (key == "size") {
-          bool ok = false;
-          const auto value = fact.mid(5).toLongLong(&ok);
-          if (ok && value >= 0) size = value;
-        } else if (key == "modify") {
-          const auto timestamp = QDateTime::fromString(QString::fromLatin1(fact.mid(7, 14)) + 'Z',
-                                                       "yyyyMMddHHmmsst");
-          if (timestamp.isValid()) modified = timestamp.toMSecsSinceEpoch();
-        }
-      }
-      if (type == "dir" || type == "file") appendEntry(rows, name, type == "dir", size, true, modified);
-      else if (type != "cdir" && type != "pdir" && validName(name)) appendEntry(rows, name, false, -1, false);
-    }
-    return rows;
-  }
-
-  static QVariantList parseList(const QByteArray &data) {
-    static const QRegularExpression unixListing(
-        R"(^([-dlbcps])\S*\s+\d+\s+\S+\s+\S+\s+(\d+)\s+\S+\s+\d+\s+\S+\s(.*)$)");
-    static const QRegularExpression windowsListing(
-        R"(^\d{2}-\d{2}-\d{2,4}\s+\d{1,2}:\d{2}(?:AM|PM)?\s+(<DIR>|\d+)\s+(.*)$)",
-        QRegularExpression::CaseInsensitiveOption);
-    QVariantList rows;
-    for (const auto &raw : data.split('\n')) {
-      const auto bytes = raw.endsWith('\r') ? raw.chopped(1) : raw;
-      const auto line = QString::fromUtf8(bytes);
-      if (line.toUtf8() != bytes) fail(QStringLiteral("FTP 文件名不是 UTF-8，无法安全识别"));
-      if (line.trimmed().isEmpty() || line.startsWith("total ")) continue;
-      auto match = unixListing.match(line);
-      if (match.hasMatch()) {
-        auto name = match.captured(3);
-        const auto type = match.captured(1);
-        if (type == "l") name = name.section(QStringLiteral(" -> "), 0, 0);
-        appendEntry(rows, name, type == "d", type == "-" ? match.captured(2).toLongLong() : -1, type == "-");
-        continue;
-      }
-      match = windowsListing.match(line);
-      if (!match.hasMatch()) fail(QStringLiteral("服务器不支持 MLSD，且 LIST 目录格式无法识别"));
-      appendEntry(rows, match.captured(2), match.captured(1).startsWith('<'), match.captured(1).toLongLong());
-    }
-    return rows;
-  }
-
-  const std::atomic_bool &cancelled;
-  std::atomic<qint64> &progress;
-  QByteArray endpoint, config;
-};
 } // namespace
 
 SshFileTransfer::SshFileTransfer(QObject *parent) : SshFileTransfer(AppPaths::writableDataRoot(), parent) {}
-SshFileTransfer::SshFileTransfer(QString dataRoot, QObject *parent) : QObject(parent), m_dataRoot(std::move(dataRoot)) {
+SshFileTransfer::SshFileTransfer(QString dataRoot, QObject *parent, std::shared_ptr<SecureCredentialStore> credentials)
+    : QObject(parent), m_dataRoot(std::move(dataRoot)),
+      m_credentials(credentials ? std::move(credentials) : std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh)) {
   m_progressTimer.setInterval(120);
   connect(&m_progressTimer, &QTimer::timeout, this, &SshFileTransfer::syncProgress);
   connect(&m_watcher, &QFutureWatcher<QVariantMap>::finished, this, [this] {
@@ -493,7 +295,7 @@ void SshFileTransfer::run(const QString &action, const QVariantMap &connection, 
                           const QString &localPath, const QString &name, const QString &newName) {
   start({action, connection.value("host").toString().trimmed(), connection.value("user").toString(),
          connection.value("password").toString(), remotePath, localPath, name, newName, {},
-         connection.value("port").toInt(), connection.value("ftp").toBool()});
+         connection.value("port").toInt(), connection.value("useStoredSshPassword").toBool()});
 }
 
 void SshFileTransfer::confirmHost(bool accept) {
@@ -522,13 +324,14 @@ void SshFileTransfer::start(Job job) {
   m_state = std::make_shared<State>();
   syncProgress();
   if (job.action == "upload" || job.action == "download") m_progressTimer.start();
-  m_watcher.setFuture(QtConcurrent::run([job = std::move(job), root = m_dataRoot, state = m_state] {
-    return execute(job, root, *state);
+  m_watcher.setFuture(QtConcurrent::run([job = std::move(job), root = m_dataRoot, state = m_state, credentials = m_credentials] {
+    return execute(job, root, *state, *credentials);
   }));
   emit busyChanged();
 }
 
-QVariantMap SshFileTransfer::execute(const Job &job, const QString &dataRoot, State &state) {
+QVariantMap SshFileTransfer::execute(const Job &job, const QString &dataRoot, State &state,
+                                    SecureCredentialStore &credentials) {
   try {
     const auto &cancelled = state.cancelled;
     checkCancelled(cancelled);
@@ -573,7 +376,7 @@ QVariantMap SshFileTransfer::execute(const Job &job, const QString &dataRoot, St
         !validText(job.host) || !validText(job.user) || !validText(job.password) ||
         !validText(job.remotePath) || job.remotePath.toUtf8().size() > 4096 || job.remotePath.contains('\\'))
       fail(QStringLiteral("请检查主机、端口、账号、密码或远程路径"));
-    if (!job.ftp && job.password.isEmpty()) fail(QStringLiteral("请输入 SFTP 密码"));
+    if (job.password.isEmpty() && !job.useStoredSshPassword) fail(QStringLiteral("请输入 SFTP 密码"));
     const auto localFile = local.filePath(job.name);
     if (upload || download) {
       if (!validLocalName(job.name) || !QFileInfo(job.localPath).isAbsolute() || !local.exists())
@@ -585,36 +388,26 @@ QVariantMap SshFileTransfer::execute(const Job &job, const QString &dataRoot, St
         fail(QStringLiteral("本地已存在同名项目"));
     }
     QFile source(localFile);
-    if (upload && !job.ftp && !source.open(QIODevice::ReadOnly)) fail(source.errorString());
+    if (upload && !source.open(QIODevice::ReadOnly)) fail(source.errorString());
     QTemporaryFile target(local.filePath(QStringLiteral(".loganalyqt-XXXXXX.part")));
     if (download && !target.open()) fail(target.errorString());
-    QString path;
-    if (job.ftp) {
-      path = QDir::cleanPath(job.remotePath.startsWith('/') ? job.remotePath : '/' + job.remotePath);
-      FtpConnection ftp(job.host, job.port, job.user, job.password, cancelled, state.transferred);
-      if (job.action == "list") return listing(path, ftp.list(path));
-      if (upload) ftp.upload(path, job.name, QFileInfo(localFile).absoluteFilePath());
-      else if (download) ftp.download(path, job.name, target);
-      else if (mkdir) ftp.mkdir(path, job.name);
-      else ftp.rename(path, job.name, job.newName);
-    } else {
-      SshHostKeyStore trust(QDir(dataRoot).filePath(QStringLiteral("ssh-known-hosts.json")));
-      SftpConnection sftp;
-      const auto fingerprint = sftp.connect(job.host, job.port, job.user, job.password, trust,
-                                            job.acceptedFingerprint, cancelled);
-      if (!fingerprint.isEmpty()) return {{"fingerprint", fingerprint}};
-      const auto encodedPath = sftp.realPath(job.remotePath.isEmpty() ? QStringLiteral(".") : job.remotePath);
-      path = QString::fromUtf8(encodedPath);
-      if (!path.startsWith('/') || path.toUtf8() != encodedPath || !validText(path) || path.contains('\\'))
-        fail(QStringLiteral("远程目录路径无法安全识别"));
-      if (job.action == "list") return listing(path, sftp.list(encodedPath, cancelled));
-      checkCancelled(cancelled);
-      const auto remote = remoteChild(path, job.name).toUtf8();
-      if (upload) sftp.upload(remote, remoteChild(path, temporaryName()).toUtf8(), source, cancelled, state.transferred);
-      else if (download) sftp.download(remote, target, cancelled, state.transferred);
-      else if (mkdir) sftp.mkdir(remote);
-      else sftp.rename(remote, remoteChild(path, job.newName).toUtf8());
-    }
+    SshHostKeyStore trust(QDir(dataRoot).filePath(QStringLiteral("ssh-known-hosts.json")));
+    SftpConnection sftp;
+    const auto fingerprint = sftp.connect(job.host, job.port, job.user, job.password, trust,
+                                          job.acceptedFingerprint, cancelled,
+                                          job.useStoredSshPassword ? &credentials : nullptr);
+    if (!fingerprint.isEmpty()) return {{"fingerprint", fingerprint}};
+    const auto encodedPath = sftp.realPath(job.remotePath.isEmpty() ? QStringLiteral(".") : job.remotePath);
+    const auto path = QString::fromUtf8(encodedPath);
+    if (!path.startsWith('/') || path.toUtf8() != encodedPath || !validText(path) || path.contains('\\'))
+      fail(QStringLiteral("远程目录路径无法安全识别"));
+    if (job.action == "list") return listing(path, sftp.list(encodedPath, cancelled));
+    checkCancelled(cancelled);
+    const auto remote = remoteChild(path, job.name).toUtf8();
+    if (upload) sftp.upload(remote, remoteChild(path, temporaryName()).toUtf8(), source, cancelled, state.transferred);
+    else if (download) sftp.download(remote, target, cancelled, state.transferred);
+    else if (mkdir) sftp.mkdir(remote);
+    else sftp.rename(remote, remoteChild(path, job.newName).toUtf8());
     if (download) {
       checkCancelled(cancelled);
       if (!target.flush()) fail(target.errorString());

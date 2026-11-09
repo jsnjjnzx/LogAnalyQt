@@ -9,16 +9,15 @@
 #include <QRegularExpression>
 #include <QSet>
 #include "../common/AppSettings.h"
+#include "config/CredentialAccess.h"
 #include "SshHostKeyStore.h"
 #include "SshSessionLog.h"
 #include <QStandardPaths>
 #include <QHostInfo>
 #include <QHostAddress>
 #include <QElapsedTimer>
-#include <QCryptographicHash>
 #include <QUuid>
 #include <QtEndian>
-#include <QJsonArray>
 #include <cstring>
 #include <cerrno>
 #include <QSocketNotifier>
@@ -77,14 +76,6 @@ static bool validLogRotation(int sizeMiB, int minutes) {
   return sizeMiB >= 0 && sizeMiB <= 4096 && minutes >= 0 && minutes <= 1440;
 }
 
-static QString sshCredentialProfile(const QString &host, int port,
-                                    const QString &user) {
-  const QByteArray identity = QJsonDocument(QJsonArray{
-      host.trimmed().toLower(), port, user}).toJson(QJsonDocument::Compact);
-  return QString::fromLatin1(QCryptographicHash::hash(
-      identity, QCryptographicHash::Sha256).toHex());
-}
-
 class SshWorker : public QObject {
   Q_OBJECT
 public:
@@ -108,7 +99,7 @@ public:
       emit credentialResult(revision, false, QString());
       return;
     }
-    const QString profile = sshCredentialProfile(host, port, user);
+    const QString profile = CredentialAccess::sshProfile(host, port, user);
     QString error;
     bool exists = false;
     if (operation == 1) {
@@ -561,7 +552,7 @@ private:
         if (m_useSystemCredentials && m_password.isEmpty()) {
           QString error;
           emit credentialReadState(m_generation, true);
-          const bool read = m_credentials->read(sshCredentialProfile(m_host, m_port, m_user),
+          const bool read = m_credentials->read(CredentialAccess::sshProfile(m_host, m_port, m_user),
                                                 &m_password, &error);
           emit credentialReadState(m_generation, false);
           if (m_generation != m_buffer->activeGeneration.load()) { cleanup(); return; }

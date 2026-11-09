@@ -1,5 +1,6 @@
 #include "SshFileTransfer.h"
 #include "SshTextColors.h"
+#include "config/CredentialAccess.h"
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
@@ -10,6 +11,23 @@
 #include <stdexcept>
 
 namespace {
+class TestSshCredentials final : public SecureCredentialStore {
+public:
+  TestSshCredentials() : SecureCredentialStore(Domain::Ssh) {}
+  QString expectedProfile;
+  mutable std::atomic<int> reads{0};
+  bool isAvailable() const override { return true; }
+  bool read(const QString &profileId, QByteArray *key, QString *error) const override {
+    ++reads;
+    if (profileId != expectedProfile) {
+      *error = "unexpected SSH credential identity";
+      return false;
+    }
+    *key = "p\"a\\ss:word";
+    return true;
+  }
+};
+
 int checks = 0;
 void check(bool condition, const QString &message) {
   ++checks;
@@ -62,8 +80,7 @@ int main(int argc, char **argv) {
   QGuiApplication app(argc, argv);
   try {
     const auto arguments = app.arguments();
-    const bool ftp = arguments.value(1) == "ftp";
-    const bool network = ftp || arguments.value(1) == "sftp";
+    const bool network = arguments.value(1) == "sftp";
     QTemporaryDir root;
     check(root.isValid(), "temporary test directory");
     const QDir directory(root.path());
@@ -73,7 +90,8 @@ int main(int argc, char **argv) {
     QByteArray bytes;
     for (int i = 0; i < 400000; ++i) bytes.append(char(i % 251));
     writeFile(QDir(source).filePath(name), bytes);
-    SshFileTransfer backend(root.path());
+    auto credentials = std::make_shared<TestSshCredentials>();
+    SshFileTransfer backend(root.path(), nullptr, credentials);
     QSignalSpy finished(&backend, &SshFileTransfer::finished);
     QSignalSpy trust(&backend, &SshFileTransfer::hostKeyRequired);
     backend.browseLocal(root.path());
@@ -99,41 +117,32 @@ int main(int argc, char **argv) {
     colorAndWordChecks();
 
     if (network) {
-      const QVariantMap connection{{"ftp", ftp}, {"host", "127.0.0.1"}, {"port", arguments.value(2).toInt()},
+      const QVariantMap connection{{"host", "127.0.0.1"}, {"port", arguments.value(2).toInt()},
                                    {"user", "transfer-test"}, {"password", "p\"a\\ss:word"}};
+      auto cardConnection = connection;
+      credentials->expectedProfile = CredentialAccess::sshProfile("127.0.0.1", arguments.value(2).toInt(), "transfer-test");
+      cardConnection.remove("password");
+      cardConnection["useStoredSshPassword"] = true;
       const QString subdir = "/sub folder";
       backend.run("upload", connection, subdir, source, "../bad");
       check(result(finished).contains("error"), "remote traversal rejected before connecting");
-      backend.run("list", connection, ftp ? "/" : ".", source, "");
-      if (!ftp) {
-        check(trust.wait(20000), "unknown SSH key requires confirmation");
-        check(trust.takeFirst().at(1).toString() == arguments.value(3), "reported fingerprint matches loopback peer");
-        backend.confirmHost(false);
-        check(result(finished).value("error").toString().contains("未发送密码"), "rejecting trust blocks login");
-        backend.run("list", connection, ".", source, "");
-        check(trust.wait(20000), "a rejected key is still unknown");
-        trust.clear();
-        backend.confirmHost(true);
-      }
+      backend.run("list", cardConnection, ".", source, "");
+      check(trust.wait(20000), "unknown SSH key requires confirmation");
+      check(trust.takeFirst().at(1).toString() == arguments.value(3), "reported fingerprint matches loopback peer");
+      check(credentials->reads == 0, "system password is not loaded before SFTP host trust");
+      backend.confirmHost(false);
+      check(result(finished).value("error").toString().contains("未发送密码"), "rejecting trust blocks login");
+      backend.run("list", cardConnection, ".", source, "");
+      check(trust.wait(20000), "a rejected key is still unknown");
+      trust.clear();
+      backend.confirmHost(true);
       auto rootListing = success(finished);
+      check(credentials->reads == 1, "trusted SFTP card authenticates with its system credential");
       check(rootListing.value("path") == "/" && has(rootListing, "sub folder", "directory"), "remote root lists subdirectory");
       backend.run("list", connection, subdir, source, "");
       const auto seed = rowNamed(success(finished), "seed.txt");
       check(seed.value("file").toBool(), "remote navigation lists existing file");
-      check(arguments.value(3) == "legacy" ? seed.value("modified").toLongLong() == 0
-                                          : seed.value("modified").toLongLong() > 0,
-            "remote modified time is included when protocol listing supplies it");
-      if (ftp) {
-        writeFile(QDir(source).filePath(".hidden"), "replacement");
-        backend.run("upload", connection, subdir, source, ".hidden");
-        check(result(finished).value("error").toString().contains("已存在"), "FTP upload refuses an unlisted dotfile");
-        backend.run("rename", connection, subdir, source, "seed.txt", ".hidden");
-        check(result(finished).value("error").toString().contains("已存在"), "FTP rename refuses an unlisted dotfile");
-        backend.run("rename", connection, subdir, source, "seed.txt", ".new-name");
-        success(finished);
-        backend.run("rename", connection, subdir, source, ".new-name", "seed.txt");
-        success(finished);
-      }
+      check(seed.value("modified").toLongLong() > 0, "remote modified time is included");
       const auto newFolder = QString::fromUtf8("新建 目录");
       const auto renamed = QString::fromUtf8("重命名 目录");
       backend.run("mkdir", connection, subdir, source, newFolder);
@@ -150,7 +159,7 @@ int main(int argc, char **argv) {
             has(edited, "seed.txt", "file"), "remote folder rename leaves other entries intact");
       backend.run("upload", connection, subdir, source, name);
       success(finished);
-      if (!ftp) check(backend.transferredBytes() == bytes.size(), "SFTP upload reports actual transferred bytes");
+      check(backend.transferredBytes() == bytes.size(), "SFTP upload reports actual transferred bytes");
       backend.run("list", connection, subdir, source, "");
       check(has(success(finished), name, "file"), "remote upload is visible");
       backend.run("upload", connection, subdir, source, name);
@@ -178,12 +187,10 @@ int main(int argc, char **argv) {
       check(result(finished).value("error").toString().contains("已取消") &&
             QDir(download).entryList(QDir::Files | QDir::Hidden) == QStringList{name},
             "cancelled transfer leaves neither a final nor partial file");
-      if (!ftp) {
-        writeFile(directory.filePath("ssh-known-hosts.json"),
-                  QStringLiteral("{\"[127.0.0.1]:%1\":\"SHA256:wrong\"}").arg(arguments.value(2)).toUtf8());
-        backend.run("list", connection, subdir, download, "");
-        check(result(finished).value("error").toString().contains("密钥已变化"), "changed SFTP host key rejected");
-      }
+      writeFile(directory.filePath("ssh-known-hosts.json"),
+                QStringLiteral("{\"[127.0.0.1]:%1\":\"SHA256:wrong\"}").arg(arguments.value(2)).toUtf8());
+      backend.run("list", connection, subdir, download, "");
+      check(result(finished).value("error").toString().contains("密钥已变化"), "changed SFTP host key rejected");
     }
     std::cout << "PASS: " << checks << " native file transfer / document assertions\n";
     return 0;

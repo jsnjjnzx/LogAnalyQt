@@ -1,4 +1,4 @@
-"""Exercise production transfer code against isolated loopback peers (paramiko, pyftpdlib)."""
+"""Exercise production transfer code against an isolated loopback SFTP peer (Paramiko)."""
 
 import base64
 import hashlib
@@ -12,10 +12,6 @@ import threading
 import time
 
 import paramiko
-from pyftpdlib.authorizers import DummyAuthorizer
-from pyftpdlib.filesystems import AbstractedFS
-from pyftpdlib.handlers import FTPHandler, ThrottledDTPHandler
-from pyftpdlib.servers import FTPServer
 
 
 USER, PASSWORD = "transfer-test", 'p"a\\ss:word'
@@ -83,11 +79,6 @@ class Folder(paramiko.SFTPServerInterface):
         return paramiko.SFTP_OK
 
 
-def run(binary, protocol, port, *args):
-    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
-    subprocess.run([binary, protocol, str(port), *args], check=True, timeout=90, env=env)
-
-
 def sftp(binary, root):
     key = paramiko.RSAKey.generate(2048)
     fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
@@ -115,65 +106,21 @@ def sftp(binary, root):
     with Server(("127.0.0.1", 0), Client) as server:
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
-            run(binary, "sftp", server.server_address[1], fingerprint)
+            env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
+            subprocess.run([binary, "sftp", str(server.server_address[1]), fingerprint],
+                           check=True, timeout=90, env=env)
         finally:
             server.shutdown()
     assert [login.attempts for login in logins[:3]] == [0, 0, 1]
     assert logins[-1].attempts == 0
 
 
-def ftp(binary, root, legacy=False):
-    class HideExistingFile(AbstractedFS):
-        def listdir(self, path):
-            return [name for name in super().listdir(path) if name != ".hidden"]
-
-    class SlowData(ThrottledDTPHandler):
-        read_limit = 0
-
-    class Handler(FTPHandler):
-        def ftp_RETR(self, path):
-            if path.endswith("/cancel.bin") and self.data_channel:
-                self.data_channel.write_limit = 100000
-            return super().ftp_RETR(path)
-
-        dtp_handler = SlowData
-
-        def ftp_MLSD(self, path):
-            if legacy:
-                self.respond("500 MLSD unavailable")
-            else:
-                super().ftp_MLSD(path)
-
-    Handler.authorizer = DummyAuthorizer()
-    Handler.abstracted_fs = HideExistingFile
-    Handler.authorizer.add_user(USER, PASSWORD, str(root), perm="elradfmw")
-    server = FTPServer(("127.0.0.1", 0), Handler)
-    stop = threading.Event()
-
-    def serve():
-        while not stop.is_set():
-            server.ioloop.loop(timeout=0.1, blocking=False)
-
-    thread = threading.Thread(target=serve, daemon=True)
-    thread.start()
-    try:
-        run(binary, "ftp", server.socket.getsockname()[1], "legacy" if legacy else "mlsd")
-    finally:
-        stop.set()
-        thread.join(2)
-        server.close_all()
-
-
 if __name__ == "__main__":
     executable = str(Path(sys.argv[1]).resolve(strict=True))
-    for server in (sftp, ftp, lambda binary, root: ftp(binary, root, legacy=True)):
-        with tempfile.TemporaryDirectory(prefix="loganalyqt-file-transfer-") as directory:
-            remote = Path(directory).resolve()
-            (remote / "sub folder").mkdir()
-            (remote / "sub folder" / "seed.txt").write_text("seed", encoding="utf-8")
-            (remote / "sub folder" / "cancel.bin").write_bytes(b"x" * 2_000_000)
-            hidden = remote / "sub folder" / ".hidden"
-            hidden.write_bytes(b"keep hidden file")
-            server(executable, remote)
-            assert hidden.read_bytes() == b"keep hidden file"
-            assert not list(remote.rglob("*.part")), "remote staging file was left behind"
+    with tempfile.TemporaryDirectory(prefix="loganalyqt-file-transfer-") as directory:
+        remote = Path(directory).resolve()
+        (remote / "sub folder").mkdir()
+        (remote / "sub folder" / "seed.txt").write_text("seed", encoding="utf-8")
+        (remote / "sub folder" / "cancel.bin").write_bytes(b"x" * 2_000_000)
+        sftp(executable, remote)
+        assert not list(remote.rglob("*.part")), "remote staging file was left behind"
