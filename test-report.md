@@ -5,7 +5,10 @@
 - v5.5.1 版本检查、macOS Debug 完整构建、原生 CTest 28/28、发布工具单元测试 38/38 通过。日志见 `build/macos-debug/t94-build.log`、`t94-ctest.log`、`t94-release-tools.log`。
 - 本机 SFTP 回环通过 79 项断言，覆盖复用 SSH 卡片凭据、主机指纹、目录操作、传输和取消清理。见 `build/macos-debug/t94-sftp-loopback.log`。
 - 固定 macOS 自测应用已更新至 v5.5.1，126 个 arm64 Mach-O 和依赖、deep strict 签名及隔离 Cocoa 启动通过。主程序 SHA-256 `3b4cdfbaecfa4942eafd6ea9cc8747801e141504e484bc9ca2fbe6e4e61bc8b8`。
-- 按 AGENTS.md 排除 QML 和成品界面自动化；未手动点击卡片、连接真实 SSH 设备或使用实际用户钥匙串。GitHub 同提交的双平台构建、包来源和公开更新待验证。
+- 发行提交 `b1d90e6d25becfd80b32d0816dccd205b30602d9` 的 [双平台构建 42553857800](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/42553857800) 通过：Windows x64 12m55s，macOS arm64 13m53s，含原生测试、打包和独立成品 HTTPS 探测。两平台制品来源校验通过后推送标签。
+- [v5.5.1](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.5.1) 于北京时间 11:14:11 正式公开，并确认为最新稳定版。七个附件齐全；匿名下载的 `update.json` SHA-256 为 `be9c1512c0957aa2681af0d1b53e6f6f649e38c93b5223cba90e348a8590eead`，清单与发布附件的文件名、大小、下载地址和校验值一致。证据见 `build/macos-debug/t94-public-release-verification.json`。
+- [发布与公开更新 42555204727](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/42555204727) 通过；Windows 与 macOS 模拟旧版本均从公开 Release 下载、校验、替换、重启至 5.5.1 并保留数据。见 `build/macos-debug/t94-release-actions.log`。
+- 按 AGENTS.md，本地与 CI 均排除 QML 和成品界面自动化；未手动点击卡片、连接真实 SSH 设备或使用实际用户钥匙串。未执行 macOS 公证验收。
 
 ## 2026-11-09 移除 FTP 并恢复双击 SSH 卡片监控（T93）
 

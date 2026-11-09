@@ -4,6 +4,7 @@
 
 - RELEASE-28：将 T91～T93 的 SFTP 直开、按卡片保存默认位置、移除 FTP 和恢复双击监控整理为 v5.5.1。统一 CMake、README、CHANGELOG，保留 v5.5.0 历史版本记录。
 - RELEASE-29：先推送 main，Windows x64 与 macOS arm64 的同提交构建、测试和产物来源校验均通过后，再推送 v5.5.1 标签。验证公开 Release、七个附件及双平台更新演练。沿用 LOCAL-05 和项目 QML 测试排除项。
+- 验收记录见 test-report.md 的 T94；卡片手动交互与真实 SSH 设备实测仍单独验收。
 
 ## 2026-11-09 移除 FTP 并恢复双击 SSH 卡片监控（T93）
 
