@@ -34,12 +34,21 @@ GlassPage {
                 const local = group.visualHost.mapFromGlobal(point.x, point.y);
                 if (local.x < 0 || local.y < 0 || local.x >= group.visualHost.width || local.y >= group.visualHost.height) continue;
                 const header = group.tabHost;
+                if (!header || !group.contentHost) continue;
                 const position = header.mapFromGlobal(point.x, point.y);
                 if (position.y >= 0 && position.y < header.height) {
-                    let index = header.indexAt(position.x + header.contentX, position.y);
-                    if (index < 0) index = group.tabs.length;
-                    else { const tab = header.itemAtIndex(index); if (tab && position.x + header.contentX > tab.x + tab.width / 2) ++index; }
-                    return {group: group, index: index, split: false, inHeader: true};
+                    const x = Math.min(position.x, header.width) + header.contentX;
+                    let index = 0, edgeX = header.contentX;
+                    for (let i = 0; i < group.tabs.length; ++i) {
+                        const tab = header.itemAtIndex(i);
+                        if (!tab || tab.x + tab.width < header.contentX) continue;
+                        if (x < tab.x + tab.width / 2) {
+                            index = i; edgeX = tab.x;
+                            break;
+                        }
+                        index = i + 1; edgeX = tab.x + tab.width;
+                    }
+                    return {group: group, index: index, edgeX: edgeX, split: false, inHeader: true};
                 }
                 const content = group.contentHost.mapFromGlobal(point.x, point.y);
                 const edge = Math.min(64, group.contentHost.width * 0.15);
@@ -58,7 +67,7 @@ GlassPage {
         if (target) {
             let index = target.index;
             if (target.group === page.group && index > page.group.tabs.indexOf(page)) --index;
-            moveSession(page, target.group, index);
+            if (!target.split || target.group !== page.group) moveSession(page, target.group, index);
             if (target.split) splitSession(page, target.side);
         } else {
             const windows = containers.filter(function(container) { return !!container.window && container.window.visible; }).map(function(container) { return container.window; });
@@ -108,7 +117,6 @@ GlassPage {
     property bool sidebarCollapsed: false
     property bool shuttingDown: false
     property var connectionEditorPage: null
-    property int connectionEditorSavedIndex: -1
     property string connectionEditorOldKey: ""
     property string connectionEditorNameSuffix: ""
     property bool applyingConfiguration: false
@@ -424,6 +432,19 @@ GlassPage {
     function moveSession(page, group, index) {
         if (!page || sessions.indexOf(page) < 0 || !group) return false;
         const from = page.group;
+        if (from === group) {
+            const tabs = group.tabs.slice();
+            const previous = tabs.indexOf(page);
+            if (previous < 0) return false;
+            const next = index === undefined ? tabs.length - 1 : Math.max(0, Math.min(index, tabs.length - 1));
+            if (next !== previous) {
+                tabs.splice(previous, 1);
+                tabs.splice(next, 0, page);
+                group.tabs = tabs;
+            }
+            activateSession(page);
+            return true;
+        }
         page.beginWindowMove();
         from.tabs = from.tabs.filter(function(value) { return value !== page; });
         if (from.active === page) from.active = from.tabs.length ? from.tabs[Math.min(Math.max(0, index || 0), from.tabs.length - 1)] : null;
@@ -434,7 +455,7 @@ GlassPage {
         page.group = group;
         if (group.container.window) page.lastMonitorWindow = group.container.window;
         activateSession(page);
-        if (from !== group) cleanGroup(from);
+        cleanGroup(from);
         Qt.callLater(function() { if (root.sessions.indexOf(page) >= 0) page.endWindowMove(); });
         scheduleSave();
         return true;
@@ -656,8 +677,7 @@ GlassPage {
             draft.transferRemotePath = saved.transferRemotePath;
         }
         connectionEditorPage = page;
-        connectionEditorSavedIndex = index;
-        connectionEditorOldKey = page ? page.savedConnectionKey || connectionKey(config) : connectionKey(config);
+        connectionEditorOldKey = connectionKey(index >= 0 ? savedConnections[index] : config);
         const matchingPage = page || sessions.find(function(value) {
             return connectionKey(value.connectionConfiguration()) === connectionKey(config);
         }) || null;
@@ -671,12 +691,20 @@ GlassPage {
     }
     function commitConnectionEditor(config, keepOpen) {
         const page = connectionEditorPage;
-        let index = connectionEditorSavedIndex;
         const beforeRows = savedConnections;
+        const index = beforeRows.findIndex(function(value) { return connectionKey(value) === connectionEditorOldKey; });
+        const key = connectionKey(config);
+        if (beforeRows.some(function(value, row) { return row !== index && connectionKey(value) === key; })) {
+            connectionEditor.showError("该主机、端口和用户名已保存，请在左侧编辑对应连接。");
+            return false;
+        }
+        if (!page && index < 0) {
+            connectionEditor.showError("该连接已从左侧列表移除。");
+            return false;
+        }
         const beforeConfig = page ? page.connectionConfiguration() : null;
         applyingConfiguration = true;
         if (page) {
-            if (index < 0) index = savedConnections.findIndex(function(value) { return connectionKey(value) === connectionEditorOldKey; });
             const pageConfig = Object.assign({}, config, {name: config.name + connectionEditorNameSuffix});
             if (!page.applyConnectionConfiguration(pageConfig)) {
                 applyingConfiguration = false;
@@ -684,12 +712,8 @@ GlassPage {
                 return false;
             }
         }
-        const rows = savedConnections.slice();
-        if (page && index >= 0) rows[index] = savedConfiguration(config, page);
-        else if (page && config.host.trim() && config.username.trim()
-                && (page.secureCredentials || config.password) && page.targetMatchesBackend())
-            rows.push(savedConfiguration(config, page));
-        else if (!page && index >= 0) rows[index] = savedConfiguration(config, null);
+        const rows = beforeRows.slice();
+        rows[index < 0 ? rows.length : index] = savedConfiguration(config, page, beforeRows[index]);
         savedConnections = rows;
         if (!saveWorkspace()) {
             savedConnections = beforeRows;
@@ -698,7 +722,14 @@ GlassPage {
             connectionEditor.showError(workspaceError);
             return false;
         }
-        if (page && index >= 0) page.savedConnectionKey = connectionKey(rows[index]);
+        connectionEditorOldKey = key;
+        if (page) page.savedConnectionKey = key;
+        if (index < 0) {
+            sidebarCollapsed = false;
+            search.clear();
+            const row = rows.length - 1;
+            Qt.callLater(function() { savedList.positionViewAtIndex(row, ListView.Contain); });
+        }
         applyingConfiguration = false;
         if (!keepOpen) connectionEditor.close();
         return true;
@@ -748,6 +779,20 @@ GlassPage {
         const before = savedConnections;
         savedConnections = savedConnections.filter(function(value, row) { return row !== index; });
         if (!saveWorkspace()) savedConnections = before;
+    }
+    function reorderSaved(config, before) {
+        const rows = savedConnections.slice();
+        const from = rows.indexOf(config);
+        if (from < 0 || before < 0 || before > rows.length) return false;
+        const to = before > from ? before - 1 : before;
+        if (from === to) return false;
+        rows.splice(from, 1);
+        rows.splice(to, 0, config);
+        const previous = savedConnections;
+        savedConnections = rows;
+        if (saveWorkspace()) return true;
+        savedConnections = previous;
+        return false;
     }
 
     Component {
@@ -865,10 +910,37 @@ GlassPage {
                         Layout.fillWidth: true; implicitHeight: 30; placeholderText: "搜索连接"
                     }
                     ListView {
+                        id: savedList
                         objectName: "ssh-saved-connections"; visible: !root.sidebarCollapsed
                         Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 2
                         model: root.savedConnections.length
                         ScrollBar.vertical: ScrollBar {}
+                        property var draggedConfig: null
+                        property var drop: null
+                        function dropAt(point) {
+                            if (point.x < 0 || point.x >= width || point.y < 0 || point.y >= height) return null;
+                            const y = point.y + contentY;
+                            let next = null, last = null;
+                            for (const row of contentItem.children) {
+                                if (!row.matches || row.y + row.height <= contentY
+                                        || row.y >= contentY + height) continue;
+                                if (y < row.y + row.height / 2 && (!next || row.y < next.y)) next = row;
+                                if (!last || row.y > last.y) last = row;
+                            }
+                            if (next) return {index: next.index, y: next.y};
+                            return last ? {index: last.index + 1, y: last.y + last.height} : null;
+                        }
+                        Shortcut {
+                            sequence: "Escape"; enabled: savedList.draggedConfig !== null
+                            onActivated: { savedList.draggedConfig = null; savedList.drop = null; }
+                        }
+                        Rectangle {
+                            parent: savedList
+                            visible: savedList.drop !== null
+                            y: visible ? Math.max(0, Math.min(savedList.height - height, savedList.drop.y - savedList.contentY - 1)) : 0
+                            width: savedList.width; height: 2; z: 2
+                            color: root.theme ? root.theme.accent : "#80b9ff"
+                        }
                         delegate: ItemDelegate {
                             id: savedRow
                             required property int index
@@ -878,7 +950,7 @@ GlassPage {
                             width: ListView.view.width; height: matches ? 52 : 0; visible: matches
                             highlighted: !!root.activeSession && root.connectionKey(root.activeSession.connectionConfiguration()) === root.connectionKey(config)
                             Accessible.name: config.name + " " + config.host
-                            Accessible.description: "双击开始监控；右键、Enter 或菜单键打开连接操作"
+                            Accessible.description: "上下拖动可排序；双击开始监控；右键、Enter 或菜单键打开连接操作"
                             onDoubleClicked: root.connectSaved(savedRow.config)
                             Keys.onReturnPressed: savedMenu.popup()
                             Keys.onEnterPressed: savedMenu.popup()
@@ -889,6 +961,38 @@ GlassPage {
                                 Label { text: savedRow.config.host + ":" + savedRow.config.port; color: root.theme ? root.theme.subText : "#a7adb7"; font.pixelSize: 11; width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText }
                             }
                             background: Rectangle { radius: 5; color: savedRow.down || savedRow.highlighted ? (root.theme && (root.theme.lightMode || root.theme.monokaiMode) ? root.theme.navigationSelected : "#334b6b") : savedRow.hovered ? (root.theme && (root.theme.lightMode || root.theme.monokaiMode) ? root.theme.surfaceHover : "#303742") : "transparent" }
+                            opacity: savedList.draggedConfig === config ? 0.55 : 1
+                            DragHandler {
+                                property var source: null
+                                target: null
+                                enabled: savedRow.matches && root.savedConnections.length > 1
+                                acceptedButtons: Qt.LeftButton
+                                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.Stylus
+                                cursorShape: Qt.ClosedHandCursor
+                                function preview() {
+                                    if (active && savedList.draggedConfig === source)
+                                        savedList.drop = savedList.dropAt(savedRow.mapToItem(savedList, centroid.position.x, centroid.position.y));
+                                }
+                                onActiveChanged: {
+                                    if (!active) return;
+                                    source = savedRow.config;
+                                    savedList.draggedConfig = source;
+                                    preview();
+                                }
+                                onCentroidChanged: preview()
+                                onGrabChanged: function(transition, eventPoint) {
+                                    if (!source || savedList.draggedConfig !== source) return;
+                                    if (transition === PointerDevice.UngrabExclusive) {
+                                        const scene = eventPoint.scenePosition;
+                                        const target = savedList.dropAt(savedList.mapFromItem(null, scene.x, scene.y));
+                                        const config = source;
+                                        if (target) Qt.callLater(function() { root.reorderSaved(config, target.index); });
+                                    } else if (transition !== PointerDevice.CancelGrabExclusive) return;
+                                    savedList.draggedConfig = null;
+                                    savedList.drop = null;
+                                    source = null;
+                                }
+                            }
                             TapHandler { acceptedButtons: Qt.RightButton; onTapped: savedMenu.popup() }
                             Next.GlassMenu {
                                 id: savedMenu

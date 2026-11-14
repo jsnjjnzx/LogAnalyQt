@@ -33,6 +33,7 @@
 #include <QTimer>
 #include "../common/AppSettings.h"
 #include "LogTextHighlighter.h"
+#include "LogLineNumbers.h"
 #include <QStringDecoder>
 #include <QQuickTextDocument>
 #include <QUrl>
@@ -49,6 +50,13 @@ void LogBackend::styleLogDocument(QObject *quickTextDocument) {
   auto *document = quick->textDocument();
   auto *existing = document->findChild<QSyntaxHighlighter *>("logSyntaxHighlight");
   if (!existing) new LogTextHighlighter(document);
+}
+
+QVariantList LogBackend::logLineNumbers(QObject *quickTextDocument, int position,
+                                       qreal bottom) const {
+  const auto *quick = qobject_cast<QQuickTextDocument *>(quickTextDocument);
+  const auto *document = quick ? quick->textDocument() : nullptr;
+  return document ? visibleLogLineNumbers(*document, position, bottom) : QVariantList{};
 }
 
 static constexpr const char *kLegacySecurityLastVerifiedKey =

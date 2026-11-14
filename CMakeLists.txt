@@ -83,7 +83,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_ZLIB_COMPRESSION OFF CACHE BOOL "" FORCE) # 閬垮厤瀵绘壘 zlib
 add_subdirectory(third_party/libssh2)
 
-project(LogAnalyQt VERSION 5.5.1 LANGUAGES CXX)
+project(LogAnalyQt VERSION 5.5.2 LANGUAGES CXX)
 if(NOT WIN32)
     find_package(Iconv REQUIRED)
 endif()
@@ -463,6 +463,12 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     target_compile_definitions(app_paths_tests PRIVATE LOGANALYQT_UI_TESTING)
     target_link_libraries(app_paths_tests PRIVATE Qt6::Core)
     add_test(NAME app_paths_tests COMMAND app_paths_tests)
+
+    add_executable(log_line_numbers_tests tests/log_line_numbers_tests.cpp)
+    target_include_directories(log_line_numbers_tests PRIVATE src)
+    target_link_libraries(log_line_numbers_tests PRIVATE Qt6::Gui Qt6::Test)
+    add_test(NAME log_line_numbers_tests COMMAND log_line_numbers_tests)
+    set_tests_properties(log_line_numbers_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     add_executable(csg_upstream_tests
         tests/csg_upstream_tests.cpp

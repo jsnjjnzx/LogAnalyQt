@@ -320,6 +320,12 @@ Item {
             const tabC = item(page, "ssh-session-row-" + c.sessionId)
             dragTab(a, tabC, tabC.width - 3, 16, false)
             compare(originalGroup.tabs[2], a)
+            verify(page.saveWorkspace())
+            const ordered = JSON.parse(testBackend.settings["next/sshMonitor/workspace"]).layout[0].groups[0].tabs
+            compare(ordered, [b.sessionId, c.sessionId, a.sessionId])
+            const tabB = item(page, "ssh-session-row-" + b.sessionId)
+            dragTab(a, tabB, 4, 13, true)
+            compare(originalGroup.tabs[2], a)
             dragTab(a, a.group.contentHost, a.group.contentHost.width - 8, 100, false)
             compare(a.group.container.groups.length, 2); verify(a.group !== b.group)
             const other = b.group
@@ -2725,6 +2731,85 @@ Item {
             verify(page.sessions[0].autoScroll)
             verify(page.sessions[0].autoFollowEnabled === undefined)
             verify(page.savedConnections[0].autoFollowEnabled === undefined)
+        }
+        function test_saveNewConnectionWithoutPasswordCreatesPersistentSidebarCard() {
+            make()
+            item(page, "ssh-connection-search").text = "no match"
+            page.sidebarCollapsed = true
+            mouseClick(item(page, "ssh-new-session")); wait(20)
+            const session = page.activeSession
+            page.openConnectionEditor(session); wait(20)
+            const editor = item(page, "ssh-connection-editor")
+            const save = item(page, "ssh-editor-save")
+            item(page, "ssh-editor-name").text = "离线设备"
+            item(page, "ssh-editor-host").text = "offline.example"
+            item(page, "ssh-editor-password").text = ""
+            item(page, "ssh-editor-transfer-remote").text = "/logs"
+            testBackend.failSave = true
+            mouseClick(save); wait(20)
+            verify(editor.opened)
+            compare(page.savedConnections.length, 0)
+            compare(session.connectionConfiguration().host, "")
+            testBackend.failSave = false
+            mouseClick(save); wait(20)
+            verify(!editor.opened)
+            verify(!page.sidebarCollapsed)
+            compare(item(page, "ssh-connection-search").text, "")
+            verify(item(page, "ssh-saved-row-0").visible)
+            compare(page.savedConnections[0].host, "offline.example")
+            compare(page.savedConnections[0].password, "")
+            compare(session.terminal.connectCalls, 0)
+            compare(session.savedConnectionKey, page.connectionKey(page.savedConnections[0]))
+
+            const other = page.addSession(); wait(20)
+            page.openConnectionEditor(other); wait(20)
+            item(page, "ssh-editor-host").text = "OFFLINE.EXAMPLE"
+            mouseClick(save); wait(20)
+            verify(editor.opened && item(page, "ssh-editor-error").visible)
+            compare(page.savedConnections.length, 1)
+            compare(page.savedConnections[0].name, "离线设备")
+            compare(page.savedConnections[0].transferRemotePath, "/logs")
+            compare(other.connectionConfiguration().host, "")
+            editor.close()
+
+            verify(page.removeSession(session))
+            page.destroy(); page = null; wait(40); make()
+            compare(page.savedConnections.length, 1)
+            compare(page.savedConnections[0].name, "离线设备")
+            verify(item(page, "ssh-saved-row-0").visible)
+        }
+        function test_savedConnectionDragReordersAndPersistsWithoutConnecting() {
+            make()
+            const names = ["甲", "乙", "丙"]
+            page.savedConnections = names.map(function(name, index) {
+                const config = page.blankConfiguration(name)
+                config.host = "device" + index + ".example"
+                return config
+            })
+            wait(40)
+            const from = item(page, "ssh-saved-row-0")
+            const last = item(page, "ssh-saved-row-2")
+            const to = from.mapFromItem(last, 28, last.height - 5)
+            function drag(cancel) {
+                mousePress(from, 28, 12)
+                mouseMove(from, 28, 30, 30)
+                mouseMove(from, to.x, to.y, 30)
+                verify(item(page, "ssh-saved-connections").drop !== null)
+                if (cancel) keyClick(Qt.Key_Escape)
+                mouseRelease(from, to.x, to.y); wait(30)
+            }
+            drag(true)
+            compare(page.savedConnections.map(config => config.name), names)
+            testBackend.failSave = true
+            drag(false)
+            compare(page.savedConnections.map(config => config.name), names)
+            testBackend.failSave = false
+            drag(false)
+            compare(page.savedConnections.map(config => config.name), ["乙", "丙", "甲"])
+            compare(page.sessions.length, 1)
+            compare(page.activeSession.terminal.connectCalls, 0)
+            page.destroy(); page = null; wait(40); make()
+            compare(page.savedConnections.map(config => config.name), ["乙", "丙", "甲"])
         }
         function test_savedConnectionContextMenuEditsStoredParameters() {
             make()

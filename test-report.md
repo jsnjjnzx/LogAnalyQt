@@ -1,5 +1,37 @@
 # 测试结果
 
+## 2026-11-14 v5.5.2 发布准备（T99 / RELEASE-30、31）
+
+- 版本检查、macOS Debug 完整构建、原生 CTest 29/29、发布工具单元测试 38/38 通过。发布工具最初在沙箱内有 3 项因回环端口禁止而报错，普通会话重跑全部通过。日志见 `build/macos-debug/t99-build.log`、`t99-ctest.log`、`t99-release-tools.log`。
+- 固定自测应用更新至 5.5.2，126 个 arm64 Mach-O 和依赖、deep strict 签名、隔离 Cocoa 启动通过。主程序 SHA-256 `3f7334afdf231cb8192e293b013487714a00b055a729e2053e13468a12f32547`（`t99-local-package.log`）。
+- 按 AGENTS.md 未运行 QML/成品界面自动化；未实测鼠标交互、Windows 或真实设备，macOS 未公证。远端同提交构建、正式 Release 和公开更新验证待执行，后续以本节的发布验收记录为准。
+
+## 2026-11-14 日志自动换行立即生效（T98）
+
+- macOS Debug 完整构建及 Main.qml 资源编译通过，配置和日志布局原生 CTest 2/2（`build/macos-debug/t98-build.log`、`t98-ctest.log`）。本轮为单一宽度绑定修复，沿用既有布局测试。
+- 唯一自测应用保持 5.5.1；126 个 arm64 Mach-O 及依赖、deep strict 签名和隔离 Cocoa 启动通过。主程序 SHA-256 `2f38c6edcd98362f0740e47697f94ea7b21c79a72163063b6c92dfec5072947c`（`t98-local-package.log`）。
+- 按 AGENTS.md 未运行 QML/成品界面自动化；点击换行开关后的真实排版、长日志滚动位置和 Windows 尚待人工验收，不能以启动检查替代。
+
+## 2026-11-14 SSH 卡片与监控标签排序（T97）
+
+- 完整 macOS Debug 构建和 QML 资源编译通过；配置、日志行号和 SSH 文件传输原生 3/3（`build/macos-debug/t97-build.log`、`t97-ctest.log`）。
+- 单独执行落点和排序 JavaScript 函数的断言，覆盖滚动与隐藏卡片、列表外落点、首尾双向移动、无效移动、保存后顺序和写入失败回滚（`t97-order-check.log`），未启动 QML 或发送指针事件。
+- 固定自测应用保持 5.5.1，126 个 arm64 Mach-O、依赖、deep strict 签名和隔离 Cocoa 启动通过；主程序 SHA-256 `03ef6cd5831a41c7a53b6ab3f5415e2703c243bc7cddf0b8a2ff460a487b103d`。
+- QML 回归补充无密码保存时自动展开侧栏、清除筛选，以及卡片拖拽取消、保存失败、重启顺序。按 AGENTS.md 未运行 QML 或成品界面自动化；两处真实指针拖动、Windows 和设备交互未实测。
+
+## 2026-11-14 新建 SSH 连接保存到左侧列表（T96）
+
+- macOS Debug 完整构建及 QML 资源编译通过；CTest 配置、日志行号及 SSH 文件传输三项原生检查 3/3（`build/macos-debug/t96-build.log`、`t96-ctest.log`）。
+- 固定自测应用保持 5.5.1，126 个 arm64 Mach-O、依赖、deep strict 签名和隔离 Cocoa 启动通过。主程序 SHA-256 `098b4cc85522246abb8ac676cf61bde64e596dc4feb658382f77fb586640a529`（`t96-local-package.log`）。
+- 新增 QML 回归用例覆盖无密码保存、未发起连接、重复身份冲突、写入失败回滚和关闭标签后重启恢复。按 AGENTS.md 未执行该用例或成品界面自动化；未人工点击保存、连接真实 SSH 设备或验证 Windows。
+
+## 2026-11-14 日志行号、自动换行与 SSH 标签顺序（T95）
+
+- macOS Debug 完整构建及 QML 资源编译通过（`build/macos-debug/t95-build.log`）。原生 CTest 合计 29/29：沙箱内 23 项通过；本机窗口、回环端口及启动相关的 6 项在沙箱内失败，移到普通 macOS 会话后原用例全部通过（`t95-ctest.log`、`t95-ctest-environment.log`）。
+- 新增原生 `log_line_numbers_tests` 覆盖 920 行之后的 CRLF、中英文混排、空白和末行；窄视口覆盖从折行续行开始、编号不随折行增长、下一条仍按正文首行基线及视口底部裁剪。
+- 唯一自测应用 `release_package/通联工坊.app` 已更新，版本 5.5.1。126 个 arm64 Mach-O 的依赖、deep strict 签名和隔离 Cocoa 启动通过；主程序 SHA-256 `b9506178c325c42fcd10c44ae9cfb576364a911b31e1ae8fe22a19d05427f568`（`t95-local-package.log`）。
+- 为既有 SSH 拖拽用例补充保存顺序及 Esc 取消断言。按 AGENTS.md 未运行 QML 或成品界面自动化；未取得截图中的原始日志文件，未实测换行开关、鼠标拖拽、Windows 或真实 SSH 设备。
+
 ## 2026-11-09 v5.5.1 发布验收（T94 / RELEASE-28、29）
 
 - v5.5.1 版本检查、macOS Debug 完整构建、原生 CTest 28/28、发布工具单元测试 38/38 通过。日志见 `build/macos-debug/t94-build.log`、`t94-ctest.log`、`t94-release-tools.log`。

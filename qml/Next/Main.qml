@@ -233,6 +233,7 @@ ApplicationWindow {
     property real colWidthDir: 60
     property real colWidthSeq: 80
     property bool mainUiSettingsReady: false
+    property bool wrapLogLines: false
 
     Timer {
         id: windowGeometrySaveTimer
@@ -318,6 +319,7 @@ ApplicationWindow {
         colWidthAddr = Number(backend.getUiSetting("globalPreview/colWidthAddr", colWidthAddr));
         colWidthDir = Number(backend.getUiSetting("globalPreview/colWidthDir", colWidthDir));
         colWidthSeq = Number(backend.getUiSetting("globalPreview/colWidthSeq", colWidthSeq));
+        wrapLogLines = Boolean(backend.getUiSetting("next/log/wrapLines", false));
 
         var savedEncoding = String(backend.getUiSetting("encoding/current", "auto"));
         for (var i = 0; i < encodingCombo.model.length; i++) {
@@ -1276,7 +1278,23 @@ ApplicationWindow {
                 SplitView.preferredWidth: parent.width * 0.53
                 SplitView.fillHeight: true
 
-                Row { anchors.top: parent.top; anchors.topMargin: 4; anchors.right: parent.right; anchors.rightMargin: 12; spacing: 6; StyledButton { text: "清空并粘贴"; iconChar: mdi.contentPaste; onClicked: { clipboardBuffer.clear(); clipboardBuffer.paste(); if (clipboardBuffer.text.length) logContentArea.text = clipboardBuffer.text; } } StyledButton { text: "复制全文"; onClicked: backend.copyToClipboard(logContentArea.text) } }
+                Row {
+                    anchors.top: parent.top; anchors.topMargin: 4; anchors.right: parent.right; anchors.rightMargin: 12; spacing: 6
+                    StyledButton {
+                        objectName: "logWrapButton"
+                        visible: !mainWindow.isGlobalPreviewMode
+                        text: "自动换行"
+                        checkable: true
+                        checked: mainWindow.wrapLogLines
+                        onToggled: {
+                            mainWindow.wrapLogLines = checked;
+                            mainWindow.saveMainUiSetting("next/log/wrapLines", checked);
+                            if (checked) logScroll.contentItem.contentX = 0;
+                        }
+                    }
+                    StyledButton { text: "清空并粘贴"; iconChar: mdi.contentPaste; onClicked: { clipboardBuffer.clear(); clipboardBuffer.paste(); if (clipboardBuffer.text.length) logContentArea.text = clipboardBuffer.text; } }
+                    StyledButton { text: "复制全文"; onClicked: backend.copyToClipboard(logContentArea.text) }
+                }
                 ColumnLayout {
                     id: logContentLayout
                     anchors.fill: parent
@@ -1343,21 +1361,39 @@ ApplicationWindow {
                         id: logScroll
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        contentWidth: mainWindow.wrapLogLines ? availableWidth : Math.max(availableWidth, logContentArea.implicitWidth)
+                        ScrollBar.horizontal.policy: mainWindow.wrapLogLines ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded
                         FontMetrics { id: logFontMetrics; font: logContentArea.font }
                         Item {
+                            id: logGutter
                             parent: logScroll
-                            x: 1; y: 1; width: 44; height: logScroll.height - 16
+                            x: 1; y: 1; width: logContentArea.leftPadding - 10
+                            height: Math.max(0, logScroll.availableHeight - 2 - logScroll.effectiveScrollBarHeight)
                             clip: true; z: 2
+                            readonly property real scrollY: logScroll.contentItem ? logScroll.contentItem.contentY : 0
+                            property var rows: []
+                            function refresh() {
+                                if (!visible || !logContentArea.length || height <= 0) {
+                                    rows = [];
+                                    return;
+                                }
+                                const top = scrollY + y;
+                                rows = backend.logLineNumbers(logContentArea.textDocument,
+                                    logContentArea.positionAt(logContentArea.leftPadding, top),
+                                    top + height - logContentArea.topPadding);
+                            }
+                            onScrollYChanged: Qt.callLater(refresh)
+                            onHeightChanged: Qt.callLater(refresh)
+                            onVisibleChanged: Qt.callLater(refresh)
                             Rectangle { anchors.fill: parent; color: theme.controlBackground }
                             Repeater {
-                                model: Math.ceil(logScroll.height / logFontMetrics.height) + 1
+                                model: logGutter.rows.length
                                 delegate: Text {
                                     required property int index
-                                    readonly property real scrollY: logScroll.contentItem.contentY || 0
-                                    readonly property int line: Math.floor(scrollY / logFontMetrics.height) + index
-                                    x: 5; y: line * logFontMetrics.height - scrollY + logContentArea.topPadding
-                                    width: 32; height: logFontMetrics.height
-                                    text: line < logContentArea.lineCount ? line + 1 : ""
+                                    readonly property var row: logGutter.rows[index]
+                                    y: row ? row.baseline + logContentArea.topPadding - logGutter.scrollY - logGutter.y - baselineOffset : 0
+                                    width: logGutter.width - 4
+                                    text: row ? String(row.number) : ""
                                     color: theme.subText; font: logContentArea.font
                                     horizontalAlignment: Text.AlignRight
                                 }
@@ -1367,10 +1403,13 @@ ApplicationWindow {
                             id: logContentArea
                             objectName: "logText"
                             textFormat: TextEdit.PlainText
-                            leftPadding: 54
-                            wrapMode: TextEdit.NoWrap
+                            leftPadding: Math.max(54, Math.ceil(logFontMetrics.advanceWidth("0".repeat(String(length).length))) + 16)
+                            wrapMode: mainWindow.wrapLogLines ? TextEdit.Wrap : TextEdit.NoWrap
                             font.pixelSize: 14
                             Component.onCompleted: { backend.disableTextAreaUndo(textDocument); backend.styleLogDocument(textDocument); }
+                            onContentSizeChanged: Qt.callLater(logGutter.refresh)
+                            onWidthChanged: Qt.callLater(logGutter.refresh)
+                            onWrapModeChanged: Qt.callLater(logGutter.refresh)
 
                             DropArea {
                                 anchors.fill: parent
@@ -1481,7 +1520,10 @@ ApplicationWindow {
                             }
 
                             property bool receivingBackend: false
-                            onTextChanged: { if (!receivingBackend) backend.loadRawText(text); }
+                            onTextChanged: {
+                                if (!receivingBackend) backend.loadRawText(text);
+                                Qt.callLater(logGutter.refresh);
+                            }
 
                             Connections {
                                 target: backend

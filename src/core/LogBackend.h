@@ -249,6 +249,8 @@ public:
   // 禁用 QML TextArea 的 QTextDocument undo 历史（防止长时间运行内存泄漏）
   Q_INVOKABLE void disableTextAreaUndo(QObject *quickTextDocument);
   Q_INVOKABLE void styleLogDocument(QObject *quickTextDocument);
+  Q_INVOKABLE QVariantList logLineNumbers(QObject *quickTextDocument, int position,
+                                         qreal bottom) const;
 
   // 预置报文管理相关方法
   Q_INVOKABLE QStringList getPresetList(const QString &protocol);

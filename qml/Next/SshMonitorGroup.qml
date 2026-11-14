@@ -20,11 +20,6 @@ Rectangle {
     Binding { target: root.group; property: "menu"; value: groupMenu.item; when: !!root.group }
     Binding { target: root.group; property: "visualHost"; value: root; when: !!root.group }
     Binding { target: root.group; property: "tabHost"; value: tabs; when: !!root.group }
-    TapHandler {
-        acceptedButtons: Qt.LeftButton
-        gesturePolicy: TapHandler.WithinBounds
-        onTapped: if (root.page) root.workspace.activateSession(root.page)
-    }
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 1; spacing: 0
         RowLayout {
@@ -36,10 +31,23 @@ Rectangle {
                 orientation: ListView.Horizontal; clip: true; spacing: 1
                 model: root.group ? root.group.tabs : []
                 ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
-                onCountChanged: Qt.callLater(function() { if (root.group) { currentIndex = root.group.tabs.indexOf(root.group.active); positionViewAtIndex(currentIndex, ListView.Contain); } })
+                Rectangle {
+                    parent: tabs
+                    readonly property var drop: root.workspace.dragTarget
+                    visible: drop !== null && drop.group === root.group && drop.inHeader && !root.workspace.dragCancelled
+                    x: visible ? Math.max(0, Math.min(tabs.width - width, drop.edgeX - tabs.contentX - width / 2)) : 0
+                    width: 2; height: tabs.height; z: 2
+                    color: root.theme ? root.theme.accent : "#80b9ff"
+                }
+                function revealActiveTab() {
+                    if (!root.group) return;
+                    currentIndex = root.group.tabs.indexOf(root.group.active);
+                    if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain);
+                }
+                onModelChanged: Qt.callLater(revealActiveTab)
                 Connections {
                     target: root.group
-                    function onActiveChanged() { tabs.currentIndex = root.group.tabs.indexOf(root.group.active); tabs.positionViewAtIndex(tabs.currentIndex, ListView.Contain); }
+                    function onActiveChanged() { tabs.revealActiveTab(); }
                 }
                 delegate: Rectangle {
                     id: tab
@@ -47,10 +55,10 @@ Rectangle {
                     required property int index
                     objectName: "ssh-session-row-" + modelData.sessionId
                     width: Math.max(110, Math.min(196, label.implicitWidth + 38)); height: 26
-                    color: root.group && root.group.active === modelData ? (root.theme ? root.theme.monitorTabSelected : "#2b3c53") : tabMouse.containsMouse ? (root.theme ? root.theme.monitorTabHover : "#29313c") : (root.theme ? root.theme.monitorTab : "#20262f")
+                    color: root.group && root.group.active === modelData ? (root.theme ? root.theme.monitorTabSelected : "#2b3c53") : tabHover.hovered ? (root.theme ? root.theme.monitorTabHover : "#29313c") : (root.theme ? root.theme.monitorTab : "#20262f")
                     Accessible.role: Accessible.PageTab
                     Accessible.name: modelData.sessionName
-                    Accessible.description: "双击新建同配置标签并连接；右键设置连接参数或更多操作"
+                    Accessible.description: "拖动可排序；双击新建同配置标签并连接；右键打开更多操作"
                     Accessible.onPressAction: root.workspace.activateSession(modelData)
                     activeFocusOnTab: true
                     function connectFromKeyboard(event) {
@@ -70,39 +78,55 @@ Rectangle {
                         color: root.workspace.theme ? root.workspace.theme.text : "white"; font.pixelSize: 12
                     }
                     Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: root.theme ? root.theme.accent : "#80b9ff"; visible: root.group && root.group.active === tab.modelData }
-                    MouseArea {
-                        id: tabMouse
+                    Item {
+                        id: tabPointer
                         objectName: "ssh-tab-pointer-" + tab.modelData.sessionId
-                        anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; hoverEnabled: true
-                        preventStealing: true
-                        drag.target: dragProxy
-                        drag.minimumX: 0; drag.maximumX: Math.max(0, root.width - dragProxy.width)
-                        drag.minimumY: 0; drag.maximumY: Math.max(0, root.height - dragProxy.height)
-                        onPressed: function(mouse) {
-                            root.workspace.activateSession(tab.modelData);
-                            const point = mapToItem(dragProxy.parent, mouse.x, mouse.y);
-                            dragProxy.x = point.x; dragProxy.y = point.y; root.workspace.dragCancelled = false;
+                        anchors.left: parent.left; anchors.right: close.left
+                        anchors.top: parent.top; anchors.bottom: parent.bottom
+                        HoverHandler { id: tabHover }
+                        TapHandler {
+                            acceptedButtons: Qt.LeftButton
+                            onTapped: {
+                                root.workspace.activateSession(tab.modelData);
+                                tab.modelData.focusTerminal();
+                            }
+                            onDoubleTapped: root.workspace.cloneSession(tab.modelData)
                         }
-                        onPositionChanged: function(mouse) {
-                            if (drag.active) {
+                        TapHandler { acceptedButtons: Qt.RightButton; onTapped: tab.openMenu() }
+                        DragHandler {
+                            id: tabDrag
+                            target: null
+                            acceptedButtons: Qt.LeftButton
+                            cursorShape: Qt.ClosedHandCursor
+                            function preview() {
+                                if (!active || root.workspace.dragCancelled) return;
+                                const point = tabPointer.mapToGlobal(centroid.position.x, centroid.position.y);
+                                const local = root.mapFromGlobal(point.x, point.y);
+                                dragProxy.x = Math.max(0, Math.min(root.width - dragProxy.width, local.x + 8));
+                                dragProxy.y = Math.max(0, Math.min(root.height - dragProxy.height, local.y + 9));
+                                root.workspace.dragTarget = root.workspace.tabDropTarget(point);
+                            }
+                            onActiveChanged: {
+                                if (!active) return;
+                                root.workspace.dragCancelled = false;
                                 root.workspace.draggedSession = tab.modelData;
-                                root.workspace.dragTarget = root.workspace.tabDropTarget(mapToGlobal(mouse.x, mouse.y));
+                                preview();
+                            }
+                            onCentroidChanged: preview()
+                            onGrabChanged: function(transition, eventPoint) {
+                                if (root.workspace.draggedSession !== tab.modelData) return;
+                                if (transition === PointerDevice.UngrabExclusive) {
+                                    const page = tab.modelData;
+                                    const point = eventPoint.globalPosition;
+                                    Qt.callLater(function() { root.workspace.finishTabDrag(page, point); });
+                                } else if (transition === PointerDevice.CancelGrabExclusive) {
+                                    root.workspace.draggedSession = null;
+                                    root.workspace.dragTarget = null;
+                                }
                             }
                         }
-                        onReleased: function(mouse) {
-                            if (root.workspace.draggedSession === tab.modelData) {
-                                const page = tab.modelData, point = mapToGlobal(mouse.x, mouse.y);
-                                Qt.callLater(function() { root.workspace.finishTabDrag(page, point); });
-                            }
-                        }
-                        onCanceled: { root.workspace.draggedSession = null; root.workspace.dragTarget = null; }
-                        onClicked: function(mouse) {
-                            if (mouse.button === Qt.RightButton) tab.openMenu();
-                            else tab.modelData.focusTerminal();
-                        }
-                        onDoubleClicked: function(mouse) { if (mouse.button === Qt.LeftButton) root.workspace.cloneSession(tab.modelData); }
-                        ToolTip.visible: containsMouse && !drag.active
-                        ToolTip.text: tab.modelData.sessionName + "\n" + tab.modelData.connectionConfiguration().username + "@" + tab.modelData.connectionConfiguration().host
+                        ToolTip.visible: tabHover.hovered && !root.workspace.draggedSession
+                        ToolTip.text: tab.modelData.sessionName + "\n" + tab.modelData.connectionConfiguration().username + "@" + tab.modelData.connectionConfiguration().host + "\n拖动可排序"
                     }
                     Next.GlassButton {
                         id: close
@@ -118,13 +142,9 @@ Rectangle {
                         id: dragProxy
                         objectName: "ssh-tab-drag-preview-" + tab.modelData.sessionId
                         parent: root
-                        visible: tabMouse.drag.active
+                        visible: root.workspace.draggedSession === tab.modelData && !root.workspace.dragCancelled
                         width: tab.width; height: 26; radius: 5; color: root.theme && (root.theme.lightMode || root.theme.monokaiMode) ? root.theme.navigationSelected : "#34465e"; opacity: 0.9; z: 1000
                         Label { anchors.centerIn: parent; text: tab.modelData.sessionName; color: root.theme ? root.theme.text : "#eceef2"; font.pixelSize: 12 }
-                    }
-                    Rectangle {
-                        visible: root.workspace.dragTarget !== null && root.workspace.dragTarget.group === root.group && root.workspace.dragTarget.index === tab.index
-                        anchors.left: parent.left; width: 2; height: parent.height; color: root.theme ? root.theme.accent : "#80b9ff"
                     }
                 }
 
@@ -139,6 +159,10 @@ Rectangle {
         Item {
             id: content
             Layout.fillWidth: true; Layout.fillHeight: true
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: if (root.page) root.workspace.activateSession(root.page)
+            }
             Label {
                 anchors.centerIn: parent; visible: !root.page
                 text: "双击左侧 SSH 连接开始监控"; color: root.workspace.theme ? root.workspace.theme.subText : "#a7adb7"; font.pixelSize: 12
@@ -146,7 +170,7 @@ Rectangle {
             Rectangle {
                 objectName: "ssh-drop-preview-" + (root.group ? root.group.groupId : 0)
                 z: 10
-                visible: root.workspace.dragTarget !== null && !root.workspace.dragTarget.inHeader && root.workspace.dragTarget.group === root.group
+                visible: root.workspace.dragTarget !== null && !root.workspace.dragTarget.inHeader && root.workspace.dragTarget.group === root.group && !root.workspace.dragCancelled
                 anchors.top: parent.top
                 height: root.page ? Math.min(parent.height, root.page.monitorPreviewBottom) : parent.height
                 x: root.workspace.dragTarget && root.workspace.dragTarget.side === "left" ? 0 : parent.width - width
