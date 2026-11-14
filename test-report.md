@@ -2,6 +2,7 @@
 
 ## 2026-11-14 v5.5.2 发布准备（T99 / RELEASE-30、31）
 
+- 首轮发行提交 `3bb52a7` 构建 43570681634：macOS 成功；Windows 编译成功，前 13 项原生测试通过，第 14 项新增行号测试在 offscreen 环境启动后无输出。人工取消阻塞作业，未创建标签或 Release；日志 `t99-first-build-full.log`。修正平台设置与超时后须重跑同提交门禁。
 - 版本检查、macOS Debug 完整构建、原生 CTest 29/29、发布工具单元测试 38/38 通过。发布工具最初在沙箱内有 3 项因回环端口禁止而报错，普通会话重跑全部通过。日志见 `build/macos-debug/t99-build.log`、`t99-ctest.log`、`t99-release-tools.log`。
 - 固定自测应用更新至 5.5.2，126 个 arm64 Mach-O 和依赖、deep strict 签名、隔离 Cocoa 启动通过。主程序 SHA-256 `3f7334afdf231cb8192e293b013487714a00b055a729e2053e13468a12f32547`（`t99-local-package.log`）。
 - 按 AGENTS.md 未运行 QML/成品界面自动化；未实测鼠标交互、Windows 或真实设备，macOS 未公证。远端同提交构建、正式 Release 和公开更新验证待执行，后续以本节的发布验收记录为准。

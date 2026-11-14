@@ -468,7 +468,10 @@ if(LOGANALYQT_BUILD_PROTOCOL_TESTS)
     target_include_directories(log_line_numbers_tests PRIVATE src)
     target_link_libraries(log_line_numbers_tests PRIVATE Qt6::Gui Qt6::Test)
     add_test(NAME log_line_numbers_tests COMMAND log_line_numbers_tests)
-    set_tests_properties(log_line_numbers_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(log_line_numbers_tests PROPERTIES TIMEOUT 30)
+    if(NOT WIN32)
+        set_tests_properties(log_line_numbers_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
 
     add_executable(csg_upstream_tests
         tests/csg_upstream_tests.cpp
