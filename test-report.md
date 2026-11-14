@@ -7,6 +7,14 @@
 - 固定自测应用更新至 5.5.2，126 个 arm64 Mach-O 和依赖、deep strict 签名、隔离 Cocoa 启动通过。主程序 SHA-256 `3f7334afdf231cb8192e293b013487714a00b055a729e2053e13468a12f32547`（`t99-local-package.log`）。
 - 按 AGENTS.md 未运行 QML/成品界面自动化；未实测鼠标交互、Windows 或真实设备，macOS 未公证。远端同提交构建、正式 Release 和公开更新验证待执行，后续以本节的发布验收记录为准。
 
+### T99 正式发布验收
+
+- 最终发行源码 `0bbfe2ba4372b66ee0151014280d16dcc36ce2d9` 的 [双平台构建 43572232096](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/43572232096) 成功：Windows x64 12m52s、macOS arm64 10m49s。Windows 26/26 原生测试通过，新增行号用例使用原生平台 4.03 秒通过；macOS 原生回归及两平台成品验证通过。日志 `t99-final-build-full.log`。
+- `find_validated_build.py` 确认 Windows/macOS 两份产物均有效，且来自同一仓库、main 和上述提交；通过后才推送 `v5.5.2`。证据 `t99-validated-build.txt`。
+- [正式 Release v5.5.2](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.5.2) 于北京时间 2026-11-14 15:55:45 公开，确认为 latest、非草稿、非预发布。EXE、DMG、更新 ZIP、三份 SHA256 及 update.json 共七个附件齐全。匿名下载更新清单与公开附件的大小、名称、地址及摘要一致；update.json SHA-256 `ef0551d9f44f7b15ac8ba89d9af860d6a148067def3ebf0e863f3d4353d7f693`。证据 `t99-public-release-verification.json`。
+- [发布与公开更新 43573345581](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/43573345581) 全部成功。Windows 和 macOS 的模拟旧客户端从公开版本下载、校验、替换并重启至 5.5.2，保留数据文件。日志 `t99-final-release-full.log`。
+- 以上 CI/公开更新不替代实际鼠标、用户 SSH 设备、Windows 实机或 Apple 公证验收；QML/成品界面自动化按约定排除。
+
 ## 2026-11-14 日志自动换行立即生效（T98）
 
 - macOS Debug 完整构建及 Main.qml 资源编译通过，配置和日志布局原生 CTest 2/2（`build/macos-debug/t98-build.log`、`t98-ctest.log`）。本轮为单一宽度绑定修复，沿用既有布局测试。
