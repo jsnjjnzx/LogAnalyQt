@@ -300,6 +300,29 @@ void testServiceStatusesAndSchema(const QString &sourceRoot) {
   error.clear();expect(!Prot698ServiceSchema::validateJsonTreeValue("NOT_A_SERVICE",good,&normalized,&error),"unknown service rejects");
 }
 void testReviewBoundaryRegressions(const QString &sourceRoot) {
+  {
+    Prot698Parser parser;
+    const QList<QByteArray> securityApdus{
+      QByteArray::fromHex("10000805010140000200000101aa"),
+      QByteArray::fromHex("90000a8501014000020000000000")};
+    for (const auto &security : securityApdus) {
+      QList<Prot698Field> outerFields;
+      int offset = 0;
+      parser.parseApdu(security, offset, outerFields, 0);
+      QByteArray plaintext;
+      for (const auto &field : outerFields)
+        if (field.name == QStringLiteral("明文数据单元")) plaintext = QByteArray::fromHex(field.value.toLatin1());
+      expect(!plaintext.isEmpty(), "security request/response exposes the plaintext APDU field for double-click inspection");
+      QList<Prot698Field> innerFields;
+      offset = 0;
+      parser.parseApdu(plaintext, offset, innerFields, 0);
+      expect(offset == plaintext.size() && !innerFields.isEmpty(), "plaintext field can be parsed completely through the manual APDU parser");
+      bool hasOad = false;
+      for (const auto &field : innerFields)
+        if (field.name.contains("OAD") && field.value.simplified().remove(' ') == "40000200") hasOad = true;
+      expect(hasOad, "nested plaintext inspection exposes the requested OAD instead of opaque bytes");
+    }
+  }
   auto scaled=leaf("long64");scaled.hasScaler=true;scaled.scaler=-2;scaled.unit="A";
   expect(encoded(scaled,QJsonObject{{"representation","physical"},{"value","-92233720368547758.08"},{"unit","A"}}).toHex()=="148000000000000000","physical signed64 minimum exact");
   scaled.type="long64_unsigned";

@@ -11,6 +11,7 @@ Window {
     required property string parsedHex
     property string sessionName: "协议解析"
     property string namePrefix: "parse"
+    signal fieldDoubleClicked(string name, string value)
     readonly property var parseResultModel: backend && parseSessionId >= 4 ? backend.parseModel(parseSessionId) : null
     FontMetrics { id: frameMetrics; font: parseFrameText.font }
     function resetSelection() { parseFrameText.deselect(); parseFrameText.cursorPosition = 0; }
@@ -92,6 +93,7 @@ Window {
             resultModel: parseOutputWindow.parseResultModel
             targetModelId: parseOutputWindow.parseSessionId
             namePrefix: parseOutputWindow.namePrefix
+            onFieldDoubleClicked: (name, value) => parseOutputWindow.fieldDoubleClicked(name, value)
         }
     }
 }

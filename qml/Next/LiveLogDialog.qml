@@ -81,6 +81,7 @@ GlassPage {
     readonly property string configurationSnapshot: JSON.stringify(connectionConfiguration())
     signal configurationEdited()
     signal connectionSettingsRequested()
+    signal inspectApduRequested(string text)
     onConfigurationSnapshotChanged: configurationEdited()
     function connectionConfiguration() {
         return Object.assign({name: sessionName, host: hostInput.text, port: portInput.text, username: userInput.text,
@@ -646,6 +647,7 @@ GlassPage {
     }
 
     property bool findBarVisible: false
+    property bool searchShortcutEnabled: true
     property string searchKeyword: ""
     // 注意：searchMatches 赋值时必须整体替换新数组，不得直接 push()，
     // 否则 QML 属性系统检测不到变化，UI 绑定不会刷新。（#2）
@@ -842,12 +844,7 @@ GlassPage {
         // 注意：必须整体赋值新数组（不得用 push），否则不触发 QML 属性变更通知 (#2)
         searchMatches = sshTerminal.findLineIds(searchKeyword);
         m_nextSearchLineId = sshTerminal.firstLineId + sshTerminal.currentLineCount;
-        if (searchMatches.length === 0) {
-            searchCursor = -1;
-            return;
-        }
-        if (searchCursor < 0 || searchCursor >= searchMatches.length)
-            searchCursor = 0;
+        searchCursor = -1;
     }
 
     function updateSearchResult() {
@@ -863,8 +860,7 @@ GlassPage {
             for (let i = 0; i < added.length; ++i)
                 if (matches.length === 0 || added[i] > matches[matches.length - 1]) matches.push(added[i]);
             searchMatches = matches;
-            const cursor = matches.indexOf(selectedMatch);
-            searchCursor = matches.length === 0 ? -1 : Math.max(0, cursor);
+            searchCursor = matches.indexOf(selectedMatch);
         }
         m_nextSearchLineId = firstId + sshTerminal.currentLineCount;
     }
@@ -917,6 +913,19 @@ GlassPage {
         }
     }
 
+    function openFind() {
+        findBarVisible = true;
+        findInput.forceActiveFocus();
+        findInput.selectAll();
+    }
+
+    function closeFind() {
+        findBarVisible = false;
+        searchKeyword = "";
+        refreshSearchResult();
+        terminalInput.forceActiveFocus();
+    }
+
     function jumpToSearch(forward) {
         if (searchKeyword === "")
             return;
@@ -925,7 +934,7 @@ GlassPage {
         if (searchMatches.length === 0)
             return;
         if (searchCursor < 0) {
-            searchCursor = 0;
+            searchCursor = forward ? 0 : searchMatches.length - 1;
         } else if (forward) {
             searchCursor = (searchCursor + 1) % searchMatches.length;
         } else {
@@ -1952,21 +1961,17 @@ GlassPage {
     }
 
     Shortcut {
-        enabled: liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
-        sequences: ["Ctrl+Shift+F"]
-        onActivated: {
-            findBarVisible = true;
-            findInput.forceActiveFocus();
-            findInput.selectAll();
-        }
+        enabled: liveLogDialog.searchShortcutEnabled && liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
+        sequences: [StandardKey.Find, "Ctrl+Shift+F"]
+        onActivated: openFind()
     }
     Shortcut {
-        enabled: liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
+        enabled: liveLogDialog.searchShortcutEnabled && liveLogDialog.findBarVisible && liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
         sequence: "F3"
         onActivated: jumpToSearch(true)
     }
     Shortcut {
-        enabled: liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
+        enabled: liveLogDialog.searchShortcutEnabled && liveLogDialog.findBarVisible && liveLogDialog.visible && liveLogDialog.Window.window && liveLogDialog.Window.window.active
         sequence: "Shift+F3"
         onActivated: jumpToSearch(false)
     }
@@ -2185,6 +2190,9 @@ GlassPage {
         parseSessionId: liveLogDialog.parseSessionId
         parsedHex: liveLogDialog.parsedHex
         sessionName: liveLogDialog.sessionName
+        onFieldDoubleClicked: (name, value) => {
+            if (name === "明文数据单元") liveLogDialog.inspectApduRequested(value);
+        }
         transientParent: liveLogDialog.ownerWindow && liveLogDialog.ownerWindow.visible ? liveLogDialog.ownerWindow : liveLogDialog.Window.window
     }
 
@@ -2619,7 +2627,9 @@ GlassPage {
 
         // ── 查找栏 ────────────────────────────────────────────────
         Rectangle {
+            objectName: "ssh-find-bar"
             visible: findBarVisible
+            Keys.onEscapePressed: liveLogDialog.closeFind()
             Layout.fillWidth: true
             height: 38
             color: cardBg
@@ -2639,8 +2649,10 @@ GlassPage {
                 }
                 StyledTextField {
                     id: findInput
+                    objectName: "ssh-find-input"
                     Layout.fillWidth: true
                     placeholderText: "输入关键字…"
+                    Accessible.name: "查找监控内容"
                     text: searchKeyword
                     onTextChanged: {
                         searchKeyword = text;
@@ -2658,7 +2670,7 @@ GlassPage {
                     Label {
                         id: resultCountLabel
                         anchors.centerIn: parent
-                        text: searchMatches.length === 0 ? "无结果" : (searchCursor + 1) + " / " + searchMatches.length
+                        text: searchMatches.length === 0 ? "无结果" : searchCursor < 0 ? searchMatches.length + " 处" : (searchCursor + 1) + " / " + searchMatches.length
                         color: searchMatches.length > 0 ? successColor : errorColor
                         font.pixelSize: 11
                     }
@@ -2666,24 +2678,29 @@ GlassPage {
 
                 StyledButton {
                     text: "↑"
+                    enabled: searchMatches.length > 0
+                    Accessible.name: "上一处匹配"
+                    ToolTip.visible: hovered
+                    ToolTip.text: "上一处（Shift+F3）"
                     onClicked: jumpToSearch(false)
                     implicitWidth: 36
                 }
                 StyledButton {
                     text: "↓"
+                    enabled: searchMatches.length > 0
+                    Accessible.name: "下一处匹配"
+                    ToolTip.visible: hovered
+                    ToolTip.text: "下一处（Enter / F3）"
                     onClicked: jumpToSearch(true)
                     implicitWidth: 36
                 }
                 StyledButton {
                     text: "✕"
                     implicitWidth: 36
-                    onClicked: {
-                        findBarVisible = false;
-                        searchKeyword = "";
-                        refreshSearchResult();
-                        if (terminalInput)
-                            terminalInput.forceActiveFocus();
-                    }
+                    Accessible.name: "关闭查找"
+                    ToolTip.visible: hovered
+                    ToolTip.text: "关闭查找（Esc）"
+                    onClicked: liveLogDialog.closeFind()
                 }
             }
         }

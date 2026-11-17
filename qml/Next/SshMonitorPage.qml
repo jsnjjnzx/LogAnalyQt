@@ -7,6 +7,7 @@ GlassPage {
     id: root
     title: "实时监控"
     property var backend
+    signal inspectApduRequested(string text)
     property var sessions: []
     property var savedConnections: []
     property var fileWindows: ({})
@@ -812,6 +813,7 @@ GlassPage {
             backend: root.backend; theme: root.theme
             ownerWindow: detached ? monitorWindow : root.ownerWindow
             persistConnectionSettings: false; workspaceManaged: true
+            searchShortcutEnabled: !!group && group.container.activeGroup === group
             sharedCommands: commandLibrary; monitorRuleLibrary: root
             commitLogSettings: function(config) { return root.saveSessionLogSettings(sessionPage, config); }
             onConfigurationEdited: {
@@ -820,6 +822,7 @@ GlassPage {
                 root.scheduleSave();
             }
             onConnectionSettingsRequested: root.openConnectionEditor(sessionPage)
+            onInspectApduRequested: text => root.inspectApduRequested(text)
             Connections {
                 target: sessionPage.terminal
                 function onConnectedChanged() { if (target.connected) root.rememberConnection(sessionPage); }

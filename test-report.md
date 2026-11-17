@@ -1,5 +1,21 @@
 # 测试结果
 
+## 2026-11-17 v5.5.3 发布验证（T101 / RELEASE-32、33）
+
+- 已移除两个专用查找按钮，保留系统查找、Ctrl+Shift+F 和栏内导航/关闭。CMake、README、CHANGELOG 统一为 5.5.3；`git diff --check` 通过，T100 的纯 JS 查找逻辑断言仍适用于未改动的最终函数。
+- `cmake --build --preset macos-debug -j4` 完整构建通过；仅既有 OpenSSL 重复链接警告（`build/macos-debug/t101-build.log`）。原生 CTest 按 CI 同样排除 QML/界面项目，29/29 通过，耗时 39 秒（`t101-ctest.log`）；发布工具单元测试 38/38 通过（`t101-release-tools.log`）。
+- 固定自测应用 `release_package/通联工坊.app` 更新至 5.5.3，126 个 arm64 Mach-O/依赖、deep strict 签名和隔离 Cocoa 启动通过；未生成压缩包。主程序 SHA-256 `bb4e80a72e8145730f63ec820bb95b4adcd45a9da9c0d423c8257f094f4a8c12`（`t101-local-package.log`、`t101-cocoa-startup.log`）。
+- 远端同提交双平台构建、来源门禁、正式发布及公开更新待执行；完成后补充本节验收结果。T100 记录为此前 5.5.2 开发包的历史验证。
+- 按 AGENTS.md 不运行 QML/成品界面自动化；真实快捷键、跨组/跨窗、明文字段双击和 SSH 设备交互待人工验收。
+
+## 2026-11-17 实时监控查找与 698 明文继续解析（T100）
+
+- `cmake --build --preset macos-debug -j4` 完整构建通过，含五个改动 QML 文件的资源编译；仅既有 OpenSSL 重复链接警告。日志 `build/macos-debug/t100-build.log`。
+- `ctest --test-dir build/macos-debug -R '^(ssh_stream_tests|prot698_boundary_tests)$' --output-on-failure`：2/2 通过，698 965 项、SSH 535 项断言。新增覆盖中英文及大小写查找、空词/无匹配、增量起点、历史淘汰/清空，以及 698 安全请求/响应的明文字段提取和同一手动 APDU 解析器继续解析至 OAD。首轮新增夹具误用低于下限的容量，修正后沙箱因禁止回环端口失败；授权访问回环后回归通过。日志 `build/macos-debug/t100-ctest.log`。
+- 提取源码内三个查找函数在 Node VM 中执行纯 JavaScript 断言，通过首条/末条起步、首尾循环、增量到达、历史淘汰保持当前命中、未导航时不跳过首条、关键词改变、空结果和暂停跟随。未加载 QML 引擎或操作界面。日志 `build/macos-debug/t100-search-check.log`。
+- 固定自测应用 `release_package/通联工坊.app` 已更新，仍为 5.5.2；126 个 arm64 Mach-O 及依赖、deep strict 签名、隔离 Cocoa 启动 6 秒通过，启动日志无 QML 错误。主程序 SHA-256 `bf35e30e57a295a0f94dc22710b531f407b406735d35587fd3765023d2225f2e`。日志 `build/macos-debug/t100-local-package.log`、`t100-cocoa-startup.log`；未生成压缩包。
+- 按 AGENTS.md 未运行 QML 测试及成品界面自动化。实际快捷键、双分组与独立窗口交互、明文字段双击弹窗、Windows 和真实 SSH 设备仍待人工验收；构建、函数断言与启动不能替代这些交互验收。此阶段未提交、推送或发布；后续最终交付见 T101。
+
 ## 2026-11-14 v5.5.2 发布准备（T99 / RELEASE-30、31）
 
 - 首轮发行提交 `3bb52a7` 构建 43570681634：macOS 成功；Windows 编译成功，前 13 项原生测试通过，第 14 项新增行号测试在 offscreen 环境启动后无输出。人工取消阻塞作业，未创建标签或 Release；日志 `t99-first-build-full.log`。修正平台设置与超时后须重跑同提交门禁。

@@ -2876,6 +2876,7 @@ ApplicationWindow {
 
     Next.SshMonitorPage {
         id: liveLogDialog
+        onInspectApduRequested: text => mainWindow.inspectApdu(text)
         objectName: "page-5"
         parent: pageDeck
         anchors.fill: parent

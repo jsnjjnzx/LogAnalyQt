@@ -520,6 +520,25 @@ void SshTerminalTestAccess::inputSchedulingChecks() {
 }
 
 static void receptionPauseChecks() {
+  {
+    QTemporaryDir temporary;
+    SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
+    auto *model = terminal.lineModel();
+    model->appendLines({"RX first", "unrelated", QString::fromUtf8("rx 中文"), "RX last"});
+    const auto firstId = terminal.lineIdAt(0);
+    check(terminal.findLineIds("rX") == QVariantList{firstId, firstId + 2, firstId + 3}, "search is case insensitive and retains chronological stable IDs");
+    check(terminal.findLineIds(QString::fromUtf8("中文")) == QVariantList{firstId + 2}, "search supports Unicode keywords");
+    check(terminal.findLineIds("").isEmpty() && terminal.findLineIds("missing").isEmpty(), "empty and absent keywords have no matches");
+    check(terminal.findLineIds("RX", firstId + 3) == QVariantList{firstId + 3}, "incremental search starts at the supplied line ID");
+    check(terminal.findLineIds("RX", firstId + 4).isEmpty(), "incremental search past the buffer has no stale matches");
+    model->setMaxLines(100);
+    QStringList padding;
+    for (int index = 0; index < 98; ++index) padding.append("unrelated");
+    model->appendLines(padding);
+    check(terminal.findLineIds("RX", firstId) == QVariantList{firstId + 2, firstId + 3}, "search drops evicted history and starts at the retained boundary");
+    terminal.clearBuffer();
+    check(terminal.findLineIds("RX").isEmpty(), "clearing the monitor also clears searchable history");
+  }
   QTemporaryDir temporary;
   SshTerminal terminal(std::make_shared<SecureCredentialStore>(SecureCredentialStore::Domain::Ssh), temporary.path());
   terminal.setUseSystemCredentials(false);
