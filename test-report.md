@@ -5,8 +5,16 @@
 - 已移除两个专用查找按钮，保留系统查找、Ctrl+Shift+F 和栏内导航/关闭。CMake、README、CHANGELOG 统一为 5.5.3；`git diff --check` 通过，T100 的纯 JS 查找逻辑断言仍适用于未改动的最终函数。
 - `cmake --build --preset macos-debug -j4` 完整构建通过；仅既有 OpenSSL 重复链接警告（`build/macos-debug/t101-build.log`）。原生 CTest 按 CI 同样排除 QML/界面项目，29/29 通过，耗时 39 秒（`t101-ctest.log`）；发布工具单元测试 38/38 通过（`t101-release-tools.log`）。
 - 固定自测应用 `release_package/通联工坊.app` 更新至 5.5.3，126 个 arm64 Mach-O/依赖、deep strict 签名和隔离 Cocoa 启动通过；未生成压缩包。主程序 SHA-256 `bb4e80a72e8145730f63ec820bb95b4adcd45a9da9c0d423c8257f094f4a8c12`（`t101-local-package.log`、`t101-cocoa-startup.log`）。
-- 远端同提交双平台构建、来源门禁、正式发布及公开更新待执行；完成后补充本节验收结果。T100 记录为此前 5.5.2 开发包的历史验证。
+- 远端验证已完成，详见本节正式发布验收。T100 记录为此前 5.5.2 开发包的历史验证。
 - 按 AGENTS.md 不运行 QML/成品界面自动化；真实快捷键、跨组/跨窗、明文字段双击和 SSH 设备交互待人工验收。
+
+### T101 正式发布验收
+
+- 发行源码 `733b2a627b0ee02f02c7ebfdfff527870f442544` 已提交并推送 main。[双平台构建 44046248779](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/44046248779) 全部成功：macOS arm64 原生 29/29、Windows x64 原生 26/26，两平台发布工具各 38/38；发行包校验及独立运行检查通过。日志 `build/macos-debug/t101-final-build-full.log`。
+- `find_validated_build.py` 核对同仓库、main、同提交和两份有效产物后才推送 `v5.5.3`；标签固定于上述源码，发布复用构建 44046248779 的产物。证据 `t101-validated-build.txt`、`t101-build-run.json`。
+- [正式 Release v5.5.3](https://github.com/jsnjjnzx/LogAnalyQt/releases/tag/v5.5.3) 于北京时间 2026-11-17 16:41:38 公开，确认为 latest、非草稿、非预发布。EXE、DMG、更新 ZIP、三份 SHA256 和 update.json 共七附件齐全；匿名下载更新清单，与公开附件的名称、地址、大小及摘要一致。update.json SHA-256 `fcef527c1113434d1ce98ec62923446039832069ae9beb7f12d9730ee88df19e`，证据 `t101-public-release-verification.json`。
+- [发布及公开更新 44048855532](https://github.com/jsnjjnzx/LogAnalyQt/actions/runs/44048855532) 全部成功。Windows/macOS 的模拟旧客户端从正式 Release 下载、校验 SHA256、替换、重启至 5.5.3 并保留数据文件。日志 `t101-final-release-full.log`、状态 `t101-release-run.json`。
+- 以上构建、解析器回归、启动和公开更新不替代实际快捷键/鼠标、跨组/跨窗、用户 SSH 设备或 Windows 实机验收；QML/成品界面自动化按约定排除，macOS 未经 Apple 公证。
 
 ## 2026-11-17 实时监控查找与 698 明文继续解析（T100）
 
